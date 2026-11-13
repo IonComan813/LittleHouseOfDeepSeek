@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .actions import ACTIONS
+from .actions import ACTIONS, perform
 from .world import ActionError, World
 
 MAX_STATEMENTS = 20
@@ -151,7 +151,7 @@ def run(world: World, src: str) -> list[StepResult]:
             results.append(StepResult(shown, False, f"用法：{spec.signature}"))
             break
         try:
-            text = spec.fn(world, *c.args)
+            text = perform(world, c.name, c.args)
         except ActionError as e:
             results.append(StepResult(shown, False, str(e)))
             break

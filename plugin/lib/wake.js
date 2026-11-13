@@ -66,3 +66,24 @@ export function formatDuration(ms) {
   const m = minutes % 60
   return [d && `${d}天`, h && `${h}小时`, m && `${m}分钟`].filter(Boolean).join('')
 }
+
+/** Local wall-clock time "YYYY-MM-DDTHH:MM:SS" (matches the house's event timestamps). @param {Date} d */
+export function localIso(d) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${localDay(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+/**
+ * The user message that wakes the resident.
+ * @param {{ sinceText?: string, news: string[], lastNote?: string, look: string, maxActions: number }} p
+ */
+export function buildWakeMessage({ sinceText, news, lastNote, look, maxActions }) {
+  const lines = [`（你醒了过来${sinceText ? `，距离上次活动过了${sinceText}` : ''}。）`]
+  if (lastNote) lines.push(`上次的小记：${lastNote}`)
+  const uniqueNews = [...new Set(news)].slice(-8)
+  if (uniqueNews.length) lines.push('你不在的时候：' + uniqueNews.join('；') + '。')
+  lines.push('', look, '')
+  lines.push(`接下来是你的自由时间：想做什么都可以，用 house_do 行动（这次最多 ${maxActions} 次）。`)
+  lines.push('做完想做的事以后，调用 house_rest 写一句小记，然后去休息。')
+  return lines.join('\n')
+}

@@ -17,6 +17,7 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 from . import __version__
 from .actions import help_text
@@ -39,8 +40,21 @@ class House:
         state_dir.mkdir(parents=True, exist_ok=True)
         with self.lock:
             self.world.load(self.save_path)
+            self.world.events = self._recent_events()
             self.world.event_sink = self._append_event
             self.world.tick()
+
+    def _recent_events(self, limit: int = 300) -> list[Event]:
+        """Reload the tail of the event log so news survives a restart."""
+        if not self.events_path.exists():
+            return []
+        out = []
+        for line in self.events_path.read_text(encoding="utf-8").splitlines()[-limit:]:
+            try:
+                out.append(Event(**json.loads(line)))
+            except (ValueError, TypeError):
+                continue
+        return out
 
     def _append_event(self, ev: Event) -> None:
         with self.events_path.open("a", encoding="utf-8") as f:
@@ -119,6 +133,13 @@ def make_handler(house: House, token: str, on_shutdown=None):
                 self._send(200, {"ok": True, "text": text})
             elif path == "/help":
                 self._send(200, {"ok": True, "text": help_text()})
+            elif path == "/news":
+                query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                since = (query.get("since") or [""])[0]
+                with house.lock:
+                    house.world.tick()
+                    news = [asdict(e) for e in house.world.news_since(since)][-20:]
+                self._send(200, {"ok": True, "news": news})
             elif path == "/events":
                 with house.lock:
                     events = [asdict(e) for e in house.world.events[-50:]]

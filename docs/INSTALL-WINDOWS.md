@@ -48,7 +48,10 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 
 ## 5. 改配置（可选）
 
-在 `%USERPROFILE%\.dsh\profiles\<profile>\cordis.patch.yml` 末尾加一段（**patch 会整体替换 config，想保留的键都要写上**）：
+在 `%USERPROFILE%\.dsh\profiles\<profile>\cordis.patch.yml` 末尾加一段（**patch 会整体替换 config，想保留的键都要写上**）。
+
+> ⚠️ 新 profile 的这个文件里通常只有注释和一行 `[]`（空列表）。**先删掉 `[]` 那一行**再追加，
+> 否则 YAML 解析失败，DSH 会启动不了。
 
 ```yaml
 - id: little-house
@@ -67,7 +70,8 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
       maxActionsPerWake: 12
 ```
 
-保存后重启 DSH。
+保存即可，**不需要重启 DSH**：几秒内插件会自动重载（小屋进程也会随之重启），新配置立刻生效。
+注意重载会重新开始「首次唤醒」倒计时；改插件的 JS 代码则需要完全重启 DSH。
 
 ## 卸载
 

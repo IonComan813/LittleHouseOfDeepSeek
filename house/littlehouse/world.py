@@ -1,8 +1,13 @@
-"""World model: rooms, objects, the resident's position and inventory.
+"""World state and passive simulation.
 
-Everything here is plain data plus small rules, so it runs headless and can be
-unit-tested without a window. Rendering (Pygame) and the agent protocol
-(HTTP + pseudo-code) both sit on top of this module.
+Plain data plus small rules, so it runs headless and is unit-testable. The
+agent protocol (HTTP + pseudo-code, see actions.py/script.py) and rendering
+(Pygame, later) both sit on top of this module.
+
+Time is game time from ``Clock`` (1:1 with reality by default). ``tick()``
+advances the passive simulation — plants drying, crops growing, dirt, hunger,
+the cat, the daily mail — in steps of at most one game hour, so a long
+absence (DSH closed for a weekend) is simulated faithfully but cheaply.
 """
 
 from __future__ import annotations
@@ -11,64 +16,29 @@ import hashlib
 import json
 import random
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
+from . import content as C
 from .clock import SEASON_ZH, Clock, is_dark, period_of, season_of
 
-# --------------------------------------------------------------------------- data
+SAVE_VERSION = 2
+MAX_CATCHUP_HOURS = 24 * 14  # beyond two weeks away, older time is skipped
 
-
-@dataclass
-class Room:
-    id: str
-    name: str
-    description: str
-    exits: list[str]
-    outdoor: bool = False
-
-
-@dataclass
-class Obj:
-    id: str
-    name: str
-    kind: str
-    room: str
-    state: dict[str, Any] = field(default_factory=dict)
-
-
-ROOMS: dict[str, Room] = {
-    r.id: r
-    for r in (
-        Room("living_room", "客厅", "朝南的小客厅，有一张旧沙发和一扇大窗。", ["kitchen", "bedroom", "yard"]),
-        Room("kitchen", "厨房", "小小的厨房，灶台擦得还算干净。", ["living_room"]),
-        Room("bedroom", "卧室", "放着一张床和一个书架的卧室。", ["living_room"]),
-        Room("yard", "庭院", "屋前的小院子，有一块菜地。往前走就是沙滩。", ["living_room", "beach"], outdoor=True),
-        Room("beach", "沙滩", "细细的白沙滩，海浪会把贝壳冲上岸。", ["yard"], outdoor=True),
-    )
-}
-
-
-def _default_objects() -> list[Obj]:
-    return [
-        Obj("pot#1", "绿萝", "plant", "living_room", {"water": 70.0}),
-        Obj("pot#2", "小多肉", "plant", "bedroom", {"water": 40.0}),
-        Obj("sofa", "沙发", "furniture", "living_room"),
-        Obj("bed", "床", "furniture", "bedroom"),
-        Obj("bookshelf", "书架", "furniture", "bedroom"),
-        Obj("stove", "灶台", "furniture", "kitchen"),
-        Obj("plot#1", "菜地", "plot", "yard", {"crop": None}),
-        Obj("shell#1", "白色扇贝壳", "shell", "beach"),
-    ]
-
-
-# Plant water drains this many points per game day.
-PLANT_DRAIN_PER_DAY = 30.0
-MAX_SHELLS_ON_BEACH = 3
-SHELL_SPAWN_PER_DAY = 2.0
-SHELL_NAMES = ("白色扇贝壳", "粉色海螺", "带花纹的贝壳", "小小的蛤蜊壳", "光滑的鹅卵石")
-WEATHERS = ("晴", "晴", "多云", "多云", "阴", "小雨")
+# Rates are per game hour unless noted.
+POT_DRAIN_PER_DAY = 30.0
+PLOT_DRAIN_PER_DAY = 50.0
+DIRT_PER_DAY = 6.0
+HUNGER_PER_HOUR = 5.0
+ENERGY_DRAIN_PER_HOUR = 3.0
+ENERGY_SLEEP_PER_HOUR = 12.0
+SLEEP_HOURS = range(0, 8)  # she is assumed asleep at night between wakes
+PET_HUNGER_PER_HOUR = 4.0
+PET_AFFECTION_DECAY_PER_DAY = 2.0
+BEACH_FINDS_PER_DAY = 2.0
+BEACH_FINDS_PER_RAINY_DAY = 4.0
+MAX_BEACH_FINDS = 4
 
 
 class ActionError(Exception):
@@ -76,14 +46,48 @@ class ActionError(Exception):
 
 
 @dataclass
+class Obj:
+    id: str
+    name: str
+    kind: str  # plant | plot | fixture | decor | find
+    room: str
+    state: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class Event:
     t: str
     kind: str
     text: str
-    actor: str = "resident"
+    actor: str = "resident"  # resident | world
 
 
-# --------------------------------------------------------------------------- world
+def _fixtures() -> list[Obj]:
+    return [
+        Obj("pot#1", "绿萝", "plant", "living_room", {"water": 70.0}),
+        Obj("pot#2", "小多肉", "plant", "bedroom", {"water": 40.0}),
+        Obj("sofa", "沙发", "fixture", "living_room"),
+        Obj("shelf", "收藏架", "fixture", "living_room"),
+        Obj("bed", "床", "fixture", "bedroom"),
+        Obj("bookshelf", "书架", "fixture", "bedroom"),
+        Obj("stove", "灶台", "fixture", "kitchen"),
+        Obj("table", "木桌", "fixture", "kitchen"),
+        Obj("mailbox", "邮箱", "fixture", "yard"),
+        Obj("plot#1", "菜地1", "plot", "yard", {"water": 60.0}),
+        Obj("plot#2", "菜地2", "plot", "yard", {"water": 60.0}),
+        Obj("plot#3", "菜地3", "plot", "yard", {"water": 60.0}),
+        Obj("rock", "礁石", "fixture", "beach"),
+    ]
+
+
+def _weighted(rng: random.Random, table: list[tuple[Any, int]]) -> Any:
+    total = sum(w for _, w in table)
+    r = rng.uniform(0, total)
+    for value, w in table:
+        r -= w
+        if r <= 0:
+            return value
+    return table[-1][0]
 
 
 class World:
@@ -91,157 +95,349 @@ class World:
         self.clock = clock or Clock()
         self.rng = random.Random(seed)
         self.location = "living_room"
-        self.inventory: list[str] = []
-        self.objects: dict[str, Obj] = {o.id: o for o in _default_objects()}
+        self.inventory: dict[str, int] = dict(C.START_INVENTORY)
+        self.objects: dict[str, Obj] = {o.id: o for o in _fixtures()}
+        self.objects["find#1"] = Obj("find#1", "白色扇贝壳", "find", "beach", {"item": "白色扇贝壳"})
+        self._next_id = 2
+        self.resident = {"hunger": 30.0, "energy": 80.0, "last_rest": 0.0}
+        self.pet = {"name": C.PET_NAME, "room": "living_room", "hunger": 30.0, "affection": 30.0,
+                    "last_pet": 0.0, "hungry_noted": False}
+        self.dirt: dict[str, float] = {r: 10.0 for r in C.INDOOR_ROOMS}
+        self.mailbox: dict[str, int] = {}
+        self.shelf: dict[str, int] = {}
         self.last_tick = self.clock.timestamp()
+        self.last_mail_day = self.now().strftime("%Y-%m-%d")
         self.events: list[Event] = []
-        self._next_item = 2
         self.event_sink: Callable[[Event], None] | None = None
 
-    # ---------------------------------------------------------------- time
+    # ================================================================== time
 
     def now(self) -> datetime:
         return self.clock.now()
 
-    def weather(self) -> str:
-        day = self.now().strftime("%Y-%m-%d")
-        h = int(hashlib.sha256(day.encode()).hexdigest(), 16)
-        return WEATHERS[h % len(WEATHERS)]
+    def season(self, dt: datetime | None = None) -> str:
+        return season_of(dt or self.now())
+
+    def weather(self, dt: datetime | None = None) -> str:
+        dt = dt or self.now()
+        h = int(hashlib.sha256(dt.strftime("%Y-%m-%d").encode()).hexdigest(), 16)
+        table = C.WEATHER_TABLE[season_of(dt)]
+        r = h % sum(w for _, w in table)
+        for name, w in table:
+            if r < w:
+                return name
+            r -= w
+        return table[-1][0]
+
+    def raining(self, dt: datetime | None = None) -> bool:
+        return self.weather(dt) in C.RAINY
 
     def tick(self) -> None:
-        """Advance passive simulation to the current game time."""
-        now = self.clock.timestamp()
-        dt_days = max(0.0, now - self.last_tick) / 86400.0
-        self.last_tick = now
-        if dt_days <= 0:
-            return
-        raining = self.weather() == "小雨"
+        """Advance the passive simulation to the current game time."""
+        now_ts = self.clock.timestamp()
+        start = max(self.last_tick, now_ts - MAX_CATCHUP_HOURS * 3600)
+        t = start
+        while t < now_ts:
+            step = min(3600.0, now_ts - t)
+            self._step(datetime.fromtimestamp(t), step / 3600.0)
+            t += step
+        self.last_tick = now_ts
+        self._deliver_mail(self.now())
+
+    def _step(self, at: datetime, hours: float) -> None:
+        days = hours / 24.0
+        rain = self.raining(at)
+        season = season_of(at)
+
         for o in self.objects.values():
             if o.kind == "plant":
-                drain = PLANT_DRAIN_PER_DAY * dt_days
-                if raining and ROOMS[o.room].outdoor:
-                    drain = -drain
-                o.state["water"] = max(0.0, min(100.0, o.state.get("water", 50.0) - drain))
-        # Shells wash up on the beach over time.
-        expected = SHELL_SPAWN_PER_DAY * dt_days
-        spawns = int(expected) + (1 if self.rng.random() < expected % 1 else 0)
-        for _ in range(spawns):
-            if self._count_kind("shell", "beach") >= MAX_SHELLS_ON_BEACH:
-                break
-            self._spawn("shell", self.rng.choice(SHELL_NAMES), "beach")
+                o.state["water"] = max(0.0, o.state.get("water", 50.0) - POT_DRAIN_PER_DAY * days)
+            elif o.kind == "plot":
+                self._grow_plot(o, days, rain, season, at)
 
-    def _count_kind(self, kind: str, room: str) -> int:
-        return sum(1 for o in self.objects.values() if o.kind == kind and o.room == room)
+        # beach finds wash up (more when it rains)
+        rate = (BEACH_FINDS_PER_RAINY_DAY if rain else BEACH_FINDS_PER_DAY) * days
+        if self.rng.random() < rate and self._count_finds() < MAX_BEACH_FINDS:
+            self._spawn_find(_weighted(self.rng, C.BEACH_FINDS))
 
-    def _spawn(self, kind: str, name: str, room: str) -> Obj:
-        oid = f"{kind}#{self._next_item}"
-        self._next_item += 1
-        obj = Obj(oid, name, kind, room)
-        self.objects[oid] = obj
-        return obj
+        for room in self.dirt:
+            self.dirt[room] = min(100.0, self.dirt[room] + DIRT_PER_DAY * days)
 
-    # ---------------------------------------------------------------- events
+        r = self.resident
+        r["hunger"] = min(100.0, r["hunger"] + HUNGER_PER_HOUR * hours)
+        if at.hour in SLEEP_HOURS:
+            r["energy"] = min(100.0, r["energy"] + ENERGY_SLEEP_PER_HOUR * hours)
+        else:
+            r["energy"] = max(0.0, r["energy"] - ENERGY_DRAIN_PER_HOUR * hours)
 
-    def log(self, kind: str, text: str, actor: str = "resident") -> None:
-        ev = Event(self.now().isoformat(timespec="seconds"), kind, text, actor)
-        self.events.append(ev)
-        del self.events[:-200]
-        if self.event_sink is not None:
-            self.event_sink(ev)
+        p = self.pet
+        p["hunger"] = min(100.0, p["hunger"] + PET_HUNGER_PER_HOUR * hours)
+        p["affection"] = max(0.0, p["affection"] - PET_AFFECTION_DECAY_PER_DAY * days)
+        if self.rng.random() < min(1.0, hours):
+            p["room"] = self.rng.choice(C.INDOOR_ROOMS)
+        self.dirt[p["room"]] = min(100.0, self.dirt[p["room"]] + 2.0 * days)
+        if p["hunger"] >= 80 and not p["hungry_noted"]:
+            p["hungry_noted"] = True
+            self.log("pet", f"{p['name']}饿得在{C.ROOMS[p['room']].name}喵喵叫", actor="world", at=at)
 
-    # ---------------------------------------------------------------- lookup
+    def _grow_plot(self, o: Obj, days: float, rain: bool, season: str, at: datetime) -> None:
+        before = o.state.get("water", 0.0)
+        if rain:
+            o.state["water"] = 100.0
+            watered = 1.0
+        else:
+            drain = PLOT_DRAIN_PER_DAY * days
+            watered = 1.0 if drain <= 0 else min(1.0, before / drain)
+            o.state["water"] = max(0.0, before - drain)
+        seed = o.state.get("seed")
+        if not seed or o.state.get("ripe"):
+            return
+        crop = C.CROPS[seed]
+        if season not in crop.seasons:
+            return
+        o.state["growth"] = o.state.get("growth", 0.0) + days * watered
+        if o.state["growth"] >= crop.days:
+            o.state["ripe"] = True
+            self.log("farm", f"{o.name}里的{crop.name}成熟了", actor="world", at=at)
 
-    def resolve(self, ref: str, *, here_only: bool = True) -> Obj:
-        """Find an object by id ('pot#1') or by name ('绿萝')."""
-        ref = ref.strip()
-        candidates = [
-            o for o in self.objects.values()
-            if (o.id == ref or o.name == ref) and (o.room in (self.location, "inventory") or not here_only)
-        ]
-        if not candidates:
-            raise ActionError(f"这里没有「{ref}」。")
-        return candidates[0]
+    def _deliver_mail(self, now: datetime) -> None:
+        today = now.strftime("%Y-%m-%d")
+        if today <= self.last_mail_day or now.hour < C.MAIL_HOUR:
+            return
+        last = datetime.strptime(self.last_mail_day, "%Y-%m-%d")
+        missed = min(3, (datetime.strptime(today, "%Y-%m-%d") - last).days)
+        for i in range(missed):
+            parcel = self._parcel(now - timedelta(days=missed - 1 - i))
+            for item, n in parcel.items():
+                self.mailbox[item] = self.mailbox.get(item, 0) + n
+        self.last_mail_day = today
+        if missed:
+            self.log("mail", "邮箱里来了包裹", actor="world")
+
+    def _parcel(self, day: datetime) -> dict[str, int]:
+        rng = random.Random(day.strftime("%Y-%m-%d") + "mail")
+        parcel: dict[str, int] = {}
+        for item in rng.sample(C.MAIL_STAPLES, 3):
+            parcel[item] = parcel.get(item, 0) + 1
+        seeds = C.SEEDS_BY_SEASON[season_of(day)]
+        if seeds and rng.random() < 0.6:
+            s = rng.choice(seeds)
+            parcel[s] = parcel.get(s, 0) + 1
+        if rng.random() < 0.15:
+            f = rng.choice(C.MAIL_FURNITURE)
+            parcel[f] = parcel.get(f, 0) + 1
+        return parcel
+
+    # ================================================================== objects
+
+    def new_id(self, prefix: str) -> str:
+        oid = f"{prefix}#{self._next_id}"
+        self._next_id += 1
+        return oid
+
+    def _count_finds(self) -> int:
+        return sum(1 for o in self.objects.values() if o.kind == "find")
+
+    def _spawn_find(self, item: str) -> Obj:
+        o = Obj(self.new_id("find"), item, "find", "beach", {"item": item})
+        self.objects[o.id] = o
+        return o
+
+    def here(self) -> list[Obj]:
+        return [o for o in self.objects.values() if o.room == self.location]
+
+    def resolve(self, ref: str) -> Obj:
+        """An object in the current room by id ('pot#1') or name ('绿萝')."""
+        ref = str(ref).strip()
+        here = self.here()
+        for match in (lambda o: o.id == ref, lambda o: o.name == ref, lambda o: ref in o.name):
+            found = [o for o in here if match(o)]
+            if found:
+                return found[0]
+        if ref in (self.pet["name"], "猫", "小猫") and self.pet["room"] == self.location:
+            raise ActionError(f"用 pet()/feed() 和{self.pet['name']}互动吧。")
+        raise ActionError(f"这里没有「{ref}」。")
+
+    def resolve_room(self, ref: str) -> C.Room:
+        ref = str(ref).strip()
+        for r in C.ROOMS.values():
+            if ref in (r.id, r.name):
+                return r
+        raise ActionError(f"没有叫「{ref}」的地方。可去：{'、'.join(r.name for r in C.ROOMS.values())}")
 
     def path_to(self, target: str) -> list[str]:
-        """Rooms to walk through from the current location to ``target`` (BFS)."""
+        """Rooms walked through from the current location to ``target`` (BFS)."""
         prev: dict[str, str | None] = {self.location: None}
         queue = [self.location]
         while queue:
             cur = queue.pop(0)
-            if cur == target:
-                break
-            for nxt in ROOMS[cur].exits:
+            for nxt in C.ROOMS[cur].exits:
                 if nxt not in prev:
                     prev[nxt] = cur
                     queue.append(nxt)
         if target not in prev:
-            raise ActionError(f"去不了{ROOMS[target].name}。")
-        path = []
+            raise ActionError(f"去不了{C.ROOMS[target].name}。")
+        path: list[str] = []
         node: str | None = target
         while node is not None and node != self.location:
             path.append(node)
             node = prev[node]
         return list(reversed(path))
 
-    def resolve_room(self, ref: str) -> Room:
-        for r in ROOMS.values():
-            if ref in (r.id, r.name):
-                return r
-        raise ActionError(f"没有叫「{ref}」的地方。可去：{'、'.join(r.name for r in ROOMS.values())}")
+    # ================================================================== inventory
 
-    # ---------------------------------------------------------------- views
+    def item_name(self, ref: str, pool: dict[str, int] | None = None) -> str:
+        """Resolve a (possibly partial) item name against a pool (default: inventory)."""
+        pool = self.inventory if pool is None else pool
+        ref = str(ref).strip()
+        if pool.get(ref, 0) > 0:
+            return ref
+        partial = [n for n, c in pool.items() if c > 0 and ref in n]
+        if len(partial) == 1:
+            return partial[0]
+        if len(partial) > 1:
+            raise ActionError(f"「{ref}」指的是哪一个？{'、'.join(partial)}")
+        raise ActionError(f"背包里没有「{ref}」。")
+
+    def add_item(self, name: str, n: int = 1) -> None:
+        self.inventory[name] = self.inventory.get(name, 0) + n
+
+    def take_item(self, name: str, n: int = 1) -> None:
+        have = self.inventory.get(name, 0)
+        if have < n:
+            raise ActionError(f"{name}不够（有 {have}，需要 {n}）。")
+        if have == n:
+            del self.inventory[name]
+        else:
+            self.inventory[name] = have - n
+
+    def items_with_tag(self, tag: str) -> list[str]:
+        return [n for n, c in self.inventory.items() if c > 0 and tag in C.ITEMS.get(n, C.Item(n)).tags]
+
+    @staticmethod
+    def format_items(pool: dict[str, int]) -> str:
+        return "、".join(f"{n}×{c}" if c > 1 else n for n, c in pool.items() if c > 0) or "空"
+
+    # ================================================================== events
+
+    def log(self, kind: str, text: str, actor: str = "resident", at: datetime | None = None) -> None:
+        ev = Event((at or self.now()).isoformat(timespec="seconds"), kind, text, actor)
+        self.events.append(ev)
+        del self.events[:-300]
+        if self.event_sink is not None:
+            self.event_sink(ev)
+
+    def news_since(self, since_iso: str) -> list[Event]:
+        return [e for e in self.events if e.actor == "world" and e.t > since_iso]
+
+    # ================================================================== views
 
     def describe_obj(self, o: Obj) -> str:
+        s = o.state
         if o.kind == "plant":
-            w = o.state.get("water", 0)
+            w = s.get("water", 0)
             mood = "叶子很精神" if w >= 60 else "土有点干了" if w >= 30 else "蔫蔫的，很缺水"
             return f"{o.name}[{o.id}]（{mood}）"
         if o.kind == "plot":
-            crop = o.state.get("crop")
-            return f"{o.name}[{o.id}]（{'种着' + crop if crop else '空着'}）"
+            seed = s.get("seed")
+            w = s.get("water", 0)
+            wet = "湿润" if w >= 40 else "有点干" if w > 0 else "干透了"
+            if not seed:
+                return f"{o.name}[{o.id}]（空着，土{wet}）"
+            crop = C.CROPS[seed]
+            if s.get("ripe"):
+                return f"{o.name}[{o.id}]（{crop.name}成熟了，可以收获）"
+            g = s.get("growth", 0)
+            stage = "刚发芽" if g < crop.days * 0.34 else "长高了" if g < crop.days * 0.75 else "快熟了"
+            off = "，但不太适应这个季节" if self.season() not in crop.seasons else ""
+            return f"{o.name}[{o.id}]（{crop.name}{stage}，土{wet}{off}）"
+        if o.id == "mailbox":
+            return f"邮箱[mailbox]（{'里面有东西' if self.mailbox else '空的'}）"
+        if o.id == "shelf":
+            n = sum(self.shelf.values())
+            return f"收藏架[shelf]（{'摆着 ' + str(n) + ' 件收藏' if n else '还空着'}）"
         return f"{o.name}[{o.id}]"
+
+    def status_line(self) -> str:
+        h, e = self.resident["hunger"], self.resident["energy"]
+        hunger = "很饿" if h >= 75 else "有点饿" if h >= 45 else "不饿"
+        energy = "很困" if e <= 20 else "有点累" if e <= 45 else "精神不错"
+        return f"{hunger}，{energy}"
 
     def look(self) -> str:
         now = self.now()
-        room = ROOMS[self.location]
-        here = [o for o in self.objects.values() if o.room == self.location]
-        light = "，屋里有点暗" if is_dark(now) and not room.outdoor else ""
+        room = C.ROOMS[self.location]
+        objs = [self.describe_obj(o) for o in self.here()]
+        if self.pet["room"] == self.location:
+            p = self.pet
+            mood = "饿得直叫" if p["hunger"] >= 80 else "在打盹" if p["affection"] >= 50 else "在角落里看着你"
+            objs.append(f"猫咪{p['name']}（{mood}）")
+        dark = "，屋里有点暗" if is_dark(now) and not room.outdoor else ""
         lines = [
-            f"时间：{now:%Y-%m-%d %H:%M}（{period_of(now)}，{SEASON_ZH[season_of(now)]}季），天气：{self.weather()}{light}",
+            f"时间：{now:%Y-%m-%d %H:%M}（{period_of(now)}，{SEASON_ZH[season_of(now)]}季），天气：{self.weather()}{dark}",
             f"位置：{room.name} —— {room.description}",
-            "看到：" + ("、".join(self.describe_obj(o) for o in here) if here else "没什么特别的东西"),
-            "可去：" + "、".join(ROOMS[e].name for e in room.exits),
-            "背包：" + ("、".join(self.objects[i].name for i in self.inventory) if self.inventory else "空"),
+            "看到：" + ("、".join(objs) if objs else "没什么特别的东西"),
+        ]
+        if not room.outdoor and self.dirt[self.location] >= 40:
+            lines.append("地上：" + ("很脏了，该打扫了" if self.dirt[self.location] >= 70 else "有点灰"))
+        lines += [
+            "这里能做：" + "、".join(room.hints),
+            "可去：" + "、".join(C.ROOMS[e].name for e in room.exits),
+            f"你：{self.status_line()}",
+            "背包：" + self.format_items(self.inventory),
         ]
         return "\n".join(lines)
 
-    # ---------------------------------------------------------------- persistence
+    # ================================================================== persistence
 
     def to_json(self) -> dict[str, Any]:
         return {
-            "version": 1,
+            "version": SAVE_VERSION,
             "location": self.location,
             "inventory": self.inventory,
             "objects": [asdict(o) for o in self.objects.values()],
+            "resident": self.resident,
+            "pet": self.pet,
+            "dirt": self.dirt,
+            "mailbox": self.mailbox,
+            "shelf": self.shelf,
             "last_tick": self.last_tick,
-            "next_item": self._next_item,
+            "last_mail_day": self.last_mail_day,
+            "next_id": self._next_id,
         }
 
     def load_json(self, data: dict[str, Any]) -> None:
+        version = int(data.get("version", 1))
         self.location = data.get("location", self.location)
-        if self.location not in ROOMS:
+        if self.location not in C.ROOMS:
             self.location = "living_room"
-        self.inventory = list(data.get("inventory", []))
-        objs = data.get("objects")
-        if objs:
-            self.objects = {o["id"]: Obj(**o) for o in objs}
-            # Fixtures added in newer versions appear in old saves too.
-            for o in _default_objects():
-                if o.kind != "shell" and o.id not in self.objects:
-                    self.objects[o.id] = o
         self.last_tick = float(data.get("last_tick", self.last_tick))
-        self._next_item = int(data.get("next_item", self._next_item))
-        self.inventory = [i for i in self.inventory if i in self.objects]
+        if version < 2:
+            self._migrate_v1(data)
+            return
+        self.inventory = {k: int(v) for k, v in data.get("inventory", {}).items() if int(v) > 0}
+        self.objects = {o["id"]: Obj(**o) for o in data.get("objects", [])}
+        for o in _fixtures():  # fixtures added in newer versions appear in old saves too
+            self.objects.setdefault(o.id, o)
+        self.resident.update(data.get("resident", {}))
+        self.pet.update(data.get("pet", {}))
+        self.dirt.update(data.get("dirt", {}))
+        self.mailbox = dict(data.get("mailbox", {}))
+        self.shelf = dict(data.get("shelf", {}))
+        self.last_mail_day = data.get("last_mail_day", self.last_mail_day)
+        self._next_id = int(data.get("next_id", self._next_id))
+
+    def _migrate_v1(self, data: dict[str, Any]) -> None:
+        """v1 (M0): inventory was a list of object ids; shells lived as objects."""
+        old = {o["id"]: o for o in data.get("objects", [])}
+        for oid in data.get("inventory", []):
+            name = old.get(oid, {}).get("name")
+            if name:
+                self.add_item(name if name in C.ITEMS else "白色扇贝壳")
+        for oid, o in old.items():
+            if oid in self.objects and o.get("kind") == "plant":
+                self.objects[oid].state.update(o.get("state", {}))
+        self._next_id = max(self._next_id, int(data.get("next_item", 0)) + 1)
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

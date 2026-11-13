@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { formatDuration, inQuietHours, msUntilQuietEnds, parseQuietHours, randomDelayMs } from '../lib/wake.js'
+import { buildWakeMessage, formatDuration, inQuietHours, localIso, msUntilQuietEnds, parseQuietHours, randomDelayMs } from '../lib/wake.js'
 
 const at = (h, m) => new Date(2026, 10, 13, h, m, 0, 0)
 
@@ -38,4 +38,22 @@ test('formatDuration', () => {
   assert.equal(formatDuration(30_000), '不到一分钟')
   assert.equal(formatDuration(200 * 60_000), '3小时20分钟')
   assert.equal(formatDuration(26 * 3600_000), '1天2小时')
+})
+
+test('localIso', () => {
+  assert.equal(localIso(new Date(2026, 0, 2, 3, 4, 5)), '2026-01-02T03:04:05')
+})
+
+test('buildWakeMessage', () => {
+  const first = buildWakeMessage({ news: [], look: 'LOOK', maxActions: 12 })
+  assert.match(first, /^（你醒了过来。）/)
+  assert.doesNotMatch(first, /不在的时候|上次的小记/)
+  const later = buildWakeMessage({
+    sinceText: '3小时', news: ['邮箱里来了包裹', '邮箱里来了包裹', '菜地1里的萝卜成熟了'],
+    lastNote: '捡了贝壳。', look: 'LOOK', maxActions: 6,
+  })
+  assert.match(later, /距离上次活动过了3小时/)
+  assert.match(later, /上次的小记：捡了贝壳。/)
+  assert.match(later, /你不在的时候：邮箱里来了包裹；菜地1里的萝卜成熟了。/)
+  assert.match(later, /最多 6 次/)
 })

@@ -5,7 +5,7 @@
 // runs the `little-house` agent preset), and hands the agent-scoped tools in
 // ./agent-scope.js their house client and per-wake budget.
 
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +16,9 @@ import Schema from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 import { HouseProcess } from './lib/house-process.js'
-import { formatDuration, inQuietHours, localDay, msUntilQuietEnds, parseQuietHours, randomDelayMs } from './lib/wake.js'
+import {
+  buildWakeMessage, formatDuration, inQuietHours, localDay, localIso, msUntilQuietEnds, parseQuietHours, randomDelayMs,
+} from './lib/wake.js'
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_HOUSE_DIR = resolve(PLUGIN_DIR, '..', 'house')
@@ -175,16 +177,23 @@ export default class LittleHouse extends Service {
         return 'skipped: agent busy'
       }
 
-      const since = state.lastWakeAt ? formatDuration(now.getTime() - Date.parse(state.lastWakeAt)) : undefined
+      const last = state.lastWakeAt ? new Date(state.lastWakeAt) : undefined
+      let news = []
+      if (last) {
+        try {
+          news = (await this.house.request('GET', `/news?since=${encodeURIComponent(localIso(last))}`)).news ?? []
+        } catch (e) {
+          this.log('warn', `could not read house news: ${e.message}`)
+        }
+      }
       this.budgets.set(agent.id, { actions: 0, max: this.config.wake.maxActionsPerWake })
-      const text = [
-        `（你醒了过来${since ? `，距离上次活动过了${since}` : ''}。）`,
-        '',
-        look.text,
-        '',
-        `接下来是你的自由时间：想做什么都可以，用 house_do 行动（这次最多 ${this.config.wake.maxActionsPerWake} 次）。`,
-        '做完想做的事以后，调用 house_rest 写一句今天的小记，然后去休息。',
-      ].join('\n')
+      const text = buildWakeMessage({
+        sinceText: last ? formatDuration(now.getTime() - last.getTime()) : undefined,
+        news: news.map((n) => n.text),
+        lastNote: await this.lastDiaryNote(),
+        look: look.text,
+        maxActions: this.config.wake.maxActionsPerWake,
+      })
       agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'little-house' } }))
       await this.ctx.sessions.flush(agent.session)
 
@@ -198,6 +207,21 @@ export default class LittleHouse extends Service {
     } finally {
       this.waking = false
     }
+  }
+
+  /** The most recent house_rest note, if any. */
+  async lastDiaryNote() {
+    const dir = join(this.stateDir, 'diary')
+    try {
+      const files = (await readdir(dir)).filter((f) => f.endsWith('.jsonl')).sort()
+      for (const file of files.reverse()) {
+        const lines = (await readFile(join(dir, file), 'utf8')).trim().split('\n').filter(Boolean)
+        if (lines.length) return JSON.parse(lines[lines.length - 1]).note
+      }
+    } catch {
+      // no diary yet
+    }
+    return undefined
   }
 
   /** The live Agent of today's life session, creating the session when needed. */
