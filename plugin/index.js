@@ -5,7 +5,7 @@
 // runs the `little-house` agent preset), and hands the agent-scoped tools in
 // ./agent-scope.js their house client and per-wake budget.
 
-import { mkdir, readdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,9 +15,10 @@ import { Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
+import { lastEntry } from './lib/diary.js'
 import { HouseProcess } from './lib/house-process.js'
 import {
-  buildWakeMessage, formatDuration, inQuietHours, localDay, localIso, msUntilQuietEnds, parseQuietHours, randomDelayMs,
+  buildWakeMessage, formatDuration, recapEvents, inQuietHours, localDay, localIso, msUntilQuietEnds, parseQuietHours, randomDelayMs,
 } from './lib/wake.js'
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
@@ -179,9 +180,12 @@ export default class LittleHouse extends Service {
 
       const last = state.lastWakeAt ? new Date(state.lastWakeAt) : undefined
       let news = []
+      let recap = []
       if (last) {
+        const since = encodeURIComponent(localIso(last))
         try {
-          news = (await this.house.request('GET', `/news?since=${encodeURIComponent(localIso(last))}`)).news ?? []
+          news = (await this.house.request('GET', `/news?since=${since}`)).news ?? []
+          recap = recapEvents((await this.house.request('GET', `/events?since=${since}&actor=resident`)).events ?? [])
         } catch (e) {
           this.log('warn', `could not read house news: ${e.message}`)
         }
@@ -189,6 +193,7 @@ export default class LittleHouse extends Service {
       this.budgets.set(agent.id, { actions: 0, max: this.config.wake.maxActionsPerWake })
       const text = buildWakeMessage({
         sinceText: last ? formatDuration(now.getTime() - last.getTime()) : undefined,
+        recap,
         news: news.map((n) => n.text),
         lastNote: await this.lastDiaryNote(),
         look: look.text,
@@ -209,19 +214,9 @@ export default class LittleHouse extends Service {
     }
   }
 
-  /** The most recent house_rest note, if any. */
+  /** The newest diary entry from any session, if any. */
   async lastDiaryNote() {
-    const dir = join(this.stateDir, 'diary')
-    try {
-      const files = (await readdir(dir)).filter((f) => f.endsWith('.jsonl')).sort()
-      for (const file of files.reverse()) {
-        const lines = (await readFile(join(dir, file), 'utf8')).trim().split('\n').filter(Boolean)
-        if (lines.length) return JSON.parse(lines[lines.length - 1]).note
-      }
-    } catch {
-      // no diary yet
-    }
-    return undefined
+    return lastEntry(join(this.stateDir, 'diary'))
   }
 
   /** The live Agent of today's life session, creating the session when needed. */

@@ -73,17 +73,34 @@ export function localIso(d) {
   return `${localDay(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+/** Event kinds too trivial to repeat back to her. */
+const RECAP_SKIP = new Set(['move'])
+
+/**
+ * Turn the house's resident events into a short recap list.
+ * @param {{ kind: string, text: string }[]} events
+ */
+export function recapEvents(events, max = 10) {
+  const lines = []
+  for (const e of events) {
+    if (RECAP_SKIP.has(e.kind) || lines.includes(e.text)) continue
+    lines.push(e.text)
+  }
+  return lines.length > max ? [...lines.slice(0, max - 1), `……等 ${lines.length - max + 1} 件事`] : lines
+}
+
 /**
  * The user message that wakes the resident.
- * @param {{ sinceText?: string, news: string[], lastNote?: string, look: string, maxActions: number }} p
+ * @param {{ sinceText?: string, recap?: string[], news: string[], lastNote?: string, look: string, maxActions: number }} p
  */
-export function buildWakeMessage({ sinceText, news, lastNote, look, maxActions }) {
+export function buildWakeMessage({ sinceText, recap = [], news, lastNote, look, maxActions }) {
   const lines = [`（你醒了过来${sinceText ? `，距离上次活动过了${sinceText}` : ''}。）`]
-  if (lastNote) lines.push(`上次的小记：${lastNote}`)
+  if (recap.length) lines.push('上次醒着的时候，你' + recap.join('；') + '。')
+  if (lastNote) lines.push(`日记里最近的一段：${lastNote}`)
   const uniqueNews = [...new Set(news)].slice(-8)
   if (uniqueNews.length) lines.push('你不在的时候：' + uniqueNews.join('；') + '。')
   lines.push('', look, '')
   lines.push(`接下来是你的自由时间：想做什么都可以，用 house_do 行动（这次最多 ${maxActions} 次）。`)
-  lines.push('做完想做的事以后，调用 house_rest 写一句小记，然后去休息。')
+  lines.push('想结束的时候调用 house_rest 去休息。')
   return lines.join('\n')
 }

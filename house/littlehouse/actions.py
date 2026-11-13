@@ -9,6 +9,7 @@ optional argument: without it they act on everything that fits here
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Callable
 
 from . import content as C
@@ -167,6 +168,10 @@ def _rest(w: World, ref: str = "") -> str:
     gain = 25.0 if where.id == "bed" else 15.0
     w.resident["energy"] = min(100.0, w.resident["energy"] + gain)
     w.resident["last_rest"] = w.clock.timestamp()
+    if w.rng.random() < 0.12:
+        dream = w.rng.choice(C.DREAMS)
+        w.log("rest", f"在{where.name}上打了个盹，{dream}")
+        return f"你在{where.name}上打了个盹，{dream}醒来精神好多了。"
     w.log("rest", f"在{where.name}上歇了一会儿")
     return f"你在{where.name}上歇了一会儿，精神好多了。"
 
@@ -226,8 +231,17 @@ def _cook(w: World, dish: str) -> str:
         raise ActionError(f"做{dish}还缺：{'、'.join(missing)}。")
     for name, n in use.items():
         w.take_item(name, n)
-    w.add_item(dish)
     w.dirt["kitchen"] = min(100.0, w.dirt["kitchen"] + 8.0)
+    burn_chance = 0.15 if w.resident["energy"] < 30 else 0.04
+    roll = w.rng.random()
+    if roll < burn_chance:
+        w.add_item("焦掉的菜")
+        w.log("cook", f"想做{dish}，结果做焦了")
+        return f"一走神，锅里的{dish}焦了……只得到一份焦掉的菜。"
+    w.add_item(dish)
+    if roll > 0.93:
+        w.log("cook", f"用{w.format_items(use)}做了{dish}，火候刚刚好，格外好吃")
+        return f"今天手感特别好，{dish}的火候刚刚好，闻起来香极了。"
     w.log("cook", f"用{w.format_items(use)}做了{dish}")
     return f"灶台上冒起热气，你做好了{dish}。"
 
@@ -242,7 +256,19 @@ def _clean(w: World) -> str:
     w.dirt[w.location] = 0.0
     room = C.ROOMS[w.location].name
     w.log("clean", f"打扫了{room}")
-    return f"你把{room}打扫得干干净净。" if before >= 40 else f"{room}本来就挺干净，你又擦了擦。"
+    text = f"你把{room}打扫得干干净净。" if before >= 40 else f"{room}本来就挺干净，你又擦了擦。"
+    if w.rng.random() < 0.04 + before / 400:  # dirtier rooms hide more
+        found = _weighted(w.rng, C.CLEAN_FINDS)
+        if found == "@coins":
+            coins = w.rng.randint(5, 20)
+            w.money += coins
+            w.log("find", f"打扫{room}时在地板缝里找到了 {coins} {C.CURRENCY}")
+            text += f"扫到沙发底下时，在地板缝里找到了 {coins} {C.CURRENCY}！"
+        else:
+            w.add_item(found)
+            w.log("find", f"打扫{room}时找到了{found}")
+            text += f"扫着扫着，从角落里扫出来一个{found}。"
+    return text
 
 
 @action("place(家具)", "把背包里的家具摆在当前房间", 1, 1, effort=2)
@@ -281,25 +307,90 @@ def _water(w: World, ref: str = "") -> str:
         o.state["water"] = 100.0
     names = "、".join(o.name for o in targets)
     w.log("care", f"给{names}浇了水")
-    return f"你给{names}浇了水。"
+    text = f"你给{names}浇了水。"
+    pots = [o for o in targets if o.kind == "plant"]
+    if pots and w.rng.random() < 0.05:
+        lucky = w.rng.choice(pots)
+        w.log("care", f"发现{lucky.name}冒出了一片新叶")
+        text += f"仔细一看，{lucky.name}冒出了一片嫩嫩的新叶。"
+    return text
 
 
 # ---------------------------------------------------------------- yard
 
 
-@action("open(邮箱)", "打开邮箱，把里面的东西拿出来", 1, 1)
+@action("open(邮箱/包裹)", "看邮箱里的信，或拆开门口的包裹", 1, 1)
 def _open(w: World, ref: str) -> str:
     o = w.resolve(ref)
-    if o.id != "mailbox":
-        raise ActionError(f"{o.name}打不开。")
-    if not w.mailbox:
-        return "邮箱是空的。"
-    got = dict(w.mailbox)
-    for name, n in got.items():
-        w.add_item(name, n)
-    w.mailbox.clear()
-    w.log("mail", f"从邮箱里拿到了{w.format_items(got)}")
-    return f"邮箱里有：{w.format_items(got)}。你都拿了出来。"
+    if o.id == "mailbox":
+        if not w.mailbox:
+            return "邮箱是空的。"
+        letters = list(w.mailbox)
+        w.mailbox.clear()
+        for letter in letters:
+            w.log("mail", f"读了一封信：{letter}")
+        return "你从邮箱里取出了信：\n" + "\n".join(letters)
+    if o.id == "parcel":
+        got = dict(w.parcels)
+        for name, n in got.items():
+            w.add_item(name, n)
+        w.parcels.clear()
+        w.log("mail", f"拆开门口的包裹，拿到了{w.format_items(got)}")
+        return f"你拆开包裹：{w.format_items(got)}。"
+    raise ActionError(f"{o.name}打不开。")
+
+
+# ---------------------------------------------------------------- money
+
+
+@action("catalog()", "翻开开拓署的订货目录：能买什么、多少钱，以及你手上东西的收购价")
+def _catalog(w: World) -> str:
+    _need_indoor(w)
+    buy = "、".join(f"{n} {p}" for n, p in C.CATALOG.items())
+    have = [n for n in w.inventory if n in C.SELL_PRICES]
+    sell = "、".join(f"{n} {C.SELL_PRICES[n]}" for n in have) or "（背包里暂时没有能卖的东西）"
+    return (f"订购（{C.CURRENCY}，第二天上午送到门口）：{buy}\n"
+            f"收购价（放进院子的寄售箱，傍晚 {C.PICKUP_HOUR} 点收走）：{sell}\n"
+            f"钱包：{w.money} {C.CURRENCY}")
+
+
+@action("order(物品, 数量)", "在订货目录上下单，如 order(番茄种子, 2)", 1, 2)
+def _order(w: World, ref: str, n: float = 1) -> str:
+    _need_indoor(w)
+    name = str(ref).strip()
+    if name not in C.CATALOG:
+        cands = [k for k in C.CATALOG if name in k]
+        if len(cands) != 1:
+            raise ActionError(f"目录里没有「{name}」。用 catalog() 看看。")
+        name = cands[0]
+    count = int(n)
+    if count < 1 or count > 20:
+        raise ActionError("数量要在 1 到 20 之间。")
+    cost = C.CATALOG[name] * count
+    if cost > w.money:
+        raise ActionError(f"钱不够：{name}×{count} 要 {cost} {C.CURRENCY}，你只有 {w.money}。")
+    w.money -= cost
+    now = w.now()
+    due = now if now.hour < C.DELIVERY_HOUR else now + timedelta(days=1)
+    w.orders.append({"item": name, "n": count, "due": due.strftime("%Y-%m-%d")})
+    when = "今天上午" if due.date() == now.date() else "明天上午"
+    w.log("trade", f"订购了{name}×{count}，花了 {cost} {C.CURRENCY}")
+    return f"你订了{name}×{count}，花了 {cost} {C.CURRENCY}（还剩 {w.money}），{when}送到门口。"
+
+
+@action("sell(物品, 数量)", "把东西放进院子的寄售箱，傍晚收走后入账；不写数量就放全部", 1, 2)
+def _sell(w: World, ref: str, n: float = 0) -> str:
+    _need_room(w, "yard")
+    name = w.item_name(ref)
+    price = C.SELL_PRICES.get(name)
+    if not price:
+        raise ActionError(f"开拓署不收{name}。")
+    count = int(n) or w.inventory[name]
+    w.take_item(name, count)
+    w.sale_box[name] = w.sale_box.get(name, 0) + count
+    w.log("trade", f"把{name}×{count}放进了寄售箱")
+    when = "今天傍晚" if w.now().hour < C.PICKUP_HOUR else "明天傍晚"
+    return f"你把{name}×{count}放进寄售箱，{when}收走后能入账 {price * count} {C.CURRENCY}。"
 
 
 @action("plant(种子, 菜地)", "在菜地播种，如 plant(萝卜种子)；不写菜地就种在第一块空地", 1, 2, effort=2)
@@ -333,15 +424,18 @@ def _harvest(w: World, ref: str = "") -> str:
     if not plots:
         raise ActionError("这里没有可以收获的作物。")
     got: dict[str, int] = {}
+    seeds = [p.state.get("seed") for p in plots]
     for p in plots:
         if not p.state.get("ripe"):
             raise ActionError(f"{p.name}里的东西还没熟。")
         crop = C.CROPS[p.state["seed"]]
-        w.add_item(crop.name, crop.yield_count)
-        got[crop.name] = got.get(crop.name, 0) + crop.yield_count
+        n = max(1, crop.yield_count + w.rng.choice((-1, 0, 0, 0, 1)))
+        w.add_item(crop.name, n)
+        got[crop.name] = got.get(crop.name, 0) + n
         p.state.update({"seed": None, "growth": 0.0, "ripe": False})
     w.log("farm", f"收获了{w.format_items(got)}")
-    return f"你收获了{w.format_items(got)}！"
+    extra = "今年长得特别好！" if sum(got.values()) > sum(C.CROPS[s].yield_count for s in seeds) else ""
+    return f"你收获了{w.format_items(got)}！{extra}"
 
 
 # ---------------------------------------------------------------- beach
@@ -454,9 +548,15 @@ def _feed(w: World, ref: str = "") -> str:
     w.take_item(food)
     was_hungry = p["hunger"] >= 50
     p["hunger"] = max(0.0, p["hunger"] - (70 if food != "猫粮" else 60))
-    p["affection"] = min(100.0, p["affection"] + (8 if food != "猫粮" else 4))
     p["hungry_noted"] = False
+    temper = w.pet_temper()
+    gain = (8 if food != "猫粮" else 4) + {"黏人": 2, "烦躁": -3}.get(temper, 0)
+    p["affection"] = min(100.0, p["affection"] + max(1, gain))
     w.log("pet", f"喂{p['name']}吃了{food}")
+    if temper == "烦躁" and not was_hungry:
+        return f"{p['name']}闻了闻{food}，吃了两口就甩着尾巴走开了。"
+    if temper == "黏人":
+        return f"{p['name']}吃完{food}，绕着你的脚转圈，一直蹭个不停。"
     return f"{p['name']}{'狼吞虎咽地' if was_hungry else '慢悠悠地'}吃完了{food}，蹭了蹭你的手。"
 
 
@@ -465,9 +565,19 @@ def _pet(w: World) -> str:
     p = _pet_here(w)
     if _minutes_since(w, p.get("last_pet", 0.0)) < 30:
         return f"{p['name']}已经被摸够了，甩甩尾巴走开了两步。"
-    p["affection"] = min(100.0, p["affection"] + 6)
     p["last_pet"] = w.clock.timestamp()
+    temper = w.pet_temper()
+    if temper == "烦躁" and w.rng.random() < 0.5:
+        w.log("pet", f"想摸{p['name']}，被它不耐烦地拍开了手")
+        return f"{p['name']}「啪」地拍开了你的手，跳到一边去了。今天还是别惹它了。"
+    if temper == "傲娇" and w.rng.random() < 0.5:
+        p["affection"] = min(100.0, p["affection"] + 3)
+        w.log("pet", f"摸了摸{p['name']}，它假装不在意")
+        return f"{p['name']}扭过头假装不在意，尾巴却悄悄翘了起来。"
+    p["affection"] = min(100.0, p["affection"] + (9 if temper == "黏人" else 6))
     w.log("pet", f"摸了摸{p['name']}")
+    if temper == "黏人":
+        return f"{p['name']}一下子躺倒在你手边，翻出肚皮呼噜呼噜地要你继续摸。"
     if p["affection"] >= 60:
         return f"{p['name']}翻过肚皮，发出呼噜呼噜的声音。"
     return f"{p['name']}眯起眼睛，蹭了蹭你的手。"

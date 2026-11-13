@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildWakeMessage, formatDuration, inQuietHours, localIso, msUntilQuietEnds, parseQuietHours, randomDelayMs } from '../lib/wake.js'
+import { buildWakeMessage, recapEvents, formatDuration, inQuietHours, localIso, msUntilQuietEnds, parseQuietHours, randomDelayMs } from '../lib/wake.js'
 
 const at = (h, m) => new Date(2026, 10, 13, h, m, 0, 0)
 
@@ -53,7 +53,21 @@ test('buildWakeMessage', () => {
     lastNote: '捡了贝壳。', look: 'LOOK', maxActions: 6,
   })
   assert.match(later, /距离上次活动过了3小时/)
-  assert.match(later, /上次的小记：捡了贝壳。/)
+  assert.match(later, /日记里最近的一段：捡了贝壳。/)
   assert.match(later, /你不在的时候：邮箱里来了包裹；菜地1里的萝卜成熟了。/)
   assert.match(later, /最多 6 次/)
+})
+
+test('recapEvents skips moves and duplicates', () => {
+  const events = [
+    { kind: 'move', text: '走到了庭院' }, { kind: 'care', text: '给绿萝浇了水' },
+    { kind: 'care', text: '给绿萝浇了水' }, { kind: 'cook', text: '做了煎蛋' },
+  ]
+  assert.deepEqual(recapEvents(events), ['给绿萝浇了水', '做了煎蛋'])
+  const many = Array.from({ length: 15 }, (_, i) => ({ kind: 'x', text: `事${i}` }))
+  const r = recapEvents(many, 5)
+  assert.equal(r.length, 5)
+  assert.match(r[4], /等 11 件事/)
+  const msg = buildWakeMessage({ recap: ['喂了团子'], news: [], look: 'L', maxActions: 3 })
+  assert.match(msg, /上次醒着的时候，你喂了团子。/)
 })

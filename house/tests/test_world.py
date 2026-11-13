@@ -129,7 +129,7 @@ class FarmTest(unittest.TestCase):
         self.assertTrue(any("成熟" in e.text for e in w.news_since("")))
         res = run(w, "harvest()")
         self.assertTrue(ok(res), res)
-        self.assertEqual(w.inventory["萝卜"], 2)
+        self.assertIn(w.inventory["萝卜"], (1, 2, 3))
 
     def test_dry_soil_stops_growth(self):
         w = new_world()
@@ -146,13 +146,81 @@ class FarmTest(unittest.TestCase):
         res = run(w, "goto(庭院); plant(草莓种子)")
         self.assertIn("不太适合", res[-1].text)
 
-    def test_mail_arrives_daily(self):
+    def test_welcome_letter(self):
         w = new_world()
-        advance(w, 24)
-        self.assertTrue(w.mailbox)
         res = run(w, "goto(庭院); open(邮箱)")
         self.assertTrue(ok(res), res)
-        self.assertFalse(w.mailbox)
+        self.assertIn("开拓署", res[-1].text)
+        self.assertEqual(w.mailbox, [])
+
+
+class EconomyTest(unittest.TestCase):
+    def test_weekly_supply_arrives_monday(self):
+        w = new_world((2026, 11, 15, 20))  # a Sunday evening
+        advance(w, 14)  # Monday 10:00
+        self.assertEqual(w.parcels.get("鸡蛋"), C.WEEKLY_SUPPLY["鸡蛋"])
+        self.assertTrue(any("包裹" in e.text for e in w.news_since("")))
+        res = run(w, "goto(庭院); look(); open(包裹)")
+        self.assertTrue(ok(res), res)
+        self.assertIn("门口的包裹", res[1].text)
+        self.assertFalse(w.parcels)
+
+    def test_order_delivered_next_morning(self):
+        w = new_world()  # 10:00, after today's delivery
+        res = run(w, "catalog(); order(番茄种子, 2)")
+        self.assertTrue(ok(res), res)
+        self.assertEqual(w.money, C.START_MONEY - 2 * C.CATALOG["番茄种子"])
+        advance(w, 12)
+        self.assertFalse(w.parcels.get("番茄种子"))
+        advance(w, 12)  # next day 10:00
+        self.assertEqual(w.parcels.get("番茄种子"), 2)
+
+    def test_cannot_overspend(self):
+        w = new_world()
+        w.money = 10
+        self.assertFalse(run(w, "order(懒人沙发)")[0].ok)
+        self.assertEqual(w.money, 10)
+
+    def test_sell_paid_in_the_evening(self):
+        w = new_world()
+        w.add_item("鲈鱼", 2)
+        res = run(w, "goto(庭院); sell(鲈鱼)")
+        self.assertTrue(ok(res), res)
+        self.assertEqual(w.sale_box, {"鲈鱼": 2})
+        advance(w, 9)  # 19:00
+        self.assertEqual(w.money, C.START_MONEY + 2 * C.SELL_PRICES["鲈鱼"])
+        self.assertFalse(w.sale_box)
+        self.assertTrue(any("入账" in e.text for e in w.news_since("")))
+
+    def test_cannot_sell_unsellable(self):
+        w = new_world()
+        self.assertFalse(run(w, "goto(庭院); sell(鱼竿)")[-1].ok)
+
+
+class SurpriseTest(unittest.TestCase):
+    def test_cleaning_sometimes_finds_things(self):
+        w = new_world()
+        found = 0
+        for _ in range(60):
+            w.dirt["living_room"] = 100
+            w.resident["energy"] = 100
+            before = (w.money, sum(w.inventory.values()))
+            run(w, "clean()")
+            found += (w.money, sum(w.inventory.values())) != before
+        self.assertGreater(found, 0)
+        self.assertLess(found, 40)
+
+    def test_cat_temper_is_stable_within_a_day_and_varies(self):
+        w = new_world()
+        t1 = w.pet_temper()
+        self.assertEqual(t1, w.pet_temper())
+        tempers = {w.pet_temper(datetime(2026, 11, d)) for d in range(1, 29)}
+        self.assertGreater(len(tempers), 1)
+
+    def test_daily_events_happen_sometimes(self):
+        w = new_world()
+        advance(w, 24 * 10)
+        self.assertTrue(any(e.kind == "event" for e in w.events))
 
 
 class BeachTest(unittest.TestCase):
@@ -259,6 +327,20 @@ class TimeTest(unittest.TestCase):
 
 
 class SaveTest(unittest.TestCase):
+    def test_migrate_v2_save(self):
+        w = new_world()
+        data = w.to_json()
+        data["version"] = 2
+        data["mailbox"] = {"鸡蛋": 2, "小地毯": 1}
+        data["last_mail_day"] = "2026-10-15"
+        for k in ("money", "parcels", "sale_box", "orders", "last_morning_day", "last_evening_day"):
+            data.pop(k)
+        w2 = new_world()
+        w2.load_json(data)
+        self.assertEqual(w2.parcels, {"鸡蛋": 2, "小地毯": 1})
+        self.assertEqual(w2.money, C.START_MONEY)
+        self.assertTrue(w2.mailbox)
+
     def test_roundtrip(self):
         w = new_world()
         run(w, "goto(庭院); plant(萝卜种子); goto(卧室)")

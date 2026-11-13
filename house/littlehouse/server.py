@@ -141,8 +141,12 @@ def make_handler(house: House, token: str, on_shutdown=None):
                     news = [asdict(e) for e in house.world.news_since(since)][-20:]
                 self._send(200, {"ok": True, "news": news})
             elif path == "/events":
+                query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                since = (query.get("since") or [""])[0]
+                actor = (query.get("actor") or [""])[0]
                 with house.lock:
-                    events = [asdict(e) for e in house.world.events[-50:]]
+                    events = [asdict(e) for e in house.world.events
+                              if e.t > since and (not actor or e.actor == actor)][-50:]
                 self._send(200, {"ok": True, "events": events})
             else:
                 self._send(404, {"ok": False, "error": "not found"})

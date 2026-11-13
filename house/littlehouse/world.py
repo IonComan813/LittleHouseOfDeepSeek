@@ -23,7 +23,7 @@ from typing import Any, Callable
 from . import content as C
 from .clock import SEASON_ZH, Clock, is_dark, period_of, season_of
 
-SAVE_VERSION = 2
+SAVE_VERSION = 3
 MAX_CATCHUP_HOURS = 24 * 14  # beyond two weeks away, older time is skipped
 
 # Rates are per game hour unless noted.
@@ -73,11 +73,28 @@ def _fixtures() -> list[Obj]:
         Obj("stove", "灶台", "fixture", "kitchen"),
         Obj("table", "木桌", "fixture", "kitchen"),
         Obj("mailbox", "邮箱", "fixture", "yard"),
+        Obj("parcel", "门口的包裹", "fixture", "yard"),
+        Obj("consign", "寄售箱", "fixture", "yard"),
         Obj("plot#1", "菜地1", "plot", "yard", {"water": 60.0}),
         Obj("plot#2", "菜地2", "plot", "yard", {"water": 60.0}),
         Obj("plot#3", "菜地3", "plot", "yard", {"water": 60.0}),
         Obj("rock", "礁石", "fixture", "beach"),
     ]
+
+
+def _day(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d")
+
+
+def _days_due(last_day: str, now: datetime, hour: int, cap: int = 7) -> list[datetime]:
+    """Days after ``last_day`` whose ``hour`` has already passed, oldest first (at most ``cap``)."""
+    start = datetime.strptime(last_day, "%Y-%m-%d")
+    out = []
+    d = start + timedelta(days=1)
+    while _day(d) < _day(now) or (_day(d) == _day(now) and now.hour >= hour):
+        out.append(d)
+        d += timedelta(days=1)
+    return out[-cap:]
 
 
 def _weighted(rng: random.Random, table: list[tuple[Any, int]]) -> Any:
@@ -103,10 +120,16 @@ class World:
         self.pet = {"name": C.PET_NAME, "room": "living_room", "hunger": 30.0, "affection": 30.0,
                     "last_pet": 0.0, "hungry_noted": False}
         self.dirt: dict[str, float] = {r: 10.0 for r in C.INDOOR_ROOMS}
-        self.mailbox: dict[str, int] = {}
+        self.money = C.START_MONEY
+        self.mailbox: list[str] = [C.WELCOME_LETTER]  # unread letters
+        self.parcels: dict[str, int] = {}  # deliveries waiting at the door
+        self.sale_box: dict[str, int] = {}  # consignment box, emptied at PICKUP_HOUR
+        self.orders: list[dict[str, Any]] = []  # {"item", "n", "due": "YYYY-MM-DD"}
         self.shelf: dict[str, int] = {}
         self.last_tick = self.clock.timestamp()
-        self.last_mail_day = self.now().strftime("%Y-%m-%d")
+        now = self.now()
+        self.last_morning_day = _day(now if now.hour >= C.DELIVERY_HOUR else now - timedelta(days=1))
+        self.last_evening_day = _day(now if now.hour >= C.PICKUP_HOUR else now - timedelta(days=1))
         self.events: list[Event] = []
         self.event_sink: Callable[[Event], None] | None = None
 
@@ -142,7 +165,7 @@ class World:
             self._step(datetime.fromtimestamp(t), step / 3600.0)
             t += step
         self.last_tick = now_ts
-        self._deliver_mail(self.now())
+        self._daily(self.now())
 
     def _step(self, at: datetime, hours: float) -> None:
         days = hours / 24.0
@@ -200,33 +223,54 @@ class World:
             o.state["ripe"] = True
             self.log("farm", f"{o.name}里的{crop.name}成熟了", actor="world", at=at)
 
-    def _deliver_mail(self, now: datetime) -> None:
-        today = now.strftime("%Y-%m-%d")
-        if today <= self.last_mail_day or now.hour < C.MAIL_HOUR:
-            return
-        last = datetime.strptime(self.last_mail_day, "%Y-%m-%d")
-        missed = min(3, (datetime.strptime(today, "%Y-%m-%d") - last).days)
-        for i in range(missed):
-            parcel = self._parcel(now - timedelta(days=missed - 1 - i))
-            for item, n in parcel.items():
-                self.mailbox[item] = self.mailbox.get(item, 0) + n
-        self.last_mail_day = today
-        if missed:
-            self.log("mail", "邮箱里来了包裹", actor="world")
+    def _daily(self, now: datetime) -> None:
+        """Morning deliveries and evening pickups for every day that has passed."""
+        for d in _days_due(self.last_morning_day, now, C.DELIVERY_HOUR):
+            self._morning(d)
+            self.last_morning_day = _day(d)
+        for d in _days_due(self.last_evening_day, now, C.PICKUP_HOUR):
+            self._evening(d)
+            self.last_evening_day = _day(d)
 
-    def _parcel(self, day: datetime) -> dict[str, int]:
-        rng = random.Random(day.strftime("%Y-%m-%d") + "mail")
-        parcel: dict[str, int] = {}
-        for item in rng.sample(C.MAIL_STAPLES, 3):
-            parcel[item] = parcel.get(item, 0) + 1
-        seeds = C.SEEDS_BY_SEASON[season_of(day)]
-        if seeds and rng.random() < 0.6:
-            s = rng.choice(seeds)
-            parcel[s] = parcel.get(s, 0) + 1
+    def _morning(self, d: datetime) -> None:
+        at = d.replace(hour=C.DELIVERY_HOUR, minute=0, second=0, microsecond=0)
+        delivered: dict[str, int] = {}
+        due = [o for o in self.orders if o["due"] <= _day(d)]
+        self.orders = [o for o in self.orders if o["due"] > _day(d)]
+        for o in due:
+            delivered[o["item"]] = delivered.get(o["item"], 0) + int(o["n"])
+        if d.weekday() == C.SUPPLY_WEEKDAY:
+            for item, n in C.WEEKLY_SUPPLY.items():
+                delivered[item] = delivered.get(item, 0) + n
+            self.mailbox.append(C.SUPPLY_LETTER)
+        for item, n in delivered.items():
+            self.parcels[item] = self.parcels.get(item, 0) + n
+        if delivered:
+            self.log("mail", f"{C.COURIER}把包裹放在了门口", actor="world", at=at)
+        rng = random.Random(_day(d) + "morning")
         if rng.random() < 0.15:
-            f = rng.choice(C.MAIL_FURNITURE)
-            parcel[f] = parcel.get(f, 0) + 1
-        return parcel
+            self.mailbox.append(rng.choice(C.LETTERS))
+            self.log("mail", "邮箱里多了一封信", actor="world", at=at)
+        if rng.random() < 0.5:
+            text, spawn, _ = _weighted(rng, [((t, sp, w), w) for t, sp, w in C.DAILY_EVENTS])
+            if spawn and self._count_finds() < MAX_BEACH_FINDS + 1:
+                self._spawn_find(spawn)
+            self.log("event", text, actor="world", at=d.replace(hour=7, minute=0, second=0, microsecond=0))
+
+    def _evening(self, d: datetime) -> None:
+        if not self.sale_box:
+            return
+        total = sum(C.SELL_PRICES.get(n, 0) * c for n, c in self.sale_box.items())
+        sold = self.format_items(self.sale_box)
+        self.money += total
+        self.sale_box.clear()
+        at = d.replace(hour=C.PICKUP_HOUR, minute=0, second=0, microsecond=0)
+        self.log("trade", f"{C.COURIER}收走了寄售箱里的{sold}，入账 {total} {C.CURRENCY}", actor="world", at=at)
+
+    def pet_temper(self, dt: datetime | None = None) -> str:
+        """The cat's mood for the day: rolled once per date, stable all day."""
+        rng = random.Random(_day(dt or self.now()) + "temper")
+        return _weighted(rng, C.PET_TEMPERS)
 
     # ================================================================== objects
 
@@ -244,7 +288,8 @@ class World:
         return o
 
     def here(self) -> list[Obj]:
-        return [o for o in self.objects.values() if o.room == self.location]
+        return [o for o in self.objects.values()
+                if o.room == self.location and not (o.id == "parcel" and not self.parcels)]
 
     def resolve(self, ref: str) -> Obj:
         """An object in the current room by id ('pot#1') or name ('绿萝')."""
@@ -352,7 +397,11 @@ class World:
             off = "，但不太适应这个季节" if self.season() not in crop.seasons else ""
             return f"{o.name}[{o.id}]（{crop.name}{stage}，土{wet}{off}）"
         if o.id == "mailbox":
-            return f"邮箱[mailbox]（{'里面有东西' if self.mailbox else '空的'}）"
+            return f"邮箱[mailbox]（{f'有 {len(self.mailbox)} 封信' if self.mailbox else '空的'}）"
+        if o.id == "parcel":
+            return f"门口的包裹[parcel]（{sum(self.parcels.values())} 件东西）"
+        if o.id == "consign":
+            return f"寄售箱[consign]（{'放着 ' + self.format_items(self.sale_box) + '，傍晚收走' if self.sale_box else '空的'}）"
         if o.id == "shelf":
             n = sum(self.shelf.values())
             return f"收藏架[shelf]（{'摆着 ' + str(n) + ' 件收藏' if n else '还空着'}）"
@@ -362,7 +411,7 @@ class World:
         h, e = self.resident["hunger"], self.resident["energy"]
         hunger = "很饿" if h >= 75 else "有点饿" if h >= 45 else "不饿"
         energy = "很困" if e <= 20 else "有点累" if e <= 45 else "精神不错"
-        return f"{hunger}，{energy}"
+        return f"{hunger}，{energy}，钱包里有 {self.money} {C.CURRENCY}"
 
     def look(self) -> str:
         now = self.now()
@@ -371,7 +420,8 @@ class World:
         if self.pet["room"] == self.location:
             p = self.pet
             mood = "饿得直叫" if p["hunger"] >= 80 else "在打盹" if p["affection"] >= 50 else "在角落里看着你"
-            objs.append(f"猫咪{p['name']}（{mood}）")
+            temper = {"黏人": "，今天好像特别黏人", "傲娇": "，今天有点爱答不理", "烦躁": "，今天脾气不太好"}.get(self.pet_temper(), "")
+            objs.append(f"猫咪{p['name']}（{mood}{temper}）")
         dark = "，屋里有点暗" if is_dark(now) and not room.outdoor else ""
         lines = [
             f"时间：{now:%Y-%m-%d %H:%M}（{period_of(now)}，{SEASON_ZH[season_of(now)]}季），天气：{self.weather()}{dark}",
@@ -399,10 +449,15 @@ class World:
             "resident": self.resident,
             "pet": self.pet,
             "dirt": self.dirt,
+            "money": self.money,
             "mailbox": self.mailbox,
+            "parcels": self.parcels,
+            "sale_box": self.sale_box,
+            "orders": self.orders,
             "shelf": self.shelf,
             "last_tick": self.last_tick,
-            "last_mail_day": self.last_mail_day,
+            "last_morning_day": self.last_morning_day,
+            "last_evening_day": self.last_evening_day,
             "next_id": self._next_id,
         }
 
@@ -422,10 +477,23 @@ class World:
         self.resident.update(data.get("resident", {}))
         self.pet.update(data.get("pet", {}))
         self.dirt.update(data.get("dirt", {}))
-        self.mailbox = dict(data.get("mailbox", {}))
         self.shelf = dict(data.get("shelf", {}))
-        self.last_mail_day = data.get("last_mail_day", self.last_mail_day)
         self._next_id = int(data.get("next_id", self._next_id))
+        if version < 3:
+            # v2 (M1): the mailbox held free daily parcels; the economy did not exist yet.
+            self.parcels = {k: int(v) for k, v in (data.get("mailbox") or {}).items()}
+            self.mailbox = [C.WELCOME_LETTER]
+            last = data.get("last_mail_day")
+            if last:
+                self.last_morning_day = self.last_evening_day = last
+            return
+        self.money = int(data.get("money", self.money))
+        self.mailbox = list(data.get("mailbox", []))
+        self.parcels = {k: int(v) for k, v in data.get("parcels", {}).items()}
+        self.sale_box = {k: int(v) for k, v in data.get("sale_box", {}).items()}
+        self.orders = list(data.get("orders", []))
+        self.last_morning_day = data.get("last_morning_day", self.last_morning_day)
+        self.last_evening_day = data.get("last_evening_day", self.last_evening_day)
 
     def _migrate_v1(self, data: dict[str, Any]) -> None:
         """v1 (M0): inventory was a list of object ids; shells lived as objects."""
