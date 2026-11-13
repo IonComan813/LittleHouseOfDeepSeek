@@ -1,0 +1,88 @@
+# 在 Windows（Server 2025）上安装
+
+适用：DSH 桌面版 0.2.2-rc.2（或 0.2.x 的更新版本）。
+
+## 1. 准备 Python
+
+需要 **Python 3.10 或更新**（推荐 3.12/3.13），从 python.org 下载安装，安装时勾选 **Add python.exe to PATH**。
+
+打开一个**新的** PowerShell 确认：
+
+```powershell
+python --version
+```
+
+> Windows Server 上没有应用商店版 Python 的"假 python"问题；如果提示找不到命令，就是 PATH 没加上。
+
+## 2. 获取代码
+
+```powershell
+git clone https://github.com/IonComan813/LittleHouseOfDeepSeek.git
+cd LittleHouseOfDeepSeek
+```
+
+放在一个以后不会移动的位置：插件是以链接的方式装进 DSH 的，移动目录后需要重新运行安装脚本。
+
+## 3. 装进 DSH
+
+```powershell
+python scripts\install.py
+```
+
+脚本会自动判断 profile：优先 `desktop`，其次 `web`。想指定的话用 `--profile 名字`。
+profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
+
+脚本只做两件事：
+1. 建一个目录联接：`profiles\<profile>\node_modules\dsh-little-house` → 仓库里的 `plugin\`；
+2. 在 `profiles\<profile>\package.json` 里登记这个 bundle（改之前会备份成 `package.json.bak-时间`）。
+
+## 4. 重启 DSH 并等她醒来
+
+完全退出 DSH（确认任务管理器里没有残留的 DSH 进程），再打开。
+
+- 小屋进程会在后台自动启动（`python -m littlehouse`，端口 8770，只监听本机）。
+- 大约 **2 分钟**后，第一次唤醒发生：会话列表里出现 **「小屋生活 · 日期」**，点进去就能看到她做了什么。
+- 之后每隔 90～240 分钟随机醒来一次，00:30～08:00 不打扰，每天最多 8 次。
+
+她的小记写在 `%USERPROFILE%\.dsh\little-house\diary\日期.jsonl`。
+
+## 5. 改配置（可选）
+
+在 `%USERPROFILE%\.dsh\profiles\<profile>\cordis.patch.yml` 末尾加一段（**patch 会整体替换 config，想保留的键都要写上**）：
+
+```yaml
+- id: little-house
+  config:
+    personaFile: 'C:\Users\你\Documents\my-persona.md'   # 自己的人设
+    house:
+      python: 'python'          # 找不到 python 时，写 python.exe 的完整路径
+      port: 8770
+      autoStart: true
+    wake:
+      minIntervalMinutes: 90
+      maxIntervalMinutes: 240
+      quietHours: '00:30-08:00'
+      maxPerDay: 8
+      firstWakeDelaySeconds: 120
+      maxActionsPerWake: 12
+```
+
+保存后重启 DSH。
+
+## 卸载
+
+```powershell
+python scripts\install.py --uninstall
+```
+
+小屋存档（`%USERPROFILE%\.dsh\little-house\`）不会被删除。
+
+## 排错
+
+| 现象 | 处理 |
+| --- | --- |
+| 一直没有「小屋生活」会话 | 看 `%USERPROFILE%\.dsh\little-house\plugin-state.json` 是否生成；没有的话插件没加载，重新运行安装脚本并确认重启了 DSH |
+| 有会话但她什么都没做 | 在会话里看报错；多半是小屋进程没起来（检查 `python --version`，或在配置里写 python 的完整路径） |
+| 端口 8770 被占用 | 配置里把 `house.port` 改成别的 |
+| 想立刻看到一次唤醒 | 临时把 `firstWakeDelaySeconds` 改成 `10` 再重启 DSH |
+| DSH 关了但 python 还在跑 | 正常：DSH 被强制关闭时来不及通知小屋退出。下次 DSH 启动会直接连上它；想关掉就在任务管理器结束那个 python 进程（存档每次行动后都会写盘） |

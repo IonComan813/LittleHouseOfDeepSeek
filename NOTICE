@@ -1,0 +1,18 @@
+Little House of DeepSeek
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This project's design draws on the following projects. No source files are
+copied verbatim at this time; if code is ported later, the original copyright
+and license notices will be kept in the ported files and listed here.
+
+- surfcore — https://github.com/Mieksido/surfcore
+  MIT License, Copyright (c) 2026 Derpyu520 and qq-bridge / QSH contributors
+  (ideas: per-session tool restriction for agent presets, random "purpose"
+  wake gates, decaying memory card)
+
+- dsh-onebot — https://github.com/mario841859784/dsh-onebot
+  BSD 3-Clause License, Copyright (c) 2026, dsh-external contributors
+  (ideas: per-agent scope composition via agent presets)
+
+- DeepSeek Harness — https://github.com/deepseek-ai/deepseek-harness
+  MIT License (host APIs used by the plugin)

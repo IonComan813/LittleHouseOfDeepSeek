@@ -1,0 +1,47 @@
+# dsh-little-house bundle layer.
+#
+# 1. `little-house`: the host-level service (house process + random wake).
+# 2. `preset-little-house`: the agent preset the life session runs. It has no
+#    shell, file or web tools on purpose — the resident can only act through
+#    the house_* tools.
+#
+# To change settings, override the `little-house` row by id in your profile's
+# cordis.patch.yml (a patch replaces the whole `config`, so restate every key
+# you want to keep).
+- insert:
+    - id: little-house
+      name: dsh-little-house
+      config:
+        wake:
+          minIntervalMinutes: 90
+          maxIntervalMinutes: 240
+          quietHours: '00:30-08:00'
+          maxPerDay: 8
+          firstWakeDelaySeconds: 120
+          maxActionsPerWake: 12
+
+    - id: preset-little-house
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: little-house
+        name: 小屋生活
+        description: 小屋居民的生活会话：只能通过 house_* 工具在小屋里行动。
+        order: 90
+        plugins:
+          - id: little-house-agent-scope
+            name: dsh-little-house/agent-scope
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 20000
+                  headChars: 16000
+                  tailChars: 2000

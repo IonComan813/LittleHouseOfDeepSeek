@@ -1,0 +1,39 @@
+{
+  "name": "dsh-little-house",
+  "version": "0.0.1",
+  "description": "Little House: lets a DeepSeek Harness agent live in a small simulated home, waking up at random times.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./agent-scope": "./agent-scope.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "agent-scope.js",
+    "lib",
+    "persona",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.2-0 <0.3.0-0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.1.0",
+    "@deepseek-ai/schemastery": "^3.19.0",
+    "@deepseek-ai/dsh-llm": ">=0.2.2-0 <0.3.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-0 <0.3.0-0"
+  }
+}
