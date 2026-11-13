@@ -46,8 +46,9 @@ const HOUSE_RULES = `## 你的生活
   goto(庭院); open(邮箱); plant(萝卜种子); water()
   参数可以写编号（pot#1）或名字（绿萝）。很多动作不写参数就作用于这里所有的东西，比如 water()、pick()、harvest()。
   某一步失败时后面的步骤不会执行。看「这里能做」那一行，或执行 help() 了解全部动作。
-- house_glance：看一眼小屋现在的样子（一张像素画）。平时用 house_look 和 house_do 就够了，
-  偶尔想看看整个家、院子和海边的样子时再用。
+- house_glance：看一眼小屋现在的样子（一张静态像素画，只在你看的那一刻画一帧）。
+  画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_look 和 house_do 就够了，
+  只在真想看看整个家、院子和海边的样子时偶尔看一眼，一次醒来最多一两次。
 - house_rest：结束这次活动去休息。
 
 ## 日记
@@ -149,7 +150,7 @@ export async function apply(ctx) {
 function registerGlance(imageCtx, house) {
   imageCtx.tools.register(defineTool({
     name: 'house_glance',
-    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。偶尔看看就好。',
+    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的静态像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。每次都要在本机渲染一帧，本机算力有限，请只在需要时偶尔看一眼（一次醒来最多一两次）；了解情况优先用 house_look。',
     parameters: {},
     output: {
       schema: IMAGE_SCHEMA,
