@@ -54,8 +54,15 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 
 ## 看看小屋（只读画面）
 
-在 RDP 桌面上双击仓库根目录的 **`view.bat`**（或 `cd house; python -m littlehouse --view`）。
-窗口只显示、不接受任何键鼠操作——在小屋里做事的只有她。窗口太大可以用 `view.bat --scale 1`。
+在 RDP 桌面上双击仓库根目录的 **`view.bat`**：
+
+- 小屋已经在运行（DSH 开着）：它只是让**同一个小屋进程**打开动画窗口，不会再起一个渲染进程；
+- 小屋没在运行：直接启动小屋并打开窗口（之后 DSH 启动时会连上这个小屋）。
+
+窗口是**只读**的：能看她走来走去、浇水、钓鱼、摸猫，但不接受任何键鼠操作；**关掉窗口不影响小屋**，她照样生活。
+窗口太大可以用 `view.bat --scale 1`。只有窗口开着时才持续渲染；关着时不画任何东西（她 `house_glance` 时只渲染一帧）。
+
+想让 DSH 一启动就把窗口打开，在配置里把 `house.window` 设为 `true`。
 
 底栏从左到右：日期、时间、天气、季节、贝币；右边两条是她的饱腹和精力，粉色那条是团子的亲密度。
 
@@ -74,6 +81,7 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
       python: 'python'          # 找不到 python 时，写 python.exe 的完整路径
       port: 8770
       autoStart: true
+      window: false             # true = DSH 启动时打开只读动画窗口
     wake:
       minIntervalMinutes: 90
       maxIntervalMinutes: 240

@@ -21,6 +21,7 @@ import pygame  # noqa: E402
 
 from . import content as C  # noqa: E402
 from . import scene as S  # noqa: E402
+from .anim import Pose, snapshot_pose  # noqa: E402
 from .clock import season_of  # noqa: E402
 
 T = S.TILE
@@ -37,35 +38,51 @@ PAL = {
     "s": (238, 214, 160), "S": (220, 190, 130), "p": (240, 170, 180), "P": (170, 130, 190),
     "e": (150, 146, 140), "E": (204, 198, 190), "f": (248, 212, 180), "F": (110, 70, 50),
     "t": (140, 98, 64), "T": (98, 66, 46), "q": (90, 170, 160),
+    # the whale girl
+    "u": (58, 98, 200), "U": (110, 160, 236), "v": (34, 50, 112), "i": (60, 130, 230),
+    "M": (52, 92, 186), "m": (250, 250, 255),
 }
 
-RESIDENT = [
-    "......FFFF......",
-    "....FFFFFFFF....",
-    "...FFFFFFFFFF...",
-    "..FFFFFFFFFFFF..",
-    "..FFFffffffFFF..",
-    "..FFffffffffFF..",
-    "..FfffkffkfffF..",
-    "..FfffkffkfffF..",
-    "..Ffpffffffpff..",
-    "...ffffrrffff...",
-    "....ffffffff....",
-    ".....ffffff.....",
-    "....rrrrrrrr....",
-    "...rrrrrrrrrr...",
-    "..frrcccccccrf..",
-    "..frrcccccccrf..",
-    "..ffrcccccccff..",
-    "...rrcccccccr...",
-    "...rrcccccccr...",
-    "..rrrrrrrrrrrr..",
-    "..rrrrrrrrrrrr..",
-    "...rrrrrrrrrr...",
-    "....ff....ff....",
-    "....ff....ff....",
-    "...kkk....kkk...",
-    "................",
+# The resident: a blue-haired whale girl (ahoge, fin ears, whale tail, blue
+# and white maid dress with a little whale on the apron). 20x28, two walk frames.
+_GIRL_TOP = [
+    ".........U..........",
+    "........UU..........",
+    "......uuuuuuu.......",
+    ".....uuuuuuuuu......",
+    "....uuuuuuuuuuu.....",
+    "....uuuUuuuuUuu.....",
+    "....uuffffffffu.....",
+    ".vu.uffiiffiiffu.uv.",
+    ".vuuuffiiffiifuuuv..",
+    "..vu.ufpffffpfu.uv..",
+    ".....uuffffffuu.....",
+    "....uuuffrrffuuu....",
+    "....uuu.ffff.uuu....",
+    "....uuMMmmmmMMuu....",
+    "...uuMMMmMMmMMMuu...",
+    "...uuMMmmmmmmMMuu...",
+    "..ufMMmmmmmmmmMMfu..",
+    "...uMMmmmBmmmmMMu...",
+    "...uMMmmmmmmmmMMu.vv",
+    "..uMMMmmmmmmmmMMMuvv",
+    "..MMMMMmmmmmmMMMMvuv",
+    "..MmMmMmMmMmMmMmM.vv",
+    "...MMMMMMMMMMMMM..v.",
+]
+RESIDENT = _GIRL_TOP + [
+    ".....xx....xx.......",
+    ".....xx....xx.......",
+    ".....xx....xx.......",
+    "....kkk....kkk......",
+    "....................",
+]
+RESIDENT_STEP = _GIRL_TOP + [
+    "......xx..xx........",
+    ".....xx....xx.......",
+    "....xx......xx......",
+    "...kkk......kkk.....",
+    "....................",
 ]
 CAT = [
     "...o.....o......",
@@ -116,15 +133,15 @@ SHELF_DOTS = "xpSqECBW"
 _cache: dict[tuple, pygame.Surface] = {}
 
 
-def sprite(grid: list[str]) -> pygame.Surface:
-    key = ("grid", tuple(grid))
+def sprite(grid: list[str], flip: bool = False) -> pygame.Surface:
+    key = ("grid", tuple(grid), flip)
     if key not in _cache:
         surf = pygame.Surface((len(grid[0]), len(grid)), pygame.SRCALPHA)
         for y, row in enumerate(grid):
             for x, ch in enumerate(row):
                 if ch != ".":
                     surf.set_at((x, y), PAL[ch])
-        _cache[key] = surf
+        _cache[key] = pygame.transform.flip(surf, True, False) if flip else surf
     return _cache[key]
 
 
@@ -599,32 +616,112 @@ def _hud(surf, world, now, weather):
     _bar(surf, bx + 58, H + 7, world.pet["affection"], PAL["p"])
 
 
+# --------------------------------------------------------------------------- action effects
+
+
+def _effect(surf, pose, world, t):
+    """Small overlay for what she is doing (frozen mid-way in a still picture)."""
+    e = pose.effect
+    if not e:
+        return
+    px, py = int(pose.x * T + 8), int(pose.y * T + T - 28)  # top of her head
+    p = pose.effect_p
+    wobble = math.sin(t * 6)
+    focus_rect = None
+    if pose.focus in S.FIXTURES:
+        focus_rect = _r(*S.FIXTURES[pose.focus])
+    if e == "water":
+        target = focus_rect.center if focus_rect else (px + 10 * pose.facing, py + 22)
+        for i in range(4):
+            k = (p + i * 0.25) % 1.0
+            pygame.draw.circle(surf, PAL["B"], (target[0] - 6 + i * 4, int(target[1] - 10 + 12 * k)), 1)
+    elif e == "steam":
+        r = focus_rect or pygame.Rect(px - 8, py, 16, 16)
+        for i in range(3):
+            k = (p + i * 0.33) % 1.0
+            pygame.draw.circle(surf, PAL["x"], (r.centerx - 5 + i * 5 + int(wobble), int(r.top - 2 - 10 * k)), 2)
+    elif e in ("sparkle", "pop"):
+        for i in range(4):
+            a = t * 3 + i * math.pi / 2
+            x, y = px + int(12 * math.cos(a)), py + 14 + int(9 * math.sin(a))
+            surf.set_at((x, y), PAL["y"])
+            surf.set_at((x + 1, y), PAL["x"])
+    elif e == "dirt":
+        for i in range(3):
+            pygame.draw.circle(surf, PAL["t"], (px - 6 + i * 6, py + 27 - int(4 * p)), 1)
+    elif e == "fishing":
+        rod_tip = (px + 14 * pose.facing, py + 4)
+        pygame.draw.line(surf, PAL["d"], (px + 4 * pose.facing, py + 18), rod_tip, 1)
+        bob = (rod_tip[0] + 18 * pose.facing, S.SEA[1] * T + 6 + int(2 * wobble))
+        pygame.draw.line(surf, PAL["E"], rod_tip, bob, 1)
+        pygame.draw.circle(surf, PAL["r"], bob, 2)
+    elif e == "hearts":
+        for i in range(2):
+            k = (p + i * 0.5) % 1.0
+            x, y = px - 4 + i * 9, int(py - 2 - 10 * k)
+            pygame.draw.circle(surf, PAL["p"], (x - 1, y), 2)
+            pygame.draw.circle(surf, PAL["p"], (x + 2, y), 2)
+            pygame.draw.polygon(surf, PAL["p"], [(x - 3, y + 1), (x + 4, y + 1), (x + 1, y + 4)])
+    elif e == "eat":
+        pygame.draw.ellipse(surf, PAL["x"], (px + 6 * pose.facing - 4, py + 17, 9, 4))
+        pygame.draw.circle(surf, PAL["o"], (px + 6 * pose.facing, py + 17), 2)
+    elif e == "zzz":
+        for i in range(3):
+            k = (p + i * 0.33) % 1.0
+            x, y = px + 8 + i * 4, int(py - 2 - 12 * k)
+            pygame.draw.lines(surf, PAL["x"], False, [(x, y), (x + 3, y), (x, y + 3), (x + 3, y + 3)])
+    elif e in ("paper", "coin", "look", "speech"):
+        bubble = pygame.Rect(px - 7, py - 13, 14, 10)
+        pygame.draw.rect(surf, PAL["x"], bubble, border_radius=3)
+        pygame.draw.polygon(surf, PAL["x"], [(px - 2, bubble.bottom - 1), (px + 2, bubble.bottom - 1), (px, bubble.bottom + 2)])
+        if e == "coin":
+            pygame.draw.circle(surf, PAL["y"], bubble.center, 3)
+        elif e == "paper":
+            pygame.draw.rect(surf, PAL["C"], (bubble.centerx - 3, bubble.top + 2, 6, 6))
+        elif e == "look":
+            pygame.draw.circle(surf, PAL["k"], bubble.center, 2, 1)
+        else:
+            for dx in (-3, 0, 3):
+                surf.set_at((bubble.centerx + dx, bubble.centery), PAL["k"])
+
+
+def _base(season: str) -> pygame.Surface:
+    """Terrain and floors: the expensive, rarely-changing layer, cached per season."""
+    key = ("base", season)
+    if key not in _cache:
+        surf = pygame.Surface((W, H))
+        _grass(surf, _r(*S.YARD), season)
+        pygame.draw.rect(surf, PAL["S"], _r(S.FRONT_DOOR_COLS[0], S.YARD[1], 2, S.YARD[3]))
+        _sand(surf, _r(*S.BEACH))
+        _floor_wood(surf, _r(*S.ROOM_FLOORS["bedroom"]), (196, 150, 108), (176, 130, 92))
+        _floor_wood(surf, _r(*S.ROOM_FLOORS["living_room"]), (214, 172, 120), (190, 148, 100))
+        _floor_tiles(surf, _r(*S.ROOM_FLOORS["kitchen"]))
+        for y in S.INNER_DOOR_ROWS:
+            for x in S.INNER_WALL_COLS:
+                pygame.draw.rect(surf, (200, 160, 112), _r(x, y))
+        _cache[key] = surf
+    return _cache[key]
+
+
 # --------------------------------------------------------------------------- main entry
 
 
-def render(world, t: float | None = None) -> pygame.Surface:
-    """Draw the whole world at 1x. ``t`` animates waves/rain (seconds)."""
+def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Surface:
+    """Draw the whole world at 1x.
+
+    ``pose`` places the resident (the live window passes the animated one);
+    without it the still picture freezes her latest action. ``t`` animates
+    waves, rain and effects (seconds).
+    """
     t = time.time() if t is None else t
+    pose = pose or snapshot_pose(world, t)
     now = world.now()
     hour = now.hour
     weather = world.weather()
     season = season_of(now)
     surf = pygame.Surface((W, H + S.HUD_H))
-
-    # outdoors
-    _grass(surf, _r(*S.YARD), season)
-    path = _r(S.FRONT_DOOR_COLS[0], S.YARD[1], 2, S.YARD[3])
-    pygame.draw.rect(surf, PAL["S"], path)
-    _sand(surf, _r(*S.BEACH))
+    surf.blit(_base(season), (0, 0))
     _sea(surf, _r(*S.SEA), t)
-
-    # floors and walls
-    _floor_wood(surf, _r(*S.ROOM_FLOORS["bedroom"]), (196, 150, 108), (176, 130, 92))
-    _floor_wood(surf, _r(*S.ROOM_FLOORS["living_room"]), (214, 172, 120), (190, 148, 100))
-    _floor_tiles(surf, _r(*S.ROOM_FLOORS["kitchen"]))
-    for y in S.INNER_DOOR_ROWS:
-        for x in S.INNER_WALL_COLS:
-            pygame.draw.rect(surf, (200, 160, 112), _r(x, y))
     _walls(surf, hour, weather)
 
     # dirt specks
@@ -637,7 +734,7 @@ def render(world, t: float | None = None) -> pygame.Surface:
                 surf.set_at((rng.randrange(fr.left, fr.right), rng.randrange(fr.top, fr.bottom)), (120, 100, 80))
 
     _, _, lamps = _darkness(hour)
-    recently_cooked = any(e.kind == "cook" and e.t >= (now.replace(microsecond=0)).isoformat()[:13] for e in world.events[-20:])
+    recently_cooked = pose.effect == "steam"
 
     # placed furniture (rugs first so they lie under everything)
     decor = [o for o in world.objects.values() if o.kind == "decor"]
@@ -679,20 +776,22 @@ def render(world, t: float | None = None) -> pygame.Surface:
         _find(surf, tx, ty, finds[fid].state.get("item", finds[fid].name))
 
     # the cat and the resident
-    asleep = hour < 6
+    asleep = hour < 6 and not pose.active  # in bed at night, unless she is up doing something
     pet = world.pet
     cx, cy = S.ANCHORS[pet["room"]]
-    rx, ry = S.resident_tile(world.location, world.resident.get("focus"), find_pos)
-    if pet["room"] == world.location and (cx, cy) == (rx, ry):
+    if pet["room"] == world.location and abs(cx - pose.x) < 1.5 and abs(cy - pose.y) < 1:
         cx += 2
     cat = CAT_ASLEEP if asleep or (pet["affection"] >= 50 and hour % 3 == 0) else CAT
     surf.blit(sprite(cat), (cx * T + 8, cy * T + T - len(cat)))
-    if asleep:  # she is in bed at night
+    if asleep:
         bx, by, _, _ = S.FIXTURES["bed"]
-        pygame.draw.circle(surf, PAL["F"], (bx * T + 16, by * T + 9), 6)
+        pygame.draw.circle(surf, PAL["u"], (bx * T + 16, by * T + 9), 6)
         pygame.draw.circle(surf, PAL["f"], (bx * T + 16, by * T + 11), 4)
     else:
-        surf.blit(sprite(RESIDENT), (rx * T, ry * T + T - len(RESIDENT)))
+        frame = RESIDENT_STEP if pose.walking and pose.step else RESIDENT
+        bob = 0 if pose.walking else int(math.sin(t * 2) > 0.6)  # idle breathing
+        surf.blit(sprite(frame, flip=pose.facing < 0), (int(pose.x * T) - 2, int(pose.y * T) + T - len(frame) - bob))
+        _effect(surf, pose, world, t)
 
     # light, weather, HUD
     out_a, in_a, _ = _darkness(hour)
@@ -710,6 +809,7 @@ def render(world, t: float | None = None) -> pygame.Surface:
 
 
 def render_png(world, scale: int = 1) -> bytes:
+    """One still frame as PNG (the "glance"): no window, no loop."""
     surf = render(world)
     if scale != 1:
         surf = pygame.transform.scale(surf, (surf.get_width() * scale, surf.get_height() * scale))

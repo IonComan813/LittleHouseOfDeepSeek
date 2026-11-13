@@ -20,7 +20,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
+import time
+
 from . import content as C
+from . import scene as S
 from .clock import SEASON_ZH, Clock, is_dark, period_of, season_of
 
 SAVE_VERSION = 3
@@ -132,6 +135,11 @@ class World:
         self.last_evening_day = _day(now if now.hour >= C.PICKUP_HOUR else now - timedelta(days=1))
         self.events: list[Event] = []
         self.event_sink: Callable[[Event], None] | None = None
+        # Animation beats (in memory only): one per successful action, with the
+        # waypoints she walked and what she did, for the picture to show.
+        self.beats: list[dict[str, Any]] = []
+        self._beat_seq = 0
+        self.last_path: list[str] = []
 
     # ================================================================== time
 
@@ -298,11 +306,47 @@ class World:
         for match in (lambda o: o.id == ref, lambda o: o.name == ref, lambda o: ref in o.name):
             found = [o for o in here if match(o)]
             if found:
-                self.resident["focus"] = found[0].id  # where she is standing, for the picture
+                self.stand_at(found[0].id)
                 return found[0]
         if ref in (self.pet["name"], "猫", "小猫") and self.pet["room"] == self.location:
             raise ActionError(f"用 pet()/feed() 和{self.pet['name']}互动吧。")
         raise ActionError(f"这里没有「{ref}」。")
+
+    # ================================================================== where she is (for the picture)
+
+    def tile(self) -> tuple[float, float]:
+        t = self.resident.get("tile")
+        if t and self.resident.get("tile_room") == self.location:
+            return float(t[0]), float(t[1])
+        return S.ANCHORS[self.location]
+
+    def stand_at(self, obj_id: str | None) -> None:
+        """Remember what she is using, and stand next to it."""
+        self.resident["focus"] = obj_id
+        if obj_id is None:
+            spot = S.ANCHORS[self.location]
+        else:
+            finds = [o.id for o in self.objects.values() if o.kind == "find"]
+            decor = [o.id for o in self.objects.values() if o.kind == "decor" and o.room == self.location]
+            spot = S.spot_of(obj_id, self.location, S.find_spots(finds), S.decor_spots(self.location, decor))
+        self.resident["tile"] = [spot[0], spot[1]]
+        self.resident["tile_room"] = self.location
+
+    def stand_near(self, point: tuple[float, float]) -> None:
+        self.resident["tile"] = [point[0], point[1]]
+        self.resident["tile_room"] = self.location
+
+    def record_beat(self, action: str, rooms: list[str], start: tuple[float, float]) -> None:
+        self._beat_seq += 1
+        self.beats.append({
+            "seq": self._beat_seq,
+            "t": time.time(),
+            "action": action,
+            "room": self.location,
+            "focus": self.resident.get("focus"),
+            "waypoints": S.route(rooms, start, self.tile()),
+        })
+        del self.beats[:-100]
 
     def resolve_room(self, ref: str) -> C.Room:
         ref = str(ref).strip()

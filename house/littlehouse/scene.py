@@ -102,16 +102,56 @@ def decor_spots(room: str, decor_ids: list[str]) -> dict[str, tuple[int, int]]:
     return {d: slots[i % len(slots)] for i, d in enumerate(decor_ids)} if slots else {}
 
 
+Point = tuple[float, float]
+
+# Walking between areas goes through these points (from the first area's side
+# to the second's); the reverse direction uses them reversed.
+DOORS: dict[tuple[str, str], list[Point]] = {
+    ("bedroom", "living_room"): [(11, 8), (13, 8)],
+    ("living_room", "kitchen"): [(26, 8), (28, 8)],
+    ("living_room", "yard"): [(19.5, 11), (19.5, 13)],
+    ("yard", "beach"): [(19.5, 18), (19.5, 20)],
+}
+
+
+def door_points(a: str, b: str) -> list[Point]:
+    if (a, b) in DOORS:
+        return list(DOORS[(a, b)])
+    if (b, a) in DOORS:
+        return list(reversed(DOORS[(b, a)]))
+    return []
+
+
+def route(rooms: list[str], start: Point, end: Point) -> list[Point]:
+    """Waypoints from ``start`` to ``end`` walking through ``rooms`` in order."""
+    points: list[Point] = [start]
+    for a, b in zip(rooms, rooms[1:]):
+        points += door_points(a, b)
+    points.append(end)
+    return points
+
+
+def spot_of(obj_id: str, room: str, find_pos: dict[str, tuple[int, int]],
+            decor_pos: dict[str, tuple[int, int]] | None = None) -> Point:
+    """Where she stands to use something: just below or beside it."""
+    if obj_id in find_pos:
+        x, y = find_pos[obj_id]
+        return x + 1, y
+    if decor_pos and obj_id in decor_pos:
+        x, y = decor_pos[obj_id]
+        return x, min(y + 1, _area_bottom(room))
+    rect = FIXTURES.get(obj_id)
+    if rect and _in_area(room, rect[0], rect[1]):
+        x, y, w, h = rect
+        return x + w // 2, min(y + h, _area_bottom(room))
+    return ANCHORS[room]
+
+
 def resident_tile(location: str, focus: str | None, find_pos: dict[str, tuple[int, int]]) -> tuple[int, int]:
     """Stand next to the thing she last touched, else at the room's anchor."""
     if focus:
-        if focus in find_pos:
-            x, y = find_pos[focus]
-            return x + 1, y
-        rect = FIXTURES.get(focus)
-        if rect and _in_area(location, rect[0], rect[1]):
-            x, y, w, h = rect
-            return x + w // 2, min(y + h, _area_bottom(location))
+        spot = spot_of(focus, location, find_pos)
+        return int(spot[0]), int(spot[1])
     return ANCHORS[location]
 
 

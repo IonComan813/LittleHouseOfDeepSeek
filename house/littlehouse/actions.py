@@ -45,15 +45,36 @@ def help_text() -> str:
     return "\n".join(f"{a.signature:<20} {a.help}" for a in ACTIONS.values())
 
 
+# Where she goes for actions that do not name an object.
+ACTION_SPOTS = {"fish": "rock", "cook": "stove", "catalog": "catalog", "order": "catalog", "sell": "consign"}
+
+
 def perform(w: World, name: str, args: list) -> str:
-    """Run one action with its energy cost applied."""
+    """Run one action with its energy cost applied, and record an animation beat."""
     spec = ACTIONS[name]
     if spec.effort and w.resident["energy"] < TIRED_THRESHOLD:
         raise ActionError("你太累了，做不动了。先 rest() 歇一歇，或者吃点东西。")
+    start_room, start = w.location, w.tile()
+    w.last_path = []
     text = spec.fn(w, *args)
     if spec.effort:
         w.resident["energy"] = max(0.0, w.resident["energy"] - spec.effort)
+    spot = ACTION_SPOTS.get(name)
+    if spot:
+        w.stand_at(spot)
+    elif name in ("pet", "feed", "call") and w.pet["room"] == w.location:
+        ax, ay = C_ANCHOR(w.pet["room"])
+        w.stand_near((ax + 1, ay))
+    elif name == "eat" and w.location == "kitchen":
+        w.stand_at("table")
+    w.record_beat(name, [start_room, *w.last_path] if w.location != start_room else [start_room], start)
     return text
+
+
+def C_ANCHOR(room: str) -> tuple[int, int]:
+    from . import scene
+
+    return scene.ANCHORS[room]
 
 
 # ---------------------------------------------------------------- helpers
@@ -101,7 +122,8 @@ def _goto(w: World, place: str) -> str:
         return f"你已经在{room.name}了。"
     path = w.path_to(room.id)
     w.location = room.id
-    w.resident["focus"] = None
+    w.last_path = path
+    w.stand_at(None)
     w.log("move", f"走到了{room.name}")
     via = "、".join(C.ROOMS[r].name for r in path[:-1])
     return f"你{'穿过' + via + '，' if via else ''}来到了{room.name}。"
@@ -164,6 +186,7 @@ def _rest(w: World, ref: str = "") -> str:
         if spot is None:
             raise ActionError("这里没地方躺，去客厅或卧室吧。")
         where = w.objects[spot]
+        w.stand_at(spot)
     if _minutes_since(w, w.resident.get("last_rest", 0.0)) < 60:
         return f"你在{where.name}上躺了一下，但刚歇过，没什么困意。"
     gain = 25.0 if where.id == "bed" else 15.0
@@ -302,6 +325,8 @@ def _water(w: World, ref: str = "") -> str:
     targets = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind in ("plant", "plot")]
     if not targets:
         raise ActionError("这里没有需要浇水的东西。")
+    if not ref:
+        w.stand_at(targets[0].id)
     for o in targets:
         if o.kind not in ("plant", "plot"):
             raise ActionError(f"{o.name}不需要浇水。")
@@ -424,6 +449,8 @@ def _harvest(w: World, ref: str = "") -> str:
     plots = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind == "plot" and o.state.get("ripe")]
     if not plots:
         raise ActionError("这里没有可以收获的作物。")
+    if not ref:
+        w.stand_at(plots[0].id)
     got: dict[str, int] = {}
     seeds = [p.state.get("seed") for p in plots]
     for p in plots:
@@ -451,6 +478,8 @@ def _pick(w: World, ref: str = "") -> str:
         if o.kind != "find":
             raise ActionError(f"{o.name}拿不起来。")
     names: dict[str, int] = {}
+    if not ref:
+        w.stand_at(finds[-1].id)
     for o in finds:
         del w.objects[o.id]
         w.add_item(o.state["item"])
@@ -506,6 +535,7 @@ def _display(w: World, ref: str = "") -> str:
         names = [n for n in w.items_with_tag("collectible") if "readable" not in C.ITEMS[n].tags]
     if not names:
         raise ActionError("背包里没有可以摆的收藏品。")
+    w.stand_at("shelf")
     moved: dict[str, int] = {}
     for n in names:
         if "collectible" not in C.ITEMS.get(n, C.Item(n)).tags:

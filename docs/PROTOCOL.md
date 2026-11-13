@@ -75,7 +75,8 @@ say("今天的海很安静")
 | GET | `/help` | `{ok, text}` |
 | GET | `/events?since=…&actor=resident` | 事件（可按时间、角色过滤，最多 50 条）；唤醒时用来生成「上次醒着的时候，你……」 |
 | GET | `/news?since=YYYY-MM-DDTHH:MM:SS` | 这之后「世界自己发生」的事（最多 20 条），用于唤醒时告诉她「你不在的时候」 |
-| GET | `/state` | 完整世界状态（只读画面窗口用它来画） |
+| GET | `/state` | 完整世界状态（JSON） |
+| GET / POST | `/window` | 查看 / 打开关闭动画窗口：body `{open: bool, scale?: 1-4}`（没有 pygame-ce 时 501） |
 | GET | `/screenshot?scale=1\|2` | 当前画面的 PNG（需要 pygame-ce，否则 501），同时存一份到 `world/latest.png` |
 | POST | `/do` | body `{script}` → `{ok, text, results[]}`；执行后立即存档 |
 | POST | `/shutdown` | 存档并退出 |
@@ -108,6 +109,15 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 
 ## 画面
 
-`house_glance` 让她看一眼当前的像素画面（1280×872，DeepSeek 计约 600 token）。画面由 `house/littlehouse/render.py`
-程序化绘制（暖色田园风，无外部素材），她和你看到的是同一张图；只读窗口 `python -m littlehouse --view` 每 2 秒拉一次
-`/state` 重画，不接收任何输入。
+两种方式，同一个渲染器（`house/littlehouse/render.py`，pygame-ce 程序化像素画，无外部素材），都在**小屋进程内**：
+
+| 方式 | 什么时候渲染 | 画面 |
+| --- | --- | --- |
+| 静态「瞥一眼」 | 只在 `house_glance` / `GET /screenshot` 时渲染一帧 | 她站在最近一次动作的位置，动作定格在半途（水滴、热气、爱心……）；15 分钟前的动作不再显示 |
+| 动画窗口 | 只在窗口打开时（`view.bat`、`POST /window`、配置 `house.window`） | 按顺序回放她的动作：沿门口走过去、做动作；积压太多时加速，最多落后约 12 秒；无人走动时降到 4 fps |
+
+每个成功的动作都会产生一个「节拍」（`world.beats`，只在内存里）：走过的路点（经过门口）、动作名、目标物件。
+`anim.py` 把节拍变成姿态（位置、朝向、走路帧、特效），`render.render(world, t, pose)` 画出来。
+
+`house_glance` 给模型的是 1280×872 的 PNG（DeepSeek 计约 600 token）。
+

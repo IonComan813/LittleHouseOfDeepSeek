@@ -21,6 +21,7 @@ from urllib.parse import parse_qs
 
 from . import __version__
 from .actions import help_text
+from .display import Display, pygame_available
 from .script import ScriptError, format_results, run
 from .world import Event, World
 
@@ -69,8 +70,7 @@ class House:
             self.world.save(self.save_path)
 
     def screenshot(self, scale: int = 2) -> bytes:
-        """PNG of the house as it looks now (needs pygame-ce; no window is opened)."""
-        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        """One still frame as PNG (needs pygame-ce; no window, no loop)."""
         try:
             from . import render
         except ImportError as e:
@@ -89,7 +89,7 @@ class House:
             self.world.tick()
 
 
-def make_handler(house: House, token: str, on_shutdown=None):
+def make_handler(house: House, token: str, on_shutdown=None, display: Display | None = None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "LittleHouse/" + __version__
 
@@ -153,6 +153,8 @@ def make_handler(house: House, token: str, on_shutdown=None):
                 self._send(200, {"ok": True, "text": text})
             elif path == "/help":
                 self._send(200, {"ok": True, "text": help_text()})
+            elif path == "/window":
+                self._send(200, {"ok": True, "open": bool(display and display.is_open)})
             elif path == "/state":
                 with house.lock:
                     house.world.tick()
@@ -194,6 +196,16 @@ def make_handler(house: House, token: str, on_shutdown=None):
             path = self.path.split("?", 1)[0]
             if not self._guard():
                 return
+            if path == "/window":
+                body = self._body()
+                if body is None:
+                    return
+                if display is None or not pygame_available():
+                    self._send(501, {"ok": False, "error": "画面需要 pygame-ce：pip install pygame-ce"})
+                    return
+                display.request(bool(body.get("open", True)), body.get("scale"))
+                self._send(200, {"ok": True, "open": display.want_open})
+                return
             if path == "/shutdown":
                 house.save()
                 self._send(200, {"ok": True})
@@ -226,10 +238,14 @@ def make_handler(house: House, token: str, on_shutdown=None):
     return Handler
 
 
-def serve(state_dir: Path, port: int = 8770, tick_seconds: float = 30.0) -> None:
+def serve(state_dir: Path, port: int = 8770, tick_seconds: float = 30.0, window: bool = False, scale: int = 2) -> None:
+    """Run the house. The HTTP server lives on a thread; the main thread hosts
+    the (optional) live window, which only draws while it is open."""
     house = House(state_dir)
     token = os.environ.get("LH_HOUSE_TOKEN") or secrets.token_urlsafe(24)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(house, token, lambda: httpd.shutdown()))
+    stop = threading.Event()
+    display = Display(house, scale)
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(house, token, stop.set, display))
     actual_port = httpd.server_address[1]
     discovery = state_dir / "house.json"
     tmp = discovery.with_suffix(".tmp")
@@ -238,8 +254,6 @@ def serve(state_dir: Path, port: int = 8770, tick_seconds: float = 30.0) -> None
         "version": __version__, "startedAt": time.time(),
     }), encoding="utf-8")
     tmp.replace(discovery)
-
-    stop = threading.Event()
 
     def ticker() -> None:
         last_save = time.monotonic()
@@ -250,13 +264,20 @@ def serve(state_dir: Path, port: int = 8770, tick_seconds: float = 30.0) -> None
                 last_save = time.monotonic()
 
     threading.Thread(target=ticker, name="house-ticker", daemon=True).start()
+    threading.Thread(target=httpd.serve_forever, name="house-http", daemon=True).start()
     print(f"[little-house] listening on 127.0.0.1:{actual_port} (state: {state_dir})", flush=True)
+    if window:
+        if pygame_available():
+            display.request(True)
+        else:
+            print("[little-house] 画面需要 pygame-ce：pip install pygame-ce", flush=True)
     try:
-        httpd.serve_forever()
+        display.run(stop)  # returns when stop is set (POST /shutdown)
     except KeyboardInterrupt:
         pass
     finally:
         stop.set()
+        httpd.shutdown()
         house.save()
         httpd.server_close()
         try:

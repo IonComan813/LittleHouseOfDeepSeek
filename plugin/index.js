@@ -41,6 +41,7 @@ export default class LittleHouse extends Service {
       python: Schema.string().default(process.platform === 'win32' ? 'python' : 'python3').description('Python 可执行文件'),
       port: Schema.natural().default(8770).description('小屋本地端口（只监听 127.0.0.1）'),
       autoStart: Schema.boolean().default(true).description('需要时自动启动小屋进程'),
+      window: Schema.boolean().default(false).description('启动时打开只读动画窗口（需要 pygame-ce；关掉窗口不影响小屋）'),
     }).default({}),
     wake: Schema.object({
       enabled: Schema.boolean().default(true),
@@ -114,6 +115,13 @@ export default class LittleHouse extends Service {
     try {
       await this.house.ensure()
       this.log('info', 'house is up')
+      if (this.config.house.window) {
+        try {
+          await this.house.request('POST', '/window', { open: true })
+        } catch (e) {
+          this.log('warn', `could not open the house window: ${e.message}`)
+        }
+      }
     } catch (e) {
       this.log('warn', `house not available yet: ${e.message}`)
     }
