@@ -154,6 +154,12 @@ def main() -> None:
     print("  1. 完全退出并重新打开 DSH；")
     print("  2. 大约 2 分钟后，会话列表里会出现「小屋生活 · 日期」——那就是她第一次醒来。")
     print(f"  python 命令：{sys.executable}（如果插件找不到 python，在配置里把 house.python 设成这个路径）")
+    try:
+        import pygame  # noqa: F401
+        print("  pygame-ce 已安装：可以用 view.bat 打开只读画面，她也能 house_glance 看一眼小屋。")
+    except ImportError:
+        print("  提示：还没装 pygame-ce。想看像素画面（以及让她能看一眼小屋），运行：")
+        print(f"    {sys.executable} -m pip install pygame-ce")
 
 
 if __name__ == "__main__":

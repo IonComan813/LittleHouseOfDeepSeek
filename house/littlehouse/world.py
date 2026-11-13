@@ -298,6 +298,7 @@ class World:
         for match in (lambda o: o.id == ref, lambda o: o.name == ref, lambda o: ref in o.name):
             found = [o for o in here if match(o)]
             if found:
+                self.resident["focus"] = found[0].id  # where she is standing, for the picture
                 return found[0]
         if ref in (self.pet["name"], "猫", "小猫") and self.pet["room"] == self.location:
             raise ActionError(f"用 pet()/feed() 和{self.pet['name']}互动吧。")

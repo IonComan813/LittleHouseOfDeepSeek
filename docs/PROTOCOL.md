@@ -75,6 +75,8 @@ say("今天的海很安静")
 | GET | `/help` | `{ok, text}` |
 | GET | `/events?since=…&actor=resident` | 事件（可按时间、角色过滤，最多 50 条）；唤醒时用来生成「上次醒着的时候，你……」 |
 | GET | `/news?since=YYYY-MM-DDTHH:MM:SS` | 这之后「世界自己发生」的事（最多 20 条），用于唤醒时告诉她「你不在的时候」 |
+| GET | `/state` | 完整世界状态（只读画面窗口用它来画） |
+| GET | `/screenshot?scale=1\|2` | 当前画面的 PNG（需要 pygame-ce，否则 501），同时存一份到 `world/latest.png` |
 | POST | `/do` | body `{script}` → `{ok, text, results[]}`；执行后立即存档 |
 | POST | `/shutdown` | 存档并退出 |
 
@@ -90,6 +92,8 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 | `world/events.jsonl` | 事件日志（追加写），记忆系统的原料 |
 | `world/house.json` | 运行中小屋的端口与令牌（退出时删除） |
 | `diary/YYYY-MM-DD.md` | 她的日记：每天一个文件，每段标注时间和来源（小屋 / QQ）。写不写由她决定 |
+| `plugin.log` | 插件日志（超过 1 MB 轮换为 `.1`） |
+| `world/latest.png` | 最近一次截图 |
 | `plugin-state.json` | 今天的生活会话 id、唤醒次数、上次唤醒时间 |
 
 ## 日记工具
@@ -101,3 +105,9 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 | `diary_write(entry)` | 往今天的日记里追加一段（最多 2000 字） |
 | `diary_read(day?)` | 读某天的日记：今天 / 昨天 / 前天 / YYYY-MM-DD |
 | `house_rest(note?)` | 结束活动；note 可选，写的话也进日记 |
+
+## 画面
+
+`house_glance` 让她看一眼当前的像素画面（1280×872，DeepSeek 计约 600 token）。画面由 `house/littlehouse/render.py`
+程序化绘制（暖色田园风，无外部素材），她和你看到的是同一张图；只读窗口 `python -m littlehouse --view` 每 2 秒拉一次
+`/state` 重画，不接收任何输入。

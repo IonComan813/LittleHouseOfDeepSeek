@@ -126,6 +126,25 @@ export class HouseProcess {
     return data
   }
 
+  /**
+   * GET a binary resource (the PNG screenshot).
+   * @param {string} path
+   * @returns {Promise<Uint8Array>}
+   */
+  async requestBytes(path) {
+    const ep = await this.ensure()
+    const res = await fetch(`http://127.0.0.1:${ep.port}${path}`, {
+      headers: { 'X-House-Token': ep.token },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 3),
+    })
+    if (res.status === 401) this.endpoint = undefined
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new HouseUnavailableError(data.error ?? `HTTP ${res.status}`)
+    }
+    return new Uint8Array(await res.arrayBuffer())
+  }
+
   async dispose() {
     this.disposed = true
     clearTimeout(this.restartTimer)

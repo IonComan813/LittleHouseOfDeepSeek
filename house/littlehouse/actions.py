@@ -101,6 +101,7 @@ def _goto(w: World, place: str) -> str:
         return f"你已经在{room.name}了。"
     path = w.path_to(room.id)
     w.location = room.id
+    w.resident["focus"] = None
     w.log("move", f"走到了{room.name}")
     via = "、".join(C.ROOMS[r].name for r in path[:-1])
     return f"你{'穿过' + via + '，' if via else ''}来到了{room.name}。"

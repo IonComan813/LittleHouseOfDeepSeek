@@ -14,6 +14,12 @@ python --version
 
 > Windows Server 上没有应用商店版 Python 的"假 python"问题；如果提示找不到命令，就是 PATH 没加上。
 
+然后装画面需要的 pygame-ce（不装也能运行，只是没有像素画面，她也不能 house_glance）：
+
+```powershell
+python -m pip install pygame-ce
+```
+
 ## 2. 获取代码
 
 ```powershell
@@ -45,6 +51,13 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 - 之后每隔 90～240 分钟随机醒来一次，00:30～08:00 不打扰，每天最多 8 次。
 
 她的小记写在 `%USERPROFILE%\.dsh\little-house\diary\日期.jsonl`。
+
+## 看看小屋（只读画面）
+
+在 RDP 桌面上双击仓库根目录的 **`view.bat`**（或 `cd house; python -m littlehouse --view`）。
+窗口只显示、不接受任何键鼠操作——在小屋里做事的只有她。窗口太大可以用 `view.bat --scale 1`。
+
+底栏从左到右：日期、时间、天气、季节、贝币；右边两条是她的饱腹和精力，粉色那条是团子的亲密度。
 
 ## 5. 改配置（可选）
 
@@ -85,8 +98,10 @@ python scripts\install.py --uninstall
 
 | 现象 | 处理 |
 | --- | --- |
+| 想知道插件在干什么 / 出了什么错 | 看 `%USERPROFILE%\.dsh\little-house\plugin.log` |
 | 一直没有「小屋生活」会话 | 看 `%USERPROFILE%\.dsh\little-house\plugin-state.json` 是否生成；没有的话插件没加载，重新运行安装脚本并确认重启了 DSH |
 | 有会话但她什么都没做 | 在会话里看报错；多半是小屋进程没起来（检查 `python --version`，或在配置里写 python 的完整路径） |
 | 端口 8770 被占用 | 配置里把 `house.port` 改成别的 |
+| 她的工具里没有 house_glance | 小屋进程的 Python 里没装 pygame-ce，或 `house.python` 指向了另一个 Python |
 | 想立刻看到一次唤醒 | 临时把 `firstWakeDelaySeconds` 改成 `10` 再重启 DSH |
 | DSH 关了但 python 还在跑 | 正常：DSH 被强制关闭时来不及通知小屋退出。下次 DSH 启动会直接连上它；想关掉就在任务管理器结束那个 python 进程（存档每次行动后都会写盘） |

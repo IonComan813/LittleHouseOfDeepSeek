@@ -5,6 +5,7 @@
 // runs the `little-house` agent preset), and hands the agent-scoped tools in
 // ./agent-scope.js their house client and per-wake budget.
 
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -26,6 +27,8 @@ const DEFAULT_HOUSE_DIR = resolve(PLUGIN_DIR, '..', 'house')
 const DEFAULT_STATE_DIR = join(homedir(), '.dsh', 'little-house')
 
 export const name = 'little-house'
+
+const MAX_LOG_BYTES = 1024 * 1024
 
 export default class LittleHouse extends Service {
   static inject = ['agents', 'sessions']
@@ -58,6 +61,11 @@ export default class LittleHouse extends Service {
     super(ctx, 'littleHouse')
     this.config = config
     this.stateDir = config.stateDir || DEFAULT_STATE_DIR
+    try {
+      mkdirSync(this.stateDir, { recursive: true })
+    } catch {
+      // reported on first use
+    }
     this.house = new HouseProcess({
       python: config.house.python,
       houseDir: config.house.dir || DEFAULT_HOUSE_DIR,
@@ -85,11 +93,20 @@ export default class LittleHouse extends Service {
   }
 
   log(level, msg) {
+    if (level === 'debug' && !process.env.LH_DEBUG) return
     const logger = this.ctx.logger
     const fn = logger?.[level] ?? logger?.info
-    if (level === 'debug' && !process.env.LH_DEBUG) return
     if (typeof fn === 'function') fn.call(logger, `little-house: ${msg}`)
     else console.log(`[little-house] ${msg}`)
+    // Also keep our own log next to the save: DSH's logger is not always visible
+    // (e.g. the Desktop app), and this is where to look when something is off.
+    try {
+      const file = join(this.stateDir, 'plugin.log')
+      if (existsSync(file) && statSync(file).size > MAX_LOG_BYTES) renameSync(file, file + '.1')
+      appendFileSync(file, `${new Date().toISOString()} ${level.toUpperCase()} ${msg}\n`, 'utf8')
+    } catch {
+      // logging must never break the plugin
+    }
   }
 
   async start() {

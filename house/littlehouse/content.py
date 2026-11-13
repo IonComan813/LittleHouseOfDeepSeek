@@ -252,7 +252,5 @@ PET_TEMPERS: list[tuple[str, int]] = [("黏人", 30), ("平常", 40), ("傲娇",
 # --------------------------------------------------------------------------- starting state
 
 START_INVENTORY = {"鱼竿": 1, "鸡蛋": 2, "大米": 2, "猫粮": 3, "萝卜种子": 2, "菠菜种子": 1}
-# Old v2 mail tables, kept only so a v2 save's mailbox items migrate cleanly.
-MAIL_HOUR = DELIVERY_HOUR
 PET_NAME = "团子"
 INDOOR_ROOMS = ("living_room", "kitchen", "bedroom")

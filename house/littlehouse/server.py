@@ -25,6 +25,10 @@ from .script import ScriptError, format_results, run
 from .world import Event, World
 
 MAX_BODY = 16 * 1024
+
+
+class RenderUnavailable(Exception):
+    pass
 ALLOWED_HOSTS = ("127.0.0.1", "localhost")
 
 
@@ -63,6 +67,22 @@ class House:
     def save(self) -> None:
         with self.lock:
             self.world.save(self.save_path)
+
+    def screenshot(self, scale: int = 2) -> bytes:
+        """PNG of the house as it looks now (needs pygame-ce; no window is opened)."""
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        try:
+            from . import render
+        except ImportError as e:
+            raise RenderUnavailable("画面需要 pygame-ce：pip install pygame-ce") from e
+        with self.lock:
+            self.world.tick()
+            png = render.render_png(self.world, scale)
+        try:
+            (self.state_dir / "latest.png").write_bytes(png)
+        except OSError:
+            pass
+        return png
 
     def tick(self) -> None:
         with self.lock:
@@ -133,6 +153,25 @@ def make_handler(house: House, token: str, on_shutdown=None):
                 self._send(200, {"ok": True, "text": text})
             elif path == "/help":
                 self._send(200, {"ok": True, "text": help_text()})
+            elif path == "/state":
+                with house.lock:
+                    house.world.tick()
+                    state = house.world.to_json()
+                self._send(200, {"ok": True, "state": state})
+            elif path == "/screenshot":
+                query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                scale = 2 if (query.get("scale") or ["2"])[0] == "2" else 1
+                try:
+                    png = house.screenshot(scale)
+                except RenderUnavailable as e:
+                    self._send(501, {"ok": False, "error": str(e)})
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(png)
             elif path == "/news":
                 query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
                 since = (query.get("since") or [""])[0]

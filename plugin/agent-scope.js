@@ -14,7 +14,20 @@ import { appendEntry } from './lib/diary.js'
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
 
-const OWN_TOOLS = new Set(['house_look', 'house_do', 'house_rest', ...DIARY_TOOLS])
+const OWN_TOOLS = new Set(['house_look', 'house_do', 'house_rest', 'house_glance', ...DIARY_TOOLS])
+
+const IMAGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    attachmentId: { type: 'string', required: true },
+    mediaType: { type: 'string', required: true },
+    bytes: { type: 'integer', required: true },
+    width: { type: 'integer', required: true },
+    height: { type: 'integer', required: true },
+    name: { type: 'string' },
+  },
+}
 
 const HOUSE_RULES = `## 你的生活
 你住在潮汐湾的一间海边小屋里：客厅、厨房、卧室，屋前的庭院有三块菜地、一个邮箱和寄售箱，再往前是沙滩。
@@ -33,6 +46,8 @@ const HOUSE_RULES = `## 你的生活
   goto(庭院); open(邮箱); plant(萝卜种子); water()
   参数可以写编号（pot#1）或名字（绿萝）。很多动作不写参数就作用于这里所有的东西，比如 water()、pick()、harvest()。
   某一步失败时后面的步骤不会执行。看「这里能做」那一行，或执行 help() 了解全部动作。
+- house_glance：看一眼小屋现在的样子（一张像素画）。平时用 house_look 和 house_do 就够了，
+  偶尔想看看整个家、院子和海边的样子时再用。
 - house_rest：结束这次活动去休息。
 
 ## 日记
@@ -103,6 +118,16 @@ export async function apply(ctx) {
     },
   }))
 
+  // house_glance needs somewhere to keep the picture: only offered when the
+  // deployment mounts an attachment store (the Web/Desktop profiles do).
+  ctx.inject(['attachments'], (imageCtx) => {
+    try {
+      registerGlance(imageCtx, house)
+    } catch (e) {
+      house.log('warn', `house_glance unavailable: ${e?.message ?? e}`)
+    }
+  })
+
   ctx.tools.register(defineTool({
     name: 'house_rest',
     description: '结束这次活动去休息。note 可选：想在日记里留一句才写；这次已经用 diary_write 写过就不要再重复。',
@@ -116,6 +141,34 @@ export async function apply(ctx) {
       }
       exec.concludeTurn()
       return '（你安静地休息了。）'
+    },
+  }))
+}
+
+/** Register house_glance on a context that has the attachment store. */
+function registerGlance(imageCtx, house) {
+  imageCtx.tools.register(defineTool({
+    name: 'house_glance',
+    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。偶尔看看就好。',
+    parameters: {},
+    output: {
+      schema: IMAGE_SCHEMA,
+      render: (_args, value) => [
+        { type: 'text', text: '（你抬头看了看自己的小屋。上半部分从左到右是卧室、客厅、厨房，下面是庭院、沙滩和海。底栏是日期时间、天气、贝币，右边两条是饱腹和精力，粉色那条是团子的亲密度。）' },
+        { type: 'image', attachment: value },
+      ],
+    },
+    async execute() {
+      const png = await house.house.requestBytes('/screenshot?scale=2')
+      const ref = await imageCtx.attachments.saveImage({ data: png, mediaType: 'image/png', name: 'little-house.png' })
+      return {
+        attachmentId: ref.attachmentId,
+        mediaType: ref.mediaType,
+        bytes: ref.bytes,
+        width: ref.width,
+        height: ref.height,
+        ...(ref.name === undefined ? {} : { name: ref.name }),
+      }
     },
   }))
 }
