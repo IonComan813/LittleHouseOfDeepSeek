@@ -24,18 +24,58 @@ class Room:
 ROOMS: dict[str, Room] = {
     r.id: r
     for r in (
-        Room("living_room", "客厅", "朝南的小客厅，有一张旧沙发、一扇大窗，桌上放着开拓署的订货目录。", ("kitchen", "bedroom", "yard"),
+        Room("living_room", "客厅", "朝南的小客厅，木地板，有一张红色布艺沙发和一扇大窗；圆木桌上放着开拓署的订货目录。", ("kitchen", "bedroom", "yard"),
              hints=("catalog()", "order(物品, 数量)", "rest(沙发)", "display(收藏品)", "place(家具)", "clean()")),
-        Room("kitchen", "厨房", "小小的厨房，有灶台和一张两人用的木桌。", ("living_room",),
+        Room("kitchen", "厨房", "小小的厨房，铺着粉白相间的格子地砖；靠墙是灶台、带水槽的台面和一台白色冰箱，中间有一张两人用的木桌。", ("living_room",),
              hints=("recipes()", "cook(菜名)", "eat(食物)", "clean()")),
-        Room("bedroom", "卧室", "放着一张床和一个书架的卧室。", ("living_room",),
+        Room("bedroom", "卧室", "木地板的卧室，有一张床、一个书架和一个木衣柜。", ("living_room",),
              hints=("rest(床)", "place(家具)", "clean()")),
-        Room("yard", "庭院", "屋前的小院子，有三块菜地、一个邮箱和开拓署的寄售箱。往前走就是沙滩。", ("living_room", "beach"), outdoor=True,
+        Room("yard", "庭院", "屋前的小草地院子，有三块菜地、一个邮箱和开拓署的寄售箱，东边长着一棵树，角落里有几丛灌木，院子和沙滩之间隔着一道矮木篱笆。往前走就是沙滩。", ("living_room", "beach"), outdoor=True,
              hints=("open(邮箱)", "open(包裹)", "sell(物品, 数量)", "plant(种子, 菜地)", "water()", "harvest()")),
         Room("beach", "沙滩", "细细的白沙滩，海浪会把贝壳冲上岸，岸边有一块适合钓鱼的礁石。", ("yard",), outdoor=True,
              hints=("pick(东西)", "fish()")),
     )
 }
+
+# --------------------------------------------------------------------------- appearance
+#
+# How things LOOK. The renderer (render.py) draws exactly this, and the text
+# (examine, room descriptions, item descriptions) says exactly this — keep the
+# two in step: if the picture changes, change the words here too, and anything
+# drawn must appear here (tests/test_consistency.py checks the drawn set).
+
+APPEARANCE: dict[str, str] = {
+    # fixtures (by object id)
+    "sofa": "红色的布艺沙发，左边放着一个黄色的小靠垫。",
+    "bed": "木床，白色的枕头，盖着红色的被子。",
+    "bookshelf": "深色的木书架，两层都塞满了五颜六色的书。",
+    "wardrobe": "两扇门的木衣柜，门上有黄铜小把手。",
+    "shelf": "两层的木架子，用来摆收藏品。",
+    "stove": "灰色的灶台，黑色台面上有两个灶眼。",
+    "table": "浅色的木桌，配两张小木凳。",
+    "fridge": "白色的冰箱，门上贴着一个红色的冰箱贴。",
+    "counter": "靠墙的木台面，中间嵌着一个水槽。",
+    "mailbox": "立在木桩上的蓝色邮箱，有信的时候会竖起一面红色小旗。",
+    "consign": "开拓署的木制寄售箱，侧面有一道青绿色的标记。",
+    "parcel": "用胶带封好的纸箱。",
+    "rock": "岸边一块圆圆的灰色大礁石。",
+    "tree": "一棵圆冠的树：春天是嫩绿色、缀着粉色小花，夏天深绿，秋天橙黄，冬天叶子掉光、枝头泛白。",
+    "pot#1": "种在红陶盆里的绿萝。",
+    "pot#2": "种在红陶盆里的一小簇多肉。",
+    # furniture items (by item name)
+    "小地毯": "椭圆形的地毯，中间是粉色，镶着一圈紫色的边。",
+    "台灯": "奶白色灯罩的小台灯，晚上亮起暖黄色的光。",
+    "挂画": "木框里画着蓝天、太阳和一片绿地。",
+    "风铃": "浅蓝色的风铃，下面挂着三根小管子。",
+    "小书桌": "浅木色的小书桌，桌上放着一张白纸。",
+    "懒人沙发": "青绿色的豆袋懒人沙发。",
+    "花瓶": "蓝色的花瓶，插着红、黄、粉三朵花。",
+    # the cat
+    "团子": "一只橘猫。",
+}
+
+# Static scenery drawn in the picture that is also a world object (examine-able).
+SCENERY = {"fridge": ("冰箱", "kitchen"), "counter": ("水槽", "kitchen"), "wardrobe": ("衣柜", "bedroom"), "tree": ("树", "yard")}
 
 # --------------------------------------------------------------------------- items
 
@@ -91,8 +131,10 @@ ITEMS: dict[str, Item] = _items(
     # tools
     ("鱼竿", "tool"),
     # furniture / decor
-    ("小地毯", "furniture"), ("台灯", "furniture"), ("挂画", "furniture"), ("风铃", "furniture"),
-    ("小书桌", "furniture"), ("懒人沙发", "furniture"), ("花瓶", "furniture"),
+    ("小地毯", "furniture", 0, APPEARANCE["小地毯"]), ("台灯", "furniture", 0, APPEARANCE["台灯"]),
+    ("挂画", "furniture", 0, APPEARANCE["挂画"]), ("风铃", "furniture", 0, APPEARANCE["风铃"]),
+    ("小书桌", "furniture", 0, APPEARANCE["小书桌"]), ("懒人沙发", "furniture", 0, APPEARANCE["懒人沙发"]),
+    ("花瓶", "furniture", 0, APPEARANCE["花瓶"]),
 )
 
 # --------------------------------------------------------------------------- crops

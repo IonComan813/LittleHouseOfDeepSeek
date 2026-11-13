@@ -140,7 +140,7 @@ def spot_of(obj_id: str, room: str, find_pos: dict[str, tuple[int, int]],
     if decor_pos and obj_id in decor_pos:
         x, y = decor_pos[obj_id]
         return x, min(y + 1, _area_bottom(room))
-    rect = FIXTURES.get(obj_id)
+    rect = FIXTURES.get(obj_id) or EXTRAS.get(obj_id)
     if rect and _in_area(room, rect[0], rect[1]):
         x, y, w, h = rect
         return x + w // 2, min(y + h, _area_bottom(room))

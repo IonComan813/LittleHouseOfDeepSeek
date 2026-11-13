@@ -82,6 +82,7 @@ def _fixtures() -> list[Obj]:
         Obj("plot#2", "菜地2", "plot", "yard", {"water": 60.0}),
         Obj("plot#3", "菜地3", "plot", "yard", {"water": 60.0}),
         Obj("rock", "礁石", "fixture", "beach"),
+        *(Obj(oid, name, "fixture", room) for oid, (name, room) in C.SCENERY.items()),
     ]
 
 
@@ -466,7 +467,7 @@ class World:
             p = self.pet
             mood = "饿得直叫" if p["hunger"] >= 80 else "在打盹" if p["affection"] >= 50 else "在角落里看着你"
             temper = {"黏人": "，今天好像特别黏人", "傲娇": "，今天有点爱答不理", "烦躁": "，今天脾气不太好"}.get(self.pet_temper(), "")
-            objs.append(f"猫咪{p['name']}（{mood}{temper}）")
+            objs.append(f"橘猫{p['name']}（{mood}{temper}）")
         dark = "，屋里有点暗" if is_dark(now) and not room.outdoor else ""
         lines = [
             f"时间：{now:%Y-%m-%d %H:%M}（{period_of(now)}，{SEASON_ZH[season_of(now)]}季），天气：{self.weather()}{dark}",

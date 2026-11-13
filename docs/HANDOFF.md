@@ -59,6 +59,10 @@ DSH（cordis 插件框架）相关：
 - 「世界自己发生的事」用 `world.log(..., actor="world")`，会进 `/news`，唤醒时告诉她「你不在的时候」。
   她自己的动作是 `actor="resident"`，唤醒时变成「上次醒着的时候，你……」。
 - 世界描述里提到的地方 / 东西必须真的能去 / 能用（M0 时写了「院子尽头是沙滩」却没有沙滩，模型连续失败）。
+- **画面和文字必须描述同一个世界（用户明确要求）。** 文字说「格子地毯」，画面就不能画成菱形拼接；画面里画出来的东西，
+  文字里也要有，最好还能 `examine`。唯一的来源是 `content.py` 的 `APPEARANCE` 表：`render.py` 按它画，
+  `examine`、房间描述、家具物品的描述都用它。改画面时同步改这张表；新画的东西加进表里
+  （`tests/test_consistency.py` 会检查「画了但没描述」）。画面上的陈设（冰箱、水槽、衣柜、树）是 `C.SCENERY` 里的真实物件。
 - 很多动作不带参数时作用于「这里所有的」（`water()`、`pick()`、`harvest()`、`display()`），这对省 token 很重要。
 - 画面：`render.render(world, t, pose)`；不传 pose 时用 `anim.snapshot_pose`（定格最近的动作）。
   窗口在 `display.py`，跑在小屋进程**主线程**（HTTP 在后台线程），开关走 `POST /window`。渲染时持有 `house.lock`。

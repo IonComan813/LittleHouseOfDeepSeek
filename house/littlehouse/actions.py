@@ -138,18 +138,25 @@ def _examine(w: World, ref: str) -> str:
         name = w.item_name(ref)
         item = C.ITEMS.get(name)
         return f"{name}：{item.desc or '没什么特别的。'}" if item else f"{name}。"
+    look = C.APPEARANCE.get(o.id) or C.APPEARANCE.get(o.name, "")
     if o.id == "shelf":
-        return "收藏架上摆着：" + (w.format_items(w.shelf) if w.shelf else "什么都还没有。")
+        return look + "上面摆着：" + (w.format_items(w.shelf) if w.shelf else "什么都还没有。")
     if o.id == "mailbox":
-        return "邮箱里有：" + w.format_items(w.mailbox) if w.mailbox else "邮箱是空的。"
+        return look + (f"里面有 {len(w.mailbox)} 封信，可以 open(邮箱)。" if w.mailbox else "里面是空的。")
+    if o.id == "parcel":
+        return look + f"里面是：{w.format_items(w.parcels)}。"
+    if o.id == "consign":
+        return look + ("里面放着：" + w.format_items(w.sale_box) + "，傍晚收走。" if w.sale_box else "里面是空的。")
     if o.kind == "plant":
-        return f"{w.describe_obj(o)}，土壤湿度大约 {o.state.get('water', 0):.0f}%。"
+        return f"{look}{w.describe_obj(o)}，土壤湿度大约 {o.state.get('water', 0):.0f}%。"
     if o.kind == "plot" and o.state.get("seed"):
         crop = C.CROPS[o.state["seed"]]
         pct = min(100, o.state.get("growth", 0) / crop.days * 100)
         return f"{w.describe_obj(o)}，长到了大约 {pct:.0f}%。{crop.name}适合{'、'.join(_season_names(crop.seasons))}种。"
     if o.kind == "find":
         return f"沙滩上的{o.name}，被海水冲得很干净。"
+    if look:
+        return look
     return w.describe_obj(o) + "。"
 
 
