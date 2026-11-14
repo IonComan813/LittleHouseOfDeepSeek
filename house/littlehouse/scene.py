@@ -38,19 +38,20 @@ WINDOWS: dict[str, tuple[int, int]] = {  # x of a 2-tile window in the back wall
     "bedroom": 4, "living_room": 18, "kitchen": 32,
 }
 
+# Footprints are sized to the LPC pictures (sprites.py): 32 px of picture = 2 tiles.
 FIXTURES: dict[str, Rect] = {
-    "bed": (2, 3, 2, 3),
-    "bookshelf": (6, 2, 3, 2),
+    "bed": (1, 2, 3, 4),
+    "bookshelf": (5, 2, 4, 2),
     "pot#2": (10, 10, 1, 1),
-    "sofa": (14, 3, 3, 2),
-    "shelf": (22, 2, 3, 2),
-    "catalog": (19, 5, 2, 2),  # the little table with the order catalog (not an object)
-    "pot#1": (13, 10, 1, 1),
-    "stove": (29, 2, 2, 2),
-    "table": (33, 6, 3, 2),
-    "plot#1": (3, 14, 3, 2),
-    "plot#2": (7, 14, 3, 2),
-    "plot#3": (11, 14, 3, 2),
+    "sofa": (14, 2, 4, 2),
+    "shelf": (21, 2, 4, 3),
+    "catalog": (19, 5, 2, 2),  # the little round table with the order catalog (not an object)
+    "pot#1": (25, 2, 2, 4),
+    "stove": (28, 2, 2, 4),
+    "table": (32, 7, 5, 3),
+    "plot#1": (2, 15, 4, 2),
+    "plot#2": (7, 15, 4, 2),
+    "plot#3": (12, 15, 4, 2),
     "parcel": (21, 13, 1, 1),
     "mailbox": (24, 13, 1, 1),
     "consign": (26, 13, 2, 1),
@@ -59,16 +60,16 @@ FIXTURES: dict[str, Rect] = {
 
 # Static scenery that is not a world object.
 EXTRAS: dict[str, Rect] = {
-    "counter": (34, 2, 5, 1),
-    "fridge": (37, 3, 2, 2),
-    "wardrobe": (10, 2, 2, 2),
+    "counter": (30, 2, 4, 4),
+    "fridge": (34, 2, 2, 4),
+    "wardrobe": (10, 2, 2, 4),
     "tree": (33, 14, 3, 3),
 }
 BUSHES = [(1, 13), (17, 13), (30, 17), (38, 15)]
 
 # Where placed furniture goes, in order, per room.
 DECOR_SLOTS: dict[str, list[tuple[int, int]]] = {
-    "living_room": [(17, 7), (24, 7), (14, 6), (21, 9), (25, 10)],
+    "living_room": [(17, 7), (23, 7), (13, 10), (21, 10), (25, 10)],
     "bedroom": [(4, 7), (8, 6), (2, 9), (6, 9), (9, 4)],
     "kitchen": [(30, 7), (29, 9), (37, 9), (32, 10)],
 }
@@ -76,7 +77,7 @@ DECOR_SLOTS: dict[str, list[tuple[int, int]]] = {
 ANCHORS: dict[str, tuple[int, int]] = {
     "bedroom": (6, 6),
     "living_room": (20, 8),
-    "kitchen": (31, 5),
+    "kitchen": (31, 7),
     "yard": (20, 16),
     "beach": (22, 20),
 }

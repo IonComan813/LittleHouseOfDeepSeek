@@ -21,6 +21,7 @@ import pygame  # noqa: E402
 
 from . import content as C  # noqa: E402
 from . import scene as S  # noqa: E402
+from . import sprites as SP  # noqa: E402
 from .anim import Pose, current_pose  # noqa: E402
 from .clock import season_of  # noqa: E402
 
@@ -134,6 +135,15 @@ SHELF_DOTS = "xpSqECBW"
 _cache: dict[tuple, pygame.Surface] = {}
 
 
+def big_sprite(grid: list[str], flip: bool = False) -> pygame.Surface:
+    """Her and the cat at twice their pixel size, to stand next to the LPC furniture."""
+    key = ("big", tuple(grid), flip)
+    if key not in _cache:
+        small = sprite(grid, flip)
+        _cache[key] = pygame.transform.scale(small, (small.get_width() * 2, small.get_height() * 2))
+    return _cache[key]
+
+
 def sprite(grid: list[str], flip: bool = False) -> pygame.Surface:
     key = ("grid", tuple(grid), flip)
     if key not in _cache:
@@ -155,6 +165,17 @@ def _r(x, y, w=1, h=1) -> pygame.Rect:
 
 
 # --------------------------------------------------------------------------- terrain
+
+
+def _spr(surf, name, r, dx=0, dy=0, align="bottom") -> bool:
+    """Blit an LPC picture centred in rect r (bottom-aligned by default). False if it is missing."""
+    img = SP.get(name)
+    if img is None:
+        return False
+    x = r.centerx - img.get_width() // 2 + dx
+    y = (r.bottom - img.get_height() if align == "bottom" else r.top) + dy
+    surf.blit(img, (x, y))
+    return True
 
 
 def _floor_wood(surf, rect, base, line):
@@ -229,7 +250,12 @@ def _sky(hour, weather):
 
 
 def _counter(surf, r):
-    """Kitchen counter with a sink along the back wall, and a fridge."""
+    """Kitchen counter with a sink along the back wall."""
+    if SP.available():
+        for i, (top, front) in enumerate((("sink_top", "sink_front"), ("counter_top", "counter_front"))):
+            surf.blit(SP.get(top), (r.left + i * 32, r.top))
+            surf.blit(SP.get(front), (r.left + i * 32, r.top + 32))
+        return
     pygame.draw.rect(surf, PAL["W"], r)
     pygame.draw.rect(surf, PAL["d"], r, 1)
     pygame.draw.line(surf, PAL["E"], (r.left, r.top + 3), (r.right - 1, r.top + 3), 2)
@@ -241,15 +267,22 @@ def _counter(surf, r):
 
 
 def _fridge(surf, r):
-    pygame.draw.rect(surf, PAL["x"], r, border_radius=3)
-    pygame.draw.rect(surf, PAL["E"], r, 1, border_radius=3)
-    pygame.draw.line(surf, PAL["E"], (r.left + 1, r.top + 10), (r.right - 2, r.top + 10))
-    pygame.draw.rect(surf, PAL["e"], (r.right - 5, r.top + 4, 2, 4))
-    pygame.draw.rect(surf, PAL["e"], (r.right - 5, r.top + 13, 2, 6))
-    pygame.draw.circle(surf, PAL["r"], (r.left + 5, r.top + 15), 2)
+    """A tall white fridge (drawn here: LPC has none), freezer door on top, a red magnet."""
+    body = pygame.Rect(r.left + 2, r.top + 2, r.width - 4, r.height - 4)
+    pygame.draw.rect(surf, (178, 178, 176), body.move(0, 2), border_radius=3)  # shadow
+    pygame.draw.rect(surf, PAL["x"], body, border_radius=3)
+    pygame.draw.rect(surf, (150, 150, 150), body, 1, border_radius=3)
+    pygame.draw.rect(surf, (226, 230, 232), (body.left + 2, body.top + 2, body.width - 4, 6))  # top highlight
+    split = body.top + body.height // 3
+    pygame.draw.line(surf, (150, 150, 150), (body.left + 1, split), (body.right - 2, split))
+    pygame.draw.rect(surf, (120, 120, 124), (body.right - 6, body.top + 6, 2, split - body.top - 10))
+    pygame.draw.rect(surf, (120, 120, 124), (body.right - 6, split + 4, 2, 14))
+    pygame.draw.circle(surf, PAL["r"], (body.left + 7, split + 10), 2)
 
 
 def _wardrobe(surf, r):
+    if _spr(surf, "wardrobe", r):
+        return
     pygame.draw.rect(surf, PAL["w"], r)
     pygame.draw.rect(surf, PAL["d"], r, 1)
     pygame.draw.line(surf, PAL["d"], (r.centerx, r.top + 2), (r.centerx, r.bottom - 3))
@@ -303,6 +336,12 @@ def _bush(surf, cx, cy, season):
 
 
 def _bed(surf, r):
+    quilt, pillow = SP.get("bed_quilt"), SP.get("bed_pillow")
+    if quilt is not None and pillow is not None:
+        x = r.centerx - quilt.get_width() // 2
+        surf.blit(quilt, (x, r.top + 6))
+        surf.blit(pillow, (r.centerx - pillow.get_width() // 2, r.top + 2))
+        return
     pygame.draw.rect(surf, PAL["d"], r)
     pygame.draw.rect(surf, PAL["c"], r.inflate(-4, -4))
     pygame.draw.rect(surf, PAL["x"], (r.left + 4, r.top + 4, r.width - 8, 9))
@@ -311,6 +350,11 @@ def _bed(surf, r):
 
 
 def _bookshelf(surf, r):
+    shelf = SP.get("bookshelf")
+    if shelf is not None:
+        for x in range(r.left, r.right - 1, 32):
+            surf.blit(shelf, (x, r.top))
+        return
     pygame.draw.rect(surf, PAL["d"], r)
     rng = _rng("books")
     for row in range(2):
@@ -324,6 +368,8 @@ def _bookshelf(surf, r):
 
 
 def _sofa(surf, r):
+    if _spr(surf, "sofa", r):
+        return
     pygame.draw.rect(surf, PAL["R"], r.inflate(0, -6).move(0, 3), border_radius=3)
     pygame.draw.rect(surf, PAL["r"], (r.left + 4, r.top + 4, r.width - 8, r.height - 10), border_radius=2)
     pygame.draw.line(surf, PAL["R"], (r.centerx, r.top + 6), (r.centerx, r.bottom - 8))
@@ -331,6 +377,18 @@ def _sofa(surf, r):
 
 
 def _shelf(surf, r, items):
+    shelf = SP.get("open_shelf")
+    if shelf is not None:  # two open shelves side by side, the collection on their boards
+        for x in (r.left, r.left + 32):
+            surf.blit(shelf, (x, r.top))
+        names = [name for name, c in items.items() for _ in range(c)]
+        for i, name in enumerate(names[:16]):
+            row, col = divmod(i, 8)
+            look = FIND_LOOKS.get(name, ("pebble", SHELF_DOTS[i % len(SHELF_DOTS)]))[1]
+            x, y = r.left + 4 + col * 7, r.top + 22 + row * 12
+            pygame.draw.rect(surf, PAL[look], (x, y, 5, 4))
+            pygame.draw.rect(surf, PAL["k"], (x, y, 5, 4), 1)
+        return
     pygame.draw.rect(surf, PAL["w"], r)
     for row in range(2):
         y = r.top + 12 + row * 14
@@ -346,6 +404,11 @@ def _shelf(surf, r, items):
 
 
 def _catalog_table(surf, r):
+    if _spr(surf, "round_table", r):  # with the bureau's catalog (a teal booklet) on top
+        pygame.draw.rect(surf, PAL["q"], (r.centerx - 6, r.top + 6, 12, 8))
+        pygame.draw.rect(surf, PAL["n"], (r.centerx - 6, r.top + 6, 12, 8), 1)
+        pygame.draw.line(surf, PAL["x"], (r.centerx - 3, r.top + 9), (r.centerx + 3, r.top + 9))
+        return
     pygame.draw.ellipse(surf, PAL["W"], r.inflate(-4, -8))
     pygame.draw.ellipse(surf, PAL["d"], r.inflate(-4, -8), 1)
     pygame.draw.rect(surf, PAL["q"], (r.centerx - 5, r.centery - 4, 10, 7))
@@ -353,6 +416,14 @@ def _catalog_table(surf, r):
 
 
 def _stove(surf, r, cooking):
+    top, front = SP.get("stove_top"), SP.get("stove_front")
+    if top is not None and front is not None:
+        surf.blit(top, (r.left, r.top))
+        surf.blit(front, (r.left, r.top + 32))
+        if cooking:  # the rings glow under a pot
+            for dx in (-7, 7):
+                pygame.draw.circle(surf, PAL["o"], (r.centerx + dx, r.top + 16), 3, 1)
+        return
     pygame.draw.rect(surf, PAL["e"], r)
     pygame.draw.rect(surf, PAL["k"], r.inflate(-6, -10).move(0, -3))
     for dx in (-6, 6):
@@ -361,6 +432,8 @@ def _stove(surf, r, cooking):
 
 
 def _table(surf, r):
+    if _spr(surf, "kitchen_table", r):
+        return
     pygame.draw.rect(surf, PAL["W"], r.inflate(-2, -8).move(0, -2), border_radius=2)
     pygame.draw.rect(surf, PAL["d"], r.inflate(-2, -8).move(0, -2), 1, border_radius=2)
     for dx in (-12, 12):
@@ -368,6 +441,13 @@ def _table(surf, r):
 
 
 def _pot(surf, r, water, name):
+    img = SP.get("succulent" if "多肉" in name else "pothos")
+    if img is not None:
+        if water < 60:  # thirsty leaves fade towards yellow-brown
+            img = img.copy()
+            img.fill((235, 215, 150) if water >= 30 else (210, 170, 110), special_flags=pygame.BLEND_MULT)
+        surf.blit(img, (r.centerx - img.get_width() // 2, r.bottom - img.get_height()))
+        return
     cx, base = r.centerx, r.bottom - 2
     pygame.draw.polygon(surf, (196, 108, 76), [(cx - 5, base - 6), (cx + 5, base - 6), (cx + 4, base), (cx - 4, base)])
     leaf = PAL["g"] if water >= 60 else (170, 180, 90) if water >= 30 else (170, 140, 80)
@@ -381,18 +461,45 @@ def _pot(surf, r, water, name):
 
 
 def _plot(surf, r, state, season):
+    soil = SP.get("soil")
+    seed = state.get("seed")
+    if soil is not None:
+        wet = state.get("water", 0) >= 40
+        for x in range(r.left, r.right - 1, 32):
+            surf.blit(soil, (x, r.top))
+        if not wet:  # dry soil is paler
+            pale = pygame.Surface(r.size, pygame.SRCALPHA)
+            pale.fill((240, 220, 180, 70))
+            surf.blit(pale, r.topleft)
+        if seed:
+            crop = C.CROPS[seed]
+            progress = 1.0 if state.get("ripe") else min(0.99, state.get("growth", 0) / crop.days)
+            stage = 4 if state.get("ripe") else min(3, int(progress * 4))
+            img = SP.crop(crop.name, stage)
+            if img is not None:
+                if season not in crop.seasons:
+                    img = img.copy()
+                    img.fill((220, 200, 140), special_flags=pygame.BLEND_MULT)
+                for x in range(r.left, r.right - 1, 32):
+                    surf.blit(img, (x, r.bottom - 64 + 4))
+                return
+            _plot_crops(surf, r, state, season)
+        return
     wet = state.get("water", 0) >= 40
     pygame.draw.rect(surf, PAL["T"] if wet else PAL["t"], r.inflate(-2, -2), border_radius=2)
     for yy in range(r.top + 4, r.bottom - 2, 5):
         pygame.draw.line(surf, PAL["k"] if wet else PAL["T"], (r.left + 3, yy), (r.right - 4, yy))
-    seed = state.get("seed")
-    if not seed:
-        return
-    crop = C.CROPS[seed]
+    if seed:
+        _plot_crops(surf, r, state, season)
+
+
+def _plot_crops(surf, r, state, season):
+    """Crops without an LPC picture (菠菜, 葱, 南瓜, 草莓): small drawn plants."""
+    crop = C.CROPS[state["seed"]]
     progress = 1.0 if state.get("ripe") else min(0.99, state.get("growth", 0) / crop.days)
     fruit = PAL[CROP_COLORS.get(crop.name, "r")]
     leaf = PAL["g"] if season in crop.seasons else (160, 150, 90)
-    for i in range(3):
+    for i in range(max(1, r.width // 16)):
         cx = r.left + 8 + i * 16
         cy = r.centery + 3
         if progress < 0.34:
@@ -474,6 +581,17 @@ def _find(surf, tx, ty, item):
 
 def _decor(surf, tx, ty, name, lit):
     x, y = tx * T, ty * T
+    img = SP.get(name) if name in SP.SPRITES else None
+    if img is not None:
+        if name == "挂画":  # hangs on the back wall above its spot
+            surf.blit(img, (x + 8 - img.get_width() // 2, 4))
+            return
+        surf.blit(img, (x + 8 - img.get_width() // 2, y + T - img.get_height()))
+        if name == "台灯" and lit:
+            glow = pygame.Surface((40, 30), pygame.SRCALPHA)
+            pygame.draw.ellipse(glow, (255, 220, 140, 70), glow.get_rect())
+            surf.blit(glow, (x - 12, y - 14))
+        return
     if name == "小地毯":
         rug = pygame.Rect(x - 8, y + 2, 40, 22)
         pygame.draw.ellipse(surf, PAL["P"], rug)
@@ -653,7 +771,7 @@ def _effect(surf, pose, world, t):
     e = pose.effect
     if not e:
         return
-    px, py = int(pose.x * T + 8), int(pose.y * T + T - 28)  # top of her head
+    px, py = int(pose.x * T + 8), int(pose.y * T + T - 58)  # top of her head (drawn at 2x)
     p = pose.effect_p
     wobble = math.sin(t * 6)
     focus_rect = None
@@ -809,17 +927,20 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     pet = world.pet
     cx, cy = S.ANCHORS[pet["room"]]
     if pet["room"] == world.location and abs(cx - pose.x) < 1.5 and abs(cy - pose.y) < 1:
-        cx += 2
+        cx += 3
     cat = CAT_ASLEEP if asleep or (pet["affection"] >= 50 and hour % 3 == 0) else CAT
-    surf.blit(sprite(cat), (cx * T + 8, cy * T + T - len(cat)))
-    if asleep:
-        bx, by, _, _ = S.FIXTURES["bed"]
-        pygame.draw.circle(surf, PAL["u"], (bx * T + 16, by * T + 9), 6)
-        pygame.draw.circle(surf, PAL["f"], (bx * T + 16, by * T + 11), 4)
+    cat_img = big_sprite(cat)
+    surf.blit(cat_img, (cx * T + 8, cy * T + T - cat_img.get_height()))
+    if asleep:  # her blue hair on the pillow, the quilt pulled up
+        bx, by, bw, _ = S.FIXTURES["bed"]
+        hx = bx * T + bw * T // 2
+        pygame.draw.circle(surf, PAL["u"], (hx, by * T + 12), 8)
+        pygame.draw.circle(surf, PAL["f"], (hx, by * T + 15), 5)
     else:
         frame = RESIDENT_STEP if pose.walking and pose.step else RESIDENT
-        bob = 0 if pose.walking else int(math.sin(t * 2) > 0.6)  # idle breathing
-        surf.blit(sprite(frame, flip=pose.facing < 0), (int(pose.x * T) - 2, int(pose.y * T) + T - len(frame) - bob))
+        bob = 0 if pose.walking else 2 * int(math.sin(t * 2) > 0.6)  # idle breathing
+        img = big_sprite(frame, flip=pose.facing < 0)
+        surf.blit(img, (int(pose.x * T) + 8 - img.get_width() // 2, int(pose.y * T) + T - img.get_height() - bob))
         _effect(surf, pose, world, t)
 
     # light, weather, HUD

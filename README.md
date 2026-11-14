@@ -62,7 +62,7 @@ python scripts\install.py
 │  script.py   伪代码解析与执行（不 eval；遇错即停）                              │
 │  server.py   HTTP 线程 + 主线程上的窗口；发现文件 world/house.json              │
 │  scene.py    瓦片布局、门口路点、站位      anim.py  此刻的姿态（走路 / 做事 / 日常）│
-│  render.py   程序化像素画渲染器          display.py 只在打开时运行的只读窗口       │
+│  render.py   像素画渲染器（LPC 素材 + 代码绘制） display.py 只读窗口               │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -101,4 +101,4 @@ cd plugin && npm test                               # 作息表、唤醒消息�
 
 Apache-2.0。设计参考了 [surfcore](https://github.com/Mieksido/surfcore)（MIT）和
 [dsh-onebot](https://github.com/mario841859784/dsh-onebot)（BSD-3-Clause），见 [NOTICE](NOTICE)。
-画面全部由代码绘制，没有使用第三方美术素材。
+屋里的家具、灶台、水槽、菜地和部分作物用的是 OpenGameArt 上的 LPC 像素素材（CC-BY-SA 3.0 / GPL 3.0，署名见 [house/littlehouse/assets/lpc/CREDITS.md](house/littlehouse/assets/lpc/CREDITS.md)，不属于 Apache-2.0）；其余（墙、地板、院子、沙滩、海、她和团子、冰箱等）由代码绘制。

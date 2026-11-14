@@ -16,3 +16,12 @@ and license notices will be kept in the ported files and listed here.
 
 - DeepSeek Harness — https://github.com/deepseek-ai/deepseek-harness
   MIT License (host APIs used by the plugin)
+
+Third-party art
+---------------
+
+house/littlehouse/assets/lpc/ contains unmodified sprite sheets from the
+Liberated Pixel Cup (LPC) collection on OpenGameArt, under their own licences
+(CC-BY-SA 3.0 / GPL 3.0 / CC-BY 4.0), not under Apache-2.0. Artists include
+Lanea Zimmerman (Sharm), Eliza Wyatt, BlueCarrot16, Tuomo Untinen (Reemax),
+Hyptosis and Daniel Eddeland. Full attribution: house/littlehouse/assets/lpc/CREDITS.md

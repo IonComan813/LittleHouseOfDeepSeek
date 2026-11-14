@@ -60,3 +60,34 @@ class RenderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpritesTest(unittest.TestCase):
+    def setUp(self):
+        try:
+            import pygame  # noqa: F401
+        except ImportError:
+            self.skipTest("pygame-ce not installed")
+
+    def test_lpc_pictures_load(self):
+        from littlehouse import sprites as SP
+        self.assertTrue(SP.available())
+        for name in SP.SPRITES:
+            self.assertIsNotNone(SP.get(name), name)
+        for crop in SP.CROP_COLUMNS:
+            self.assertIsNotNone(SP.crop(crop, 4), crop)
+
+    def test_falls_back_to_drawing_without_the_sheets(self):
+        from littlehouse import render as R
+        from littlehouse import sprites as SP
+        from littlehouse.world import World
+        saved_sheets, saved_cache = dict(SP._sheets), dict(SP._cache)
+        try:
+            SP._sheets.clear(); SP._cache.clear()
+            for name in ("beds_single_a.png", "sofas_casual.png", "house_interior.png", "cabinets.png", "tables.png",
+                         "planters.png", "flowers.png", "farming_plowed_soil.png", "farming_plants.png"):
+                SP._sheets[name] = None
+            R.render(World(seed=1))  # must not raise
+        finally:
+            SP._sheets.clear(); SP._sheets.update(saved_sheets)
+            SP._cache.clear(); SP._cache.update(saved_cache)
