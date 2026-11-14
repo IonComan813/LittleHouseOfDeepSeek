@@ -33,7 +33,7 @@ ROOMS: dict[str, Room] = {
         Room("yard", "庭院", "屋前的小草地院子，有三块菜地、一个邮箱和开拓署的寄售箱，东边长着一棵树，角落里有几丛灌木，院子和沙滩之间隔着一道矮木篱笆。往前走就是沙滩。", ("living_room", "beach"), outdoor=True,
              hints=("open(邮箱)", "open(包裹)", "sell(物品, 数量)", "plant(种子, 菜地)", "water()", "harvest()")),
         Room("beach", "沙滩", "细细的白沙滩，海浪会把贝壳冲上岸，岸边有一块适合钓鱼的礁石。", ("yard",), outdoor=True,
-             hints=("pick(东西)", "fish()", "wade()")),
+             hints=("pick(东西)", "fish()", "play_in_water()")),
     )
 }
 
@@ -152,7 +152,7 @@ ITEMS: dict[str, Item] = _items(
     ("旧照片", "collectible", 0, "泛黄的照片：一群人站在还没修好的码头前，笑得很开心。背面写着「潮汐湾 第一年」。"),
     ("发卡", "collectible", 0, "一枚贝壳形状的发卡。"),
     ("浮木", "collectible", 0, "被海水磨得很光滑的一截浮木，形状像一只鸟。"),
-    # cat toys (play(玩具) with the cat; they are not used up)
+    # cat toys (play_with_cat(玩具); they are not used up)
     ("逗猫棒", "toy", 0, "细竹竿上拴着一串羽毛和一个小铃铛。", "1根"),
     ("小铃铛球", "toy", 0, "镂空的塑料球，里面有个会响的小铃铛。", "1个"),
     ("猫薄荷玩偶", "toy", 0, "塞满猫薄荷的布鱼，闻起来有股青草味。", "1个"),
@@ -365,7 +365,7 @@ DREAMS = (
 
 # --------------------------------------------------------------------------- playing with the cat
 #
-# play() rolls how interested the cat is (its temper today, hunger, the toy,
+# play_with_cat() rolls how interested the cat is (its temper today, hunger, the toy,
 # its favourite toy, whether it just played), then maybe one thing happening in
 # the room. Effects: "dirt" adds dirt to the room, "pot" knocks over a potted
 # plant (dirt, and the plant loses water), "vase" needs a placed 花瓶.
@@ -462,8 +462,8 @@ STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"]); cooking 
 
 CLEAN_DIRT_PER_MINUTE = 25.0  # a filthy room (100) takes four minutes; progress is kept if she stops
 FISH_SECONDS = (60, 180)  # each cast waits this long (random) for a bite
-STARGAZE_SECONDS = (120, 240)  # stargaze(): how long she looks up
-WADE_SECONDS = (60, 150)  # wade(): playing in the waves
+STARGAZE_SECONDS = (120, 240)  # look_at_sky(): how long she looks up
+WADE_SECONDS = (60, 150)  # play_in_water(): playing in the waves
 
 # Things that may happen while she looks at the night sky: (text, chance, condition).
 # Conditions: summer / warm (summer, autumn) / yard / beach / clear / cloudy /
@@ -525,7 +525,7 @@ FISH_STORIES = (
     "刚换了鱼饵，正等着下一口。",
 )
 
-# wade() and the beach in the everyday life: one of these, at random (plus the light on the sea).
+# play_in_water() and the beach in the everyday life: one of these, at random (plus the light on the sea).
 BEACH_PLAY = (
     "一个浪打过来，裙摆湿了一截，你笑着往后跳。",
     "你追着退下去的浪跑，又被下一个浪追回来。",

@@ -440,12 +440,12 @@ class CatTest(unittest.TestCase):
             w.clock.advance(3600)
             w.pet["room"] = w.location
             w.pet["hunger"] = 20
-            res = run(w, "play(逗猫棒)" if i % 2 else "play()")
+            res = run(w, "play_with_cat(逗猫棒)" if i % 2 else "play_with_cat()")
             self.assertTrue(ok(res), res)
             moods.add(res[0].text)
         self.assertGreater(len(moods), 3)  # the outcome varies
-        self.assertFalse(ok(run(w, "play(鸡蛋)")))
-        self.assertIn("play", w.actions_here())
+        self.assertFalse(ok(run(w, "play_with_cat(鸡蛋)")))
+        self.assertIn("play_with_cat", w.actions_here())
 
     def test_play_can_knock_things_over(self):
         hits = 0
@@ -455,7 +455,7 @@ class CatTest(unittest.TestCase):
             w.pet["affection"] = 90
             w.pet["hunger"] = 0
             before = w.dirt["living_room"]
-            run(w, "play(逗猫棒)" if w.add_item("逗猫棒") is None else "")
+            run(w, "play_with_cat(逗猫棒)" if w.add_item("逗猫棒") is None else "")
             if w.dirt["living_room"] > before + 5:
                 hits += 1
         self.assertGreater(hits, 0)

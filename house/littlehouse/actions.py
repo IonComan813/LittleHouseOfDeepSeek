@@ -759,7 +759,7 @@ def _fish(w: World) -> Proc:
     return f"钓到了一条{catch}！"
 
 
-@action("stargaze()", "在院子或沙滩上看夜空（天黑以后）：月亮、星星，有时有流星", 0, 0, proc=True)
+@action("look_at_sky()", "在院子或沙滩上看夜空（天黑以后）：月亮、星星，有时有流星", 0, 0, proc=True)
 def _stargaze(w: World) -> Proc:
     if not C.ROOMS[w.location].outdoor:
         raise ActionError("看星星要到外面去，先 goto(庭院) 或 goto(沙滩)。")
@@ -844,7 +844,7 @@ def sea_light(w: World) -> str:
     return light.get(phase, f"细细的{phase}在海面上只映出一点点光。")
 
 
-@action("wade()", "在海边玩水、踩浪（沙滩上，一两分钟）", 0, 0, proc=True)
+@action("play_in_water()", "在海边玩水、踩浪（沙滩上，一两分钟）", 0, 0, proc=True)
 def _wade(w: World) -> Proc:
     _need_room(w, "beach")
     if w.weather() == "雷阵雨":
@@ -975,7 +975,7 @@ def actions_here(w: World) -> list[str]:
     room = C.ROOMS[w.location]
     names = [h.split("(")[0] for h in room.hints]
     if not room.outdoor:
-        names += ["call"] if w.pet["room"] != w.location else ["feed", "pet", "play"]
+        names += ["call"] if w.pet["room"] != w.location else ["feed", "pet", "play_with_cat"]
         if w.items_with_tag("furniture"):
             names.append("place")
         if any(o.kind == "decor" for o in w.here()):
@@ -987,7 +987,7 @@ def actions_here(w: World) -> list[str]:
     if w.messes():
         names.insert(0, "tidy")
     if room.outdoor and is_dark(w.now()):
-        names.append("stargaze")
+        names.append("look_at_sky")
     return list(dict.fromkeys(n for n in names if n in ACTIONS))
 
 
@@ -1041,7 +1041,7 @@ def options(w: World, name: str) -> str:
 # ---------------------------------------------------------------- playing with the cat
 
 
-@action("play(玩具)", "陪猫玩；玩具可选（逗猫棒、小铃铛球、猫薄荷玩偶、毛线球、纸箱），不写就用手逗它", 0, 1, proc=True)
+@action("play_with_cat(玩具)", "陪猫玩；玩具可选（逗猫棒、小铃铛球、猫薄荷玩偶、毛线球、纸箱），不写就用手逗它", 0, 1, proc=True)
 def _play(w: World, ref: str = "") -> Proc:
     p = _pet_here(w)
     toy = ""
@@ -1161,7 +1161,7 @@ SHORT = {
     "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water": "浇水", "open": "看信 / 拆包裹", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick": "捡东西", "fish": "钓鱼", "read": "读纸条",
-    "display": "摆上收藏架", "stargaze": "看夜空", "wade": "玩水踩浪", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩", "tidy": "收拾乱子",
+    "display": "摆上收藏架", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play_with_cat": "陪猫玩", "tidy": "收拾乱子",
 }
 
 

@@ -24,27 +24,27 @@ class SkyTest(unittest.TestCase):
 
     def test_stargaze(self):
         w = new_world(when=(2026, 8, 12, 22))
-        res = run(w, "goto(庭院); stargaze()")
+        res = run(w, "goto(庭院); look_at_sky()")
         self.assertTrue(res[-1].ok, res)
         self.assertIn("新月", res[-1].text)
-        self.assertIn("stargaze", w.actions_here())
+        self.assertIn("look_at_sky", w.actions_here())
         seen = 0
         for seed in range(30):  # the Perseids: meteors on most nights that are not cloudy
             w.rng.seed(seed)
-            seen += "流星" in run(w, "stargaze()")[0].text
+            seen += "流星" in run(w, "look_at_sky()")[0].text
         self.assertGreater(seen, 5)
         w = new_world()  # 10:00
-        self.assertNotIn("stargaze", w.actions_here())
-        self.assertIn("天还亮着", run(w, "goto(庭院); stargaze()")[-1].text)
-        self.assertIn("到外面去", run(new_world(when=(2026, 8, 12, 22)), "stargaze()")[0].text)
+        self.assertNotIn("look_at_sky", w.actions_here())
+        self.assertIn("天还亮着", run(w, "goto(庭院); look_at_sky()")[-1].text)
+        self.assertIn("到外面去", run(new_world(when=(2026, 8, 12, 22)), "look_at_sky()")[0].text)
 
     def test_wade_and_the_light_on_the_sea(self):
         w = new_world(when=(2026, 11, 14, 17))
-        res = run(w, "goto(沙滩); wade()")
+        res = run(w, "goto(沙滩); play_in_water()")
         self.assertTrue(res[-1].ok, res)
         self.assertIn("夕阳", res[-1].text)
-        self.assertIn("蛾眉月", run(new_world(when=(2026, 11, 14, 20)), "goto(沙滩); wade()")[-1].text)
-        self.assertIn("这件事要在沙滩做", run(new_world(), "wade()")[0].text)
+        self.assertIn("蛾眉月", run(new_world(when=(2026, 11, 14, 20)), "goto(沙滩); play_in_water()")[-1].text)
+        self.assertIn("这件事要在沙滩做", run(new_world(), "play_in_water()")[0].text)
 
     def test_fishing_in_everyday_life_needs_the_rod(self):
         from littlehouse import content as C
