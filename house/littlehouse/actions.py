@@ -197,48 +197,33 @@ def walk_route(w: World, path: list[str], end: tuple[float, float] | None = None
     return ""
 
 
-def _settle(w: World, room: str, focus: str | None, text: str, chore: str | None = None) -> Proc:
-    """Off-hours routine: go and do one of the everyday things (content.IDLE_ACTIVITIES).
-    A chore is really done; what came of it stays in resident["idle_note"]."""
+def _settle(w: World, room: str, focus: str | None, text: str) -> Proc:
+    """Off-hours routine: go to one of the everyday things (content.IDLE_ACTIVITIES)."""
     if room != w.location:
         yield from walk_route(w, w.path_to(room))
     yield from walk_to(w, focus)
     w.resident["idle"] = text
-    if chore in CHORES:
-        try:
-            note = yield from CHORES[chore](w)
-        except (ActionError, Interrupted):
-            note = ""
-        w.resident["idle_note"] = (note or "")[:160]
-        w.resident["idle"] = text  # the chore may have walked her about; she is still at it
     return ""
 
 
-def _chore_clean(w: World) -> Proc:
-    if w.dirt.get(w.location, 0.0) < 5 and not w.messes():
-        yield work(60, "clean", None, "收拾东西")
-        return "屋里本来就挺干净的，你把东西归了归位，擦了擦桌子。"
-    return (yield from _clean(w, 3))
-
-
-def _chore_water(w: World) -> Proc:
-    try:
-        return (yield from _water(w))
-    except ActionError:
-        yield work(40, "water", None, "擦叶子")
-        return "植物都不缺水，你拿湿布把叶子一片片擦干净了。"
-
-
-# Everyday chores the routine really does (see content.IDLE_ACTIVITIES).
-CHORES: dict[str, Callable[[World], Proc]] = {
-    "clean": _chore_clean,
-    "play": lambda w: _play(w, ""),
-    "water": _chore_water,
-    "stargaze": lambda w: _stargaze(w),
-}
+def _story_play(w: World) -> str:
+    """How playing with the cat is going (nothing changes: just what she would say)."""
+    mood = {"黏人": "happy", "平常": "ok", "傲娇": "meh", "烦躁": "meh"}.get(w.pet_temper(), "ok")
+    if w.pet["hunger"] >= 70:
+        mood = "meh"
+    return "你用手指在地板上划来划去逗它。" + w.rng.choice(C.PLAY_MOODS[mood]).format(pet=w.pet["name"])
 
 
 INTERNAL["_settle"] = _settle
+
+
+# Stories for the everyday things (content.IDLE_ACTIVITIES): rolled only when
+# someone wakes her with a message (world.idle_story), never applied to the world.
+STORIES: dict[str, Callable[[World], str]] = {
+    "play": _story_play,
+    "beach": lambda w: w.rng.choice(C.BEACH_PLAY),
+    "stargaze": lambda w: sky_view(w, w.rng)[0],
+}
 
 
 @action("examine(东西)", "仔细看某样东西（也可以是背包里的物品）", 1, 1)
@@ -784,11 +769,18 @@ def _stargaze(w: World) -> Proc:
         yield work(w.rng.uniform(*C.STARGAZE_SECONDS), "stargaze", None, "看星星")
     except Interrupted:
         return "你刚抬头看了一会儿，就停下了。"
+    text, note = sky_view(w, w.rng)
+    w.log("sky", note)
+    return text
+
+
+def sky_view(w: World, rng) -> tuple[str, str]:
+    """What the night sky looks like from here now: (text for her, a line for the log)."""
+    now = w.now()
     weather = w.weather()
     if weather in C.RAINY or weather == "阴":
         sound = {"小雪": "雪花落在脸上凉凉的", "阴": "风有点凉"}.get(weather, "只听见雨落在屋檐上的声音")
-        w.log("sky", "想看星星，可是云太厚了")
-        return f"{'下着' + weather + '，' if weather != '阴' else '云层很厚，'}天上什么也看不见，{sound}。"
+        return f"{'下着' + weather + '，' if weather != '阴' else '云层很厚，'}天上什么也看不见，{sound}。", "想看星星，可是云太厚了"
     cloudy = weather == "多云"
     phase = sky.moon_phase(now)
     light = sky.moon_light(now) if phase != "新月" and sky.moon_up(now) else 0.0
@@ -804,12 +796,12 @@ def _stargaze(w: World) -> Proc:
     shower = sky.meteor_shower(now)
     chance = (0.85 if shower else 0.12) * (0.4 if cloudy else 1.0) * (0.5 if light > 0.75 else 1.0)
     meteors = 0
-    if w.rng.random() < chance:
-        meteors = w.rng.randint(2, 7) if shower else 1
+    if rng.random() < chance:
+        meteors = rng.randint(2, 7) if shower else 1
         if shower:
             lines.append(f"今晚是{shower}最多的时候，你数到了 {meteors} 颗流星，其中一颗拖着长长的尾巴。")
         else:
-            lines.append(w.rng.choice(("一颗流星从东边的天上划过，一眨眼就不见了。", "一道很细的流星从头顶滑向海面，你差点没看见。")))
+            lines.append(rng.choice(("一颗流星从东边的天上划过，一眨眼就不见了。", "一道很细的流星从头顶滑向海面，你差点没看见。")))
     elif shower:
         lines.append(f"听说今晚是{shower}，可惜{'云太多' if cloudy else '月光太亮' if light > 0.75 else '运气不好'}，看了半天也没等到。")
     pet = w.pet
@@ -819,13 +811,12 @@ def _stargaze(w: World) -> Proc:
         "pet": pet["affection"] >= 50 and pet["room"] != "outside",
     }
     events = list(C.SKY_EVENTS)
-    w.rng.shuffle(events)
+    rng.shuffle(events)
     for text, p, cond in events:
-        if all(conds.get(c, False) for c in cond.split()) and w.rng.random() < p:
+        if all(conds.get(c, False) for c in cond.split()) and rng.random() < p:
             lines.append(text.format(pet=pet["name"]))
             break
-    w.log("sky", f"看了夜空：{phase}" + (f"，看到了 {meteors} 颗流星" if meteors > 1 else "，看到了流星" if meteors else ""))
-    return "".join(lines)
+    return "".join(lines), f"看了夜空：{phase}" + (f"，看到了 {meteors} 颗流星" if meteors > 1 else "，看到了流星" if meteors else "")
 
 
 @action("read(东西)", "读漂流瓶里的纸条", 1, 1)

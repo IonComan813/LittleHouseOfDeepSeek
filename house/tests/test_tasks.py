@@ -152,24 +152,28 @@ class EverydayLifeTest(unittest.TestCase):
         self.assertEqual(w.location, idle.room or w.location)
         self.assertNotIn("看书", idle.text)  # nothing she could not answer questions about
 
-    def test_everyday_chores_are_really_done(self):
-        from littlehouse.actions import CHORES  # noqa: F401
+    def test_everyday_stories_only_when_asked(self):
         w = new_world(when=(2026, 10, 15, 14), free=False)
         w.dirt["kitchen"] = 80
-        act = next(a for a in C.IDLE_ACTIVITIES if a.chore == "clean")
+        act = next(a for a in C.IDLE_ACTIVITIES if a.text.startswith("在收拾屋子"))
         w.idle_activity = lambda dt=None: act
         for _ in range(40):
             step(w, 10)
-        self.assertEqual(w.location, "kitchen")  # the dirtiest room
-        self.assertLess(w.dirt["kitchen"], 80)
-        self.assertIn("打扫", w.resident["idle_note"] + w.resident["idle"])
+        self.assertNotEqual(w.location, "kitchen")  # real cleaning waits for her
+        self.assertGreaterEqual(w.dirt["kitchen"], 80)  # (dust keeps settling)
+        self.assertEqual(w.idle_story(), "")  # nothing to tell about tidying up
         w2 = new_world(when=(2026, 10, 15, 14), free=False)
-        act = next(a for a in C.IDLE_ACTIVITIES if a.chore == "play")
+        act = next(a for a in C.IDLE_ACTIVITIES if a.story == "play")
         w2.idle_activity = lambda dt=None: act
+        affection = w2.pet["affection"]
         for _ in range(40):
             step(w2, 10)
-        self.assertEqual(w2.location, w2.pet["room"])
-        self.assertTrue(w2.resident["idle_note"])  # how the cat took it
+        self.assertNotIn("idle_story", w2.resident)  # nothing rolled while nobody asks
+        w2.pet["room"] = w2.location  # (the cat may have just wandered off)
+        story = w2.idle_story()
+        self.assertIn(w2.pet["name"], story)
+        self.assertEqual(w2.idle_story(), story)  # the same while she is still at it
+        self.assertLessEqual(w2.pet["affection"], affection)  # and nothing really happened (it only drifts)
 
     def test_free_time_interrupts_the_routine(self):
         w = new_world(when=(2026, 10, 15, 14), free=False)

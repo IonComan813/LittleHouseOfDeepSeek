@@ -483,9 +483,10 @@ MAX_WAIT_MINUTES = 30
 # Free time is when the agent is awake and choosing what to do. The rest of the
 # day she "just lives": the house picks one of these each hour (stable within
 # the hour), walks her there, and the picture shows it. ``when``: night (she is
-# asleep), day, dry (daytime and not raining), clear_night (after dark, before bed, not raining).
-# Nothing she could not answer questions about (no "reading a book"): the chores
-# are really done, and what came of them is told to her when someone messages her.
+# asleep), day, noon (12-16), dry (daytime and not raining), clear_night (after dark, before bed, not raining).
+# Nothing she could not answer questions about (no "reading a book"). None of it
+# changes the world, and nothing is recorded: only when someone wakes her with a
+# message is a little story rolled for what she is doing (``story``) and told to her.
 
 
 @dataclass(frozen=True)
@@ -496,23 +497,32 @@ class Idle:
     effect: str | None
     when: str
     weight: int = 1
-    chore: str | None = None  # really done once she gets there (actions.CHORES); the result is kept for her
+    story: str | None = None  # how it is going: rolled only when someone wakes her (actions.STORIES)
 
 
 IDLE_ACTIVITIES: tuple[Idle, ...] = (
     Idle("在床上睡觉", "bedroom", "bed", None, "night"),
-    # Things she really does (what happened is kept, so she can tell someone about it):
-    Idle("在打扫、收拾屋子", "", None, "sparkle", "day", 3, chore="clean"),
-    Idle("在陪团子玩", "", None, "hearts", "day", 3, chore="play"),
-    Idle("在给植物浇水、擦叶子", "", None, "water", "day", 1, chore="water"),
-    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, chore="stargaze"),
-    # Just being there:
+    Idle("在收拾屋子、擦擦桌子", "", None, "sparkle", "day", 2),  # the tidiest room: real cleaning waits for her
+    Idle("在陪团子玩", "", None, "hearts", "day", 3, story="play"),
+    Idle("在给植物擦叶子、看看新芽", "", None, "water", "day", 1),
+    Idle("在海边玩水、踩浪", "beach", None, "water", "dry", 2, story="beach"),
+    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, story="stargaze"),
     Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 1),
     Idle("在厨房的木桌边慢慢喝茶", "kitchen", "table", "eat", "day", 2),
-    Idle("在床上睡午觉", "bedroom", "bed", "zzz", "day", 1),
+    Idle("在床上睡午觉", "bedroom", "bed", "zzz", "noon", 1),
     Idle("在院子里的树下晒太阳", "yard", "tree", None, "dry", 2),
-    Idle("在沙滩上散步", "beach", None, "look", "dry", 2),
+    Idle("在沙滩上散步", "beach", None, "look", "dry", 1),
     Idle("在沙滩上吹着海风看夜里的海", "beach", None, "look", "clear_night", 1),
+)
+
+# How playing at the beach is going, when someone asks (one of these, at random).
+BEACH_PLAY = (
+    "一个浪打过来，裙摆湿了一截，你笑着往后跳。",
+    "你追着退下去的浪跑，又被下一个浪追回来。",
+    "你光着脚踩在湿沙上，留下一串脚印，很快又被浪抹平了。",
+    "你用脚尖在沙滩上画了一条鲸鱼，浪一来就只剩个尾巴。",
+    "浅水里有几条小鱼，一靠近就散开了。",
+    "海风很大，你的头发被吹得乱糟糟的。",
 )
 NIGHT_HOURS = (23, 7)  # asleep from 23:00 to 07:00 outside free time
 OFF_HOURS_HUNGER_CAP = 60.0  # she grabs a bite on her own; still peckish when free time starts

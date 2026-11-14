@@ -505,6 +505,7 @@ class World:
             return next(a for a in C.IDLE_ACTIVITIES if a.when == "night")
         dry = not self.raining(dt)
         ok = [a for a in C.IDLE_ACTIVITIES if a.when == "day" or (a.when == "dry" and dry and not is_dark(dt))
+              or (a.when == "noon" and 12 <= dt.hour < 16)
               or (a.when == "clear_night" and dry and is_dark(dt) and self.weather(dt) != "阴")]
         rng = random.Random(dt.strftime("%Y-%m-%d %H") + "idle")
         return _weighted(rng, [(a, a.weight) for a in ok])
@@ -513,31 +514,46 @@ class World:
         if self.free() or self.runner.busy():
             return
         act = self.idle_activity()
-        key = self.now().strftime("%Y-%m-%d %H ") + act.text  # one activity per hour, chores done once
-        if self.resident.get("idle_key") == key and self.resident.get("idle") == act.text:
+        key = self.now().strftime("%Y-%m-%d %H ") + act.text  # one activity per hour
+        following = act.story == "play" and self.pet["room"] != self.location  # the cat wandered off: go after it
+        if self.resident.get("idle_key") == key and self.resident.get("idle") == act.text and not following:
             return
-        room = self.chore_room(act)
+        room = self.idle_room(act)
         if room is None:  # e.g. the cat is outside: just sit by the window this hour
             act = next(a for a in C.IDLE_ACTIVITIES if a.text == "坐在客厅的大窗边发呆")
             room = act.room
         from .tasks import Call
 
         self.resident["idle_key"] = key
-        self.resident["idle_note"] = ""
-        self.runner.submit([Call("_settle", [room, act.focus, act.text, act.chore])], routine=True)
+        self.runner.submit([Call("_settle", [room, act.focus, act.text])], routine=True)
 
-    def chore_room(self, act: C.Idle) -> str | None:
+    def idle_room(self, act: C.Idle) -> str | None:
         """Where an everyday activity happens (None: not possible right now)."""
         if act.room:
             return act.room
         indoor = [r for r, room in C.ROOMS.items() if not room.outdoor]
-        if act.chore == "play":
+        if act.story == "play":
             return self.pet["room"] if self.pet["room"] in indoor else None
-        if act.chore == "water":
-            pots = [o for o in self.objects.values() if o.kind == "plant" and o.room in indoor]
-            return min(pots, key=lambda o: o.state.get("water", 100)).room if pots else None
-        # clean: the dirtiest room (it is fine if it is clean already: she tidies up)
-        return max(indoor, key=lambda r: self.dirt.get(r, 0.0))
+        if "植物" in act.text:
+            pots = [o.room for o in self.objects.values() if o.kind == "plant" and o.room in indoor]
+            return pots[0] if pots else None
+        return min(indoor, key=lambda r: self.dirt.get(r, 0.0))  # tidying: the tidiest room
+
+    def idle_story(self) -> str:
+        """How the everyday thing she is doing is going — rolled the first time someone
+        asks (a message wakes her), then kept for the rest of that activity."""
+        act = self.current_idle()
+        if act is None or not act.story or (act.story == "play" and self.pet["room"] != self.location):
+            return ""
+        key = self.resident.get("idle_key", "")
+        kept = self.resident.get("idle_story")
+        if kept and kept[0] == key:
+            return kept[1]
+        from .actions import STORIES
+
+        text = STORIES[act.story](self)
+        self.resident["idle_story"] = [key, text]
+        return text
 
     def current_idle(self) -> C.Idle | None:
         """The everyday thing she is settled into right now (None during free time or on her way)."""

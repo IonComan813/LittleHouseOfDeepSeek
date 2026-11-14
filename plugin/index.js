@@ -481,16 +481,17 @@ export default class LittleHouse extends Service {
   /** A QQ message arrived: the phone buzzes in her day session, whatever she is doing. */
   async phoneBuzz({ line, images = [], what = 'QQ 消息' }) {
     const agent = await this.dayAgent()
-    let head = `（手机响了，是${what}：）`
+    const is = what.startsWith('QQ') ? `是 ${what}` : `是${what}`
+    let head = `（手机响了，${is}：）`
     if (!this.window(agent.id) && !this.controls.has(agent.id)) {
       // outside free time: tell her what her character is doing right now
       try {
         const s = await this.house.request('GET', '/status')
         const doing = s.idle ? `，${s.idle.replace(/^在/, '')}` : s.doing ? `，正在 ${s.doing}` : ''
         const note = s.idle_note ? `（${s.idle_note.replace(/。$/, '')}）` : ''
-        head = `（${hhmm(s.now * 1000)}，不是自由活动时间。你的角色此刻在${s.location_name}${doing}${note}。手机响了，是${what}：）`
+        head = `（${hhmm(s.now * 1000)}，不是自由活动时间。你的角色此刻在${s.location_name}${doing}${note}。手机响了，${is}：）`
       } catch {
-        head = `（${hhmm(Date.now())}，不是自由活动时间。手机响了，是${what}：）`
+        head = `（${hhmm(Date.now())}，不是自由活动时间。手机响了，${is}：）`
       }
     }
     await this.deliver(agent, [{ type: 'text', text: `${head}\n${line}` }, ...images], 'little-house-qq')

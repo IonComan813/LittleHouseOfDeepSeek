@@ -170,7 +170,7 @@ class House:
                 "busy": w.runner.busy() and not w.runner.routine,
                 "doing": w.runner.doing() if not w.runner.routine else "",
                 "idle": idle.text if idle else w.resident.get("idle", ""),
-                "idle_note": w.resident.get("idle_note", "") if idle else "",
+                "idle_note": w.idle_story() if idle else "",
                 "location": w.location,
                 "location_name": C.ROOMS[w.location].name,
                 "asleep": w.resident.get("asleep"),
