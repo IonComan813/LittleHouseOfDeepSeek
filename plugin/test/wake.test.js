@@ -2,9 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  buildNudge, buildWakeMessage, checkSlots, findSlot, formatDuration, hhmm, localIso, parseClock, planDay, recapEvents,
+  buildNudge, planBed, buildWakeMessage, checkSlots, findSlot, formatDuration, hhmm, localIso, parseClock, planDay, recapEvents,
 } from '../lib/wake.js'
-import { DEFAULT_SLOTS } from '../lib/slots.js'
+import { DEFAULT_SLEEP, DEFAULT_SLOTS } from '../lib/slots.js'
 
 const at = (h, m) => new Date(2026, 10, 13, h, m, 0, 0).getTime()
 
@@ -24,11 +24,14 @@ test('planDay rolls a start inside each window', () => {
   const day = new Date(2026, 10, 13, 15, 0)
   const low = planDay(day, DEFAULT_SLOTS, () => 0)
   assert.deepEqual(low.map((p) => [p.name, hhmm(p.start), p.minutes]), [
-    ['早上', '07:30', 40], ['中午', '11:30', 40], ['傍晚', '17:30', 40], ['深夜', '21:30', 40],
+    ['早上', '07:30', 40], ['中午', '11:30', 40], ['傍晚', '17:30', 40], ['晚上', '21:30', 40],
   ])
   const high = planDay(day, DEFAULT_SLOTS, () => 0.999)
-  // 0.999 >= chance 0.5: the late-evening slot does not happen that day
-  assert.deepEqual(high.map((p) => [p.name, hhmm(p.start)]), [['早上', '08:30'], ['中午', '12:30'], ['傍晚', '18:30']])
+  assert.deepEqual(high.map((p) => [p.name, hhmm(p.start)]), [['早上', '08:30'], ['中午', '12:30'], ['傍晚', '18:30'], ['晚上', '22:30']])
+  const some = planDay(day, [{ name: '有时', from: '20:00', to: '20:00', minutes: 30, chance: 0.5 }], () => 0.9)
+  assert.deepEqual(some, []) // 0.9 >= chance 0.5: not that day
+  assert.equal(hhmm(planBed(day, DEFAULT_SLEEP, () => 0)), '23:30')
+  assert.equal(hhmm(planBed(day, DEFAULT_SLEEP, () => 0.999)), '23:59')
   const fixed = planDay(day, [{ name: '固定', from: '10:00', to: '10:00', minutes: 30 }], () => 0.7)
   assert.equal(hhmm(fixed[0].start), '10:00')
 })
@@ -61,6 +64,9 @@ test('buildWakeMessage', () => {
   assert.match(first, /^（自由活动时间到了：早上，07:52–08:32，共 40 分钟。）/)
   assert.doesNotMatch(first, /这段时间里|在这之前/)
   assert.match(first, /先用 diary_write 写下这次的日记，再调用 end_free_time/)
+  const morning = buildWakeMessage({ slotName: '早上', start: at(7, 52), until: at(8, 32), before: '在床上睡觉', news: [], look: 'LOOK', wokeUp: true })
+  assert.match(morning, /^（07:52，你醒了。早上的自由活动开始了：到 08:32，共 40 分钟。）/)
+  assert.doesNotMatch(morning, /在床上睡觉/)
   assert.match(first, /日常事务/)
   const later = buildWakeMessage({
     slotName: '中午', start: at(12, 0), until: at(12, 40), before: '窝在沙发上看书',

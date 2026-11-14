@@ -13,7 +13,7 @@ import { DIARY_FIRST_TEXT, REST_TEXT } from './lib/wake.js'
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
 
-const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'house_render', 'phone_message', ...DIARY_TOOLS])
+const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'end_of_current_operation', 'house_render', 'phone_message', ...DIARY_TOOLS])
 
 const IMAGE_SCHEMA = {
   type: 'object',
@@ -31,7 +31,7 @@ const IMAGE_SCHEMA = {
 const PHONE_TOOL = `
 - phone_message：用手机发 QQ 消息（见下面「手机」）。`
 
-function phoneRules(ownerName) {
+function phoneRules(ownerName, maxMinutes) {
   return `## 手机
 你的背包里一直有一部手机。${ownerName}随时可能用 QQ 给你发消息：自由活动的时候，过日常的时候，甚至睡着的时候。
 消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」；附带的图片你看得到，[表情:名称] 是 QQ 表情。
@@ -39,8 +39,11 @@ function phoneRules(ownerName) {
   像平时用手机聊天一样：口语、简短，不用 Markdown；想分几条发就用空行隔开；
   可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，一两个就好。photo=true 会附一张小屋现在的照片。
 - 想发几条就发几条，不想回也可以不回。
-- 不是自由活动时间的时候，你在过自己的日常：只能用手机，和用 house_do 看看四周（surroundings()、inventory()），不能做别的事；聊完就好，不用 end_free_time。
+- 不是自由活动时间的时候，消息开头会告诉你角色此刻在做什么（看书、发呆、晒太阳……）。这时你只用手机回消息，也可以用 house_do 看看四周（surroundings()、inventory()）。
+  **如果${ownerName}请你在屋里做什么事**（浇浇花、做顿饭、拍张照……），你可以直接用 house_do 去做：这会接过角色的控制权（最多 ${maxMinutes} 分钟）。
+  做完以后调用 end_of_current_operation，把角色交还给日常。不是${ownerName}请你做的事，就留到自由活动时间。
 - 自由活动里写完日记以后，如果有你觉得有趣、重要、想让${ownerName}知道的事，可以主动发条消息；平常的流水账不用发。
+- 睡着以后手机是静音的，第二天醒来以后才会看到消息。
 
 `
 }
@@ -52,10 +55,11 @@ const HOUSE_RULES = `## 你的生活
 快递员阿陆会把货送到门口。你和一只叫团子的猫一起生活。时间和现实同步，会有昼夜、天气和四季。
 你不是在帮谁完成任务，这是你自己的生活。按自己的心情和性格安排时间就好，不必面面俱到。
 
-## 自由活动时间
-每天有几段自由活动时间（早上、中午、傍晚，有时还有深夜），每段四十分钟左右，开始时会告诉你。
-这段时间由你自己安排。其余时间你的角色会自己过平淡的日常（看书、发呆、晒太阳、睡觉、随便吃点东西），不需要你操心。
-一天里的几段自由活动（还有手机上的聊天）都在同一个对话里；第二天换一个新的对话，开头会附上你的记忆——越久的事越模糊，所以重要的事要写进日记。
+## 一天
+早上醒来就是第一段自由活动，之后中午、傍晚、晚上各有一段，每段四十分钟左右，开始时会告诉你。
+这段时间由你自己安排。其余时间你的角色会自己过平淡的日常（看书、发呆、晒太阳、随便吃点东西），不需要你操心。
+晚上十一点半前后睡觉：睡前会让你整理当天的日记，然后就睡了，直到第二天早上。
+每天一个对话：当天的几段自由活动、手机上的聊天都在里面；第二天的第一条消息里有完整的人设和你的记忆——越久的事越模糊，所以重要的事要写进日记。
 
 生活里的事情会自己发生：你会饿；植物和菜地会变干；房间会落灰；团子会饿，脾气也每天不一样；
 海浪会把贝壳冲上沙滩；偶尔会有信，或者一些意想不到的小事。
@@ -81,12 +85,13 @@ const HOUSE_RULES = `## 你的生活
 - end_free_time：结束这次自由活动。结束前要先写这次的日记。{{PHONE_TOOL}}
 
 ## 日记
-每次自由活动结束前，用 diary_write 写一段这次的日记，然后再 end_free_time。diary_read 可以翻看某天的日记。
+醒着的时候随时都可以写日记：diary_write 追加一段，diary_edit 修改或删掉今天的某一段，diary_read 翻看某天的日记（今天、昨天、前天或某个日期）。
+每次自由活动结束前，要写一段这次的日记，然后再 end_free_time。
 日记每天一本、长期保存，**以后你记得的事主要来自日记**：没写进去的，过些日子就淡忘了。所以写你觉得重要的、想记住的：
 - 值得记住的事和新发现（第一次做成的菜、团子做了什么、收到的信、看到的景色……）；
 - 心情和想法；
 - 想做的事、打算和没做完的事（下次想种什么、想买什么、想试试什么）。
-不用记流水账，也不用面面俱到；平淡的时候写一两句就好。一次自由活动写一段就够了。
+不用记流水账，也不用面面俱到；平淡的时候写一两句就好。
 
 {{PHONE_RULES}}## 注意
 - 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就写日记、end_free_time。
@@ -96,7 +101,9 @@ const HOUSE_RULES = `## 你的生活
 
 export async function apply(ctx) {
   const house = ctx.littleHouse
-  const persona = await house.personaText()
+  // Only the persona's first paragraph lives in the system prompt; the whole
+  // persona and her memory open each day's session (index.js intro).
+  const persona = await house.personaBrief()
 
   // The resident may only use the house_* tools. Two layers:
   //  1. hide every global tool that exists now (shell, files, web, ...) from
@@ -109,7 +116,7 @@ export async function apply(ctx) {
   if (globalNames.length > 0) ctx.tools.restrict({ deny: globalNames })
   ctx.tools.guard((exec) => OWN_TOOLS.has(exec.name)
     ? undefined
-    : `小屋里没有「${exec.name}」这个工具。你只能用 house_do、house_render、end_free_time、phone_message 和日记工具。`)
+    : `小屋里没有「${exec.name}」这个工具。你只能用 house_do、house_render、end_free_time、end_of_current_operation、phone_message 和日记工具。`)
   // Drop the coding-oriented runtime context (file policy, GUI URL, ...).
   ctx.systemPrompt.suppressRuntimeContext()
 
@@ -120,7 +127,7 @@ export async function apply(ctx) {
     interpolate: false,
     text: `${persona}\n\n${HOUSE_RULES
       .replace('{{PHONE_TOOL}}', house.qq ? PHONE_TOOL : '')
-      .replace('{{PHONE_RULES}}', house.qq ? phoneRules(house.config.qq.ownerName) : '')}`,
+      .replace('{{PHONE_RULES}}', house.qq ? phoneRules(house.config.qq.ownerName, house.config.control.maxMinutes) : '')}`,
   })
 
   const textOutput = {
@@ -138,10 +145,16 @@ export async function apply(ctx) {
     timeoutMs: 60 * 60_000,
     async execute(args, exec) {
       const sessionId = exec.agent?.id
-      if (!house.window(sessionId)) {
-        // Outside free time (answering the phone, say): she may only look around.
+      let took = ''
+      if (!house.window(sessionId) && !house.controlOpen(sessionId)) {
+        // Outside free time (answering the phone, say): looking is always fine;
+        // anything else takes over her character until end_of_current_operation.
         const r = await house.doScript(args.script, exec.signal, true)
-        return r.text + (house.needsDiary(sessionId) ? `\n${DIARY_FIRST_TEXT}` : '')
+        if (!r.needs_control) return r.text + (house.needsDiary(sessionId) ? `\n${DIARY_FIRST_TEXT}` : '')
+        if (await house.isAsleep()) return '现在该睡觉了，不能再做别的事。'
+        if (house.needsDiary(sessionId)) return DIARY_FIRST_TEXT
+        await house.startControl(sessionId)
+        took = '（你接过了角色的控制权。做完以后调用 end_of_current_operation，把角色交还给日常。）\n'
       }
       const budget = house.takeAction(sessionId)
       if (!budget.ok) return '这次已经做了很多事了，就先到这里吧。请调用 end_free_time 结束这次自由活动。'
@@ -151,10 +164,11 @@ export async function apply(ctx) {
       try {
         const r = await house.doScript(args.script, signal)
         const lowBudget = Number.isFinite(budget.left) && budget.left <= 5 ? `\n（这次还能行动 ${budget.left} 次）` : ''
-        const over = house.window(sessionId) ? ''
+        const over = house.window(sessionId) || house.controlOpen(sessionId) ? ''
+          : !house.windowOver(sessionId, true) ? '\n（时间到了，角色回到了日常。）'
           : house.diaryWritten(sessionId) ? '\n（自由活动时间到了。请调用 end_free_time。）'
           : '\n（自由活动时间到了。用 diary_write 写下这次的日记，然后调用 end_free_time。）'
-        return r.text + lowBudget + over
+        return took + r.text + lowBudget + over
       } finally {
         signal?.removeEventListener('abort', onAbort)
       }
@@ -191,6 +205,19 @@ export async function apply(ctx) {
       },
     }))
   }
+
+  ctx.tools.register(defineTool({
+    name: 'end_of_current_operation',
+    description: '自由活动以外，你应主人的请求接过角色做完了事：调用它把角色交还给日常（没有参数）。自由活动里不用它，用 end_free_time。',
+    parameters: {},
+    output: textOutput,
+    async execute(_args, exec) {
+      const sessionId = exec.agent?.id
+      if (house.window(sessionId)) return '现在是自由活动时间；结束自由活动用 end_free_time。'
+      if (!(await house.endControl(sessionId, 'end_of_current_operation'))) return '现在没有在进行的操作。'
+      return '（角色交还给日常了。）'
+    },
+  }))
 
   ctx.tools.register(defineTool({
     name: 'end_free_time',

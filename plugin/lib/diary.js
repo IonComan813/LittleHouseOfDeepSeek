@@ -10,7 +10,7 @@
 // The model decides whether and what to write — nothing is logged here
 // automatically. Pure file helpers, no host dependencies.
 
-import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { localDay } from './wake.js'
@@ -107,4 +107,31 @@ export async function lastEntryNote(dir, now = new Date(), today = localDay(now)
     return `（${when}${time ? ' ' + time : ''} 写的）${last}`
   }
   return undefined
+}
+
+/**
+ * Change or delete one entry of a day, found by its time ("08:35"; the last
+ * entry with that time). Empty text deletes it.
+ * @returns {Promise<{ ok: boolean, times: string[] }>} times = the day's entry times
+ */
+export async function editEntry(dir, day, time, text) {
+  const file = dayFile(dir, day)
+  let src
+  try {
+    src = await readFile(file, 'utf8')
+  } catch {
+    return { ok: false, times: [] }
+  }
+  const body = String(text ?? '').trim()
+  if (body.length > MAX_ENTRY_CHARS) throw new Error(`一条日记最多 ${MAX_ENTRY_CHARS} 个字。`)
+  // split into [heading, entry, entry, ...]; each entry starts with "### HH:MM"
+  const parts = src.split(/(?=^### )/m)
+  const times = parts.slice(1).map((p) => p.slice(4, 9))
+  const i = times.lastIndexOf(String(time).trim())
+  if (i < 0) return { ok: false, times }
+  const entry = parts[i + 1]
+  const head = entry.split('\n', 1)[0]
+  parts[i + 1] = body ? `${head}\n\n${body}\n\n` : ''
+  await writeFile(file, parts.join(''), 'utf8')
+  return { ok: true, times: body ? times : times.filter((_, j) => j !== i) }
 }

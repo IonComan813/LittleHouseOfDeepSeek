@@ -59,6 +59,18 @@ export function planDay(day, slots, random = Math.random) {
 }
 
 /**
+ * Bedtime for a day: a random minute between `from` and `to` (HH:MM).
+ * @param {Date} day @param {{ from: string, to: string }} sleep @returns {number} epoch ms
+ */
+export function planBed(day, sleep, random = Math.random) {
+  const from = parseClock(sleep.from)
+  const to = parseClock(sleep.to)
+  const at = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+  at.setMinutes(from + Math.floor(random() * (to - from + 1)))
+  return at.getTime()
+}
+
+/**
  * The slot to act on: one that is running now (with at least `minMinutes`
  * left), else the next one to come.
  * @param {number} now epoch ms
@@ -134,14 +146,17 @@ export function recapEvents(events, max = 10, maxChars = 40) {
 /**
  * The message that opens a free-time slot.
  * @param {{ slotName: string, start: number, until: number, before?: string, recap?: string[],
- *           news: string[], lastNote?: string, look: string, resumed?: boolean }} p
+ *           news: string[], lastNote?: string, look: string, resumed?: boolean, wokeUp?: boolean }} p
+ *   wokeUp: the day's first free time, which starts when she wakes up
  */
-export function buildWakeMessage({ slotName, start, until, before, recap = [], news, lastNote, look, resumed = false }) {
+export function buildWakeMessage({ slotName, start, until, before, recap = [], news, lastNote, look, resumed = false, wokeUp = false }) {
   const minutes = Math.round((until - start) / 60_000)
-  const lines = [resumed
+  const lines = [wokeUp
+    ? `（${hhmm(start)}，你醒了。${slotName}的自由活动开始了：到 ${hhmm(until)}，共 ${minutes} 分钟。）`
+    : resumed
     ? `（自由活动时间继续：${slotName}，现在 ${hhmm(start)}，到 ${hhmm(until)} 结束，还有 ${minutes} 分钟。）`
     : `（自由活动时间到了：${slotName}，${hhmm(start)}–${hhmm(until)}，共 ${minutes} 分钟。）`]
-  if (before) lines.push(`在这之前，你一直在过平淡的日常——刚才在${before.replace(/^在/, '')}。`)
+  if (before && !wokeUp) lines.push(`在这之前，你一直在过平淡的日常——刚才在${before.replace(/^在/, '')}。`)
   if (recap.length) lines.push('上次自由活动的时候，你' + recap.join('；') + '。')
   if (lastNote) lines.push(`日记里最近的一段${lastNote.startsWith('（') ? '' : '：'}${lastNote}`)
   const uniqueNews = [...new Set(news)].slice(-8)

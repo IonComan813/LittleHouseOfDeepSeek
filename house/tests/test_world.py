@@ -534,6 +534,17 @@ class LookOnlyTest(unittest.TestCase):
             self.assertEqual(house.world.location, "living_room")
 
 
+class SleepTest(unittest.TestCase):
+    def test_the_plugin_says_when_she_sleeps(self):
+        w = new_world(when=(2026, 10, 15, 23, 20), free=False)
+        self.assertEqual(w.idle_activity().when, "night")  # no word from the plugin: the clock decides
+        w.resident["asleep"] = False  # still up (bedtime is 23:30-24:00)
+        self.assertNotEqual(w.idle_activity().when, "night")
+        w = new_world(when=(2026, 10, 15, 14), free=False)
+        w.resident["asleep"] = True
+        self.assertEqual(w.idle_activity().when, "night")
+
+
 class PhoneTest(unittest.TestCase):
     def test_the_phone_is_always_in_the_bag(self):
         w = new_world()

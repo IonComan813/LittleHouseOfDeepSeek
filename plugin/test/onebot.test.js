@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { SILENCE, cqToSegments, formatLine, inHours, qqDay, readMessage, splitReply, toSegments } from '../lib/onebot.js'
+import { SILENCE, cqToSegments, formatLine, readMessage, splitReply, toSegments } from '../lib/onebot.js'
+import { dayOf } from '../lib/wake.js'
 
 test('readMessage: text, faces, pictures, mentions', () => {
   const m = readMessage([
@@ -41,15 +42,10 @@ test('splitReply: bubbles, silence, no Markdown', () => {
   assert.deepEqual(splitReply('  '), [])
 })
 
-test('qqDay changes at the rollover hour', () => {
-  assert.equal(qqDay(new Date(2026, 10, 15, 2, 30), 4), '2026-11-14')
-  assert.equal(qqDay(new Date(2026, 10, 15, 4, 0), 4), '2026-11-15')
-})
-
-test('inHours wraps midnight', () => {
-  assert.equal(inHours(new Date(2026, 0, 1, 3, 0), '00:00', '08:00'), true)
-  assert.equal(inHours(new Date(2026, 0, 1, 9, 0), '00:00', '08:00'), false)
-  assert.equal(inHours(new Date(2026, 0, 1, 23, 30), '23:00', '07:00'), true)
+test('dayOf changes at the rollover hour', () => {
+  assert.equal(dayOf(new Date(2026, 10, 15, 2, 30), 4), '2026-11-14')
+  assert.equal(dayOf(new Date(2026, 10, 15, 4, 0), 4), '2026-11-15')
+  assert.equal(dayOf(new Date(2026, 10, 15, 0, 5), 0), '2026-11-15')
 })
 
 test('formatLine', () => {

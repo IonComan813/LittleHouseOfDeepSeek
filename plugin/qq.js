@@ -2,11 +2,11 @@
 // session (the same one as her free time in the house) as "the phone buzzed";
 // she answers with the phone_message tool — whatever else she writes is not sent.
 //
-// - Private chats with the owner (and listed friends), any time of day.
+// - Private chats with the owner (and listed friends), any time she is awake.
 // - Voice, video and files are stopped here: they never reach the model. A
 //   message with nothing else in it is only recorded.
-// - At night (`night.from`–`night.to`) a message wakes her only with
-//   probability `night.chance`; otherwise a short "asleep" reply goes out.
+// - While she sleeps (bedtime until her first free time) nothing reaches her;
+//   `sleepReply` goes out instead (at most once per chat per half hour).
 // - Every message in and out is appended to <stateDir>/qq/<day>.jsonl — the raw
 //   material for memory.
 //
@@ -17,7 +17,7 @@ import { appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { OneBotClient } from './lib/onebot-client.js'
-import { chatIdOf, formatLine, inHours, readMessage, splitChatId, splitReply, toSegments } from './lib/onebot.js'
+import { chatIdOf, formatLine, readMessage, splitChatId, splitReply, toSegments } from './lib/onebot.js'
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const MAX_IMAGES_PER_MESSAGE = 4
@@ -91,20 +91,19 @@ export class QQ {
     //   || (msg.replyTo !== undefined && this.sentIds.includes(msg.replyTo))
     // if (!addressed) { keep the line in this.groupContext (at most GROUP_CONTEXT_LINES) and return }
 
-    const now = new Date()
-    const night = inHours(now, this.config.night.from, this.config.night.to)
-    if (night && Math.random() >= this.config.night.chance) {
+    const now = Date.now()
+    if (await this.house.isAsleep(now)) {
       const last = this.sleepReplied.get(chatId) ?? 0
-      if (this.config.night.reply && now.getTime() - last > SLEEP_REPLY_GAP_MS) {
-        this.sleepReplied.set(chatId, now.getTime())
-        await this.sendText(chatId, this.config.night.reply, { auto: true })
+      if (this.config.sleepReply && now - last > SLEEP_REPLY_GAP_MS) {
+        this.sleepReplied.set(chatId, now)
+        await this.sendText(chatId, this.config.sleepReply, { auto: true })
       }
-      this.house.log('info', `QQ: ${chatId} at night, not woken`)
+      this.house.log('info', `QQ: ${chatId} while she sleeps: not passed on`)
       return
     }
     const line = formatLine({ name, text: msg.text || '[图片]' })
     const images = await this.images(msg.images.slice(0, MAX_IMAGES_PER_MESSAGE))
-    await this.house.phoneBuzz({ line, images, night })
+    await this.house.phoneBuzz({ line, images })
   }
 
   // async groupName(groupId) {

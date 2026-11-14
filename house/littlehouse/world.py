@@ -461,7 +461,9 @@ class World:
     def idle_activity(self, dt: datetime | None = None) -> C.Idle:
         """What she does outside free time this hour (stable within the hour)."""
         dt = dt or self.now()
-        if night(dt.hour):
+        # The plugin says when she goes to bed and wakes up (`asleep`); without it, the clock does.
+        asleep = self.resident.get("asleep")
+        if asleep is True or (asleep is None and night(dt.hour)):
             return next(a for a in C.IDLE_ACTIVITIES if a.when == "night")
         ok = [a for a in C.IDLE_ACTIVITIES if a.when == "day" or (a.when == "dry" and not self.raining(dt) and not is_dark(dt))]
         rng = random.Random(dt.strftime("%Y-%m-%d %H") + "idle")

@@ -22,10 +22,11 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { lastEntryNote } from './lib/diary.js'
 import { buildSummaryPrompt, emptyMemory, forget, formatChats, mergeDay, parseReply, render as renderMemory } from './lib/memory.js'
 import { HouseProcess } from './lib/house-process.js'
-import { DEFAULT_SLOTS } from './lib/slots.js'
+import { DEFAULT_SLEEP, DEFAULT_SLOTS } from './lib/slots.js'
 import { QQ } from './qq.js'
 import {
-  TIME_UP_TEXT, buildNudge, buildWakeMessage, checkSlots, dayOf, findSlot, formatDuration, hhmm, localDay, localIso, planDay, recapEvents,
+  TIME_UP_TEXT, buildNudge, buildWakeMessage, checkSlots, dayOf, findSlot, formatDuration, hhmm, localDay, localIso, parseClock, planBed, planDay,
+  recapEvents,
 } from './lib/wake.js'
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
@@ -68,16 +69,23 @@ export default class LittleHouse extends Service {
         to: Schema.string().required().description('最晚开始时间 HH:MM（和 from 相同 = 固定时间）'),
         minutes: Schema.number().min(1).default(40).description('自由活动多少分钟'),
         chance: Schema.number().min(0).max(1).default(1).description('这个时段当天出现的概率'),
-      })).default(DEFAULT_SLOTS).description('每天的自由活动时段：在 from–to 之间随机挑一个开始时间（每天投一次）'),
+      })).default(DEFAULT_SLOTS).description('每天的自由活动时段：在 from–to 之间随机挑一个开始时间（每天投一次）。第一段开始时她醒来'),
       firstWakeDelaySeconds: Schema.natural().default(0).description('测试用：DSH 启动后过多少秒先来一次临时的自由活动（0 = 只按作息表）'),
       testMinutes: Schema.number().min(1).default(40).description('测试用的临时自由活动有多少分钟'),
       maxActionsPerWake: Schema.natural().default(40).description('每次自由活动最多调用多少次 house_do（安全上限；平时由时间约束）'),
       maxNudges: Schema.natural().default(2).description('她提前停下但时间还没到时，最多再叫她几次'),
     }).default({}),
+    sleep: Schema.object({
+      from: Schema.string().default(DEFAULT_SLEEP.from).description('最早几点睡觉 HH:MM'),
+      to: Schema.string().default(DEFAULT_SLEEP.to).description('最晚几点睡觉 HH:MM（睡前会让她整理当天的日记；睡着以后手机静音，第一段自由活动开始时醒来）'),
+    }).default({}),
+    control: Schema.object({
+      maxMinutes: Schema.number().min(1).default(30).description('自由活动以外，主人请她在屋里做事时，她最多接管角色多久'),
+    }).default({}),
     session: Schema.object({
       agentPreset: Schema.string().default('little-house'),
       title: Schema.string().default('小屋生活'),
-      rolloverHour: Schema.natural().max(23).default(4).description('几点换成新的一天：每天一个会话（小屋生活和手机 QQ 在同一个会话里），日记和记忆也按这个换天'),
+      rolloverHour: Schema.natural().max(23).default(0).description('几点换成新的一天：每天一个会话（小屋生活和手机 QQ 在同一个会话里），日记和记忆也按这个换天'),
     }).default({}),
     memory: Schema.object({
       enabled: Schema.boolean().default(true).description('每天换天后，用一个单独的会话（不带人设）把前一天的日记和 QQ 聊天整理进记忆'),
@@ -93,12 +101,7 @@ export default class LittleHouse extends Service {
       // Group chats are off for now (see qq.js):
       // groups: Schema.array(Schema.string()).default([]).description('她在哪些群里（群号）'),
       // names: Schema.array(Schema.string()).default(['小栖']).description('群里提到这些名字也算在叫她'),
-      night: Schema.object({
-        from: Schema.string().default('00:00'),
-        to: Schema.string().default('08:00'),
-        chance: Schema.number().min(0).max(1).default(0.3).description('夜里一条消息叫醒她的概率'),
-        reply: Schema.string().default('（睡着了……zzZ）').description('没叫醒时自动回的话（同一个聊天半小时最多一次；留空 = 不回）'),
-      }).default({}),
+      sleepReply: Schema.string().default('（睡着了……zzZ）').description('她睡着时收到消息自动回的话（消息不会交给她；同一个聊天半小时最多一次；留空 = 不回）'),
     }).default({}),
   })
 
@@ -131,6 +134,11 @@ export default class LittleHouse extends Service {
     this.waiters = new Map()
     this.stateLock = Promise.resolve()
     this.memoryTimer = undefined
+    this.bedTimer = undefined
+    /** today's { day, wake, bed } (epoch ms), see dayTimes() */
+    this.times = undefined
+    /** sessionId -> { until, timer }: she took over her character outside free time */
+    this.controls = new Map()
 
     ctx.effect(() => {
       const boot = setTimeout(() => {
@@ -140,6 +148,8 @@ export default class LittleHouse extends Service {
         clearTimeout(boot)
         clearTimeout(this.wakeTimer)
         clearTimeout(this.memoryTimer)
+        clearTimeout(this.bedTimer)
+        for (const c of this.controls.values()) clearTimeout(c.timer)
         for (const w of this.windows.values()) {
           clearTimeout(w.timer)
           clearTimeout(w.nudgeTimer)
@@ -174,7 +184,7 @@ export default class LittleHouse extends Service {
       this.log('info', 'house is up')
       // A free time left open by a previous run (DSH quit mid-slot) is over:
       // nobody is driving her. If the slot is still running it reopens below.
-      await this.house.request('POST', '/session', { free_until: 0 })
+      await this.house.request('POST', '/session', { free_until: 0, asleep: await this.isAsleep() })
       if (this.config.house.window) {
         try {
           await this.house.request('POST', '/window', { open: true })
@@ -193,6 +203,7 @@ export default class LittleHouse extends Service {
     }
     if (this.config.memory.enabled) this.scheduleMemory(30_000)
     if (!this.config.wake.enabled) return
+    void this.scheduleBed()
     if (this.config.wake.firstWakeDelaySeconds > 0) {
       const delay = this.config.wake.firstWakeDelaySeconds * 1000
       this.log('info', `test free time in ${formatDuration(delay)}`)
@@ -207,14 +218,75 @@ export default class LittleHouse extends Service {
 
   // ------------------------------------------------------------------ persona
 
+  /** The whole persona (HTML comments in the file are notes for people, not for her). */
   async personaText() {
     const file = this.config.personaFile || join(PLUGIN_DIR, 'persona', 'default.md')
     try {
-      return (await readFile(file, 'utf8')).trim()
+      return (await readFile(file, 'utf8')).replace(/<!--[\s\S]*?-->/g, '').trim()
     } catch (e) {
       this.log('warn', `persona file unreadable (${file}): ${e.message}`)
       return '你是住在一间海边小屋里的居民。'
     }
+  }
+
+  /** The persona's first paragraph: the short version that stays in the system prompt. */
+  async personaBrief() {
+    return (await this.personaText()).split(/\n\s*\n/)[0].trim()
+  }
+
+  // ------------------------------------------------------------------ sleep
+
+  /** Today's wake-up (the first slot's start) and bedtime, rolled once a day. */
+  async dayTimes(now = new Date()) {
+    const day = localDay(now)
+    if (this.times?.day === day) return this.times
+    const first = this.slots[0]
+    const plan = (await this.plans(now)).find((p) => p.name === first?.name && localDay(new Date(p.start)) === day)
+    const wake = plan?.start ?? new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, first ? parseClock(first.from) : 450).getTime()
+    let bed
+    await this.updateState((s) => {
+      bed = s.beds?.[day] ?? planBed(now, this.config.sleep)
+      return { ...s, beds: { [day]: bed } }
+    })
+    this.times = { day, wake, bed }
+    this.log('info', `today she wakes up at ${hhmm(wake)} and goes to bed at ${hhmm(bed)}`)
+    return this.times
+  }
+
+  /** Asleep: from bedtime until the first free time of the next day. */
+  async isAsleep(now = Date.now()) {
+    const t = await this.dayTimes(new Date(now))
+    return now < t.wake || now >= t.bed
+  }
+
+  async scheduleBed() {
+    clearTimeout(this.bedTimer)
+    const now = Date.now()
+    const t = await this.dayTimes(new Date(now))
+    if (now < t.bed) {
+      this.bedTimer = setTimeout(() => {
+        this.goToBed().catch((e) => this.log('warn', `bedtime failed: ${e?.stack ?? e}`)).finally(() => this.scheduleBed())
+      }, t.bed - now)
+      return
+    }
+    const tomorrow = new Date(now)
+    tomorrow.setHours(24, 1, 0, 0)
+    this.bedTimer = setTimeout(() => void this.scheduleBed(), tomorrow - now)
+  }
+
+  /** Bedtime: she goes to bed, may tidy up today's diary first; the phone is silent until morning. */
+  async goToBed() {
+    const state = await this.readState()
+    const awakeToday = state.lifeSessionDay === this.dayKey() && state.lifeSessionId
+    for (const sessionId of [...this.windows.keys()]) await this.endWindow(sessionId, 'bedtime')
+    for (const sessionId of [...this.controls.keys()]) await this.endControl(sessionId, 'bedtime')
+    await this.house.request('POST', '/session', { free_until: 0, asleep: true })
+    this.log('info', 'bedtime')
+    if (!awakeToday) return
+    const agent = await this.dayAgent()
+    await this.send(agent, `（${hhmm(Date.now())}，该睡觉了。你躺到了床上。）\n`
+      + '睡前看看今天的日记（diary_read）：想补充的用 diary_write，想改或删掉的用 diary_edit。整理好就睡吧，不用再做别的事。'
+      + '手机会静音到明天早上。')
   }
 
   // ------------------------------------------------------------------ state
@@ -311,7 +383,8 @@ export default class LittleHouse extends Service {
       // All times she is told come from the house's game clock (the same one the
       // picture and house_do results use), not from this process's clock.
       const skew = await this.clockSkew()
-      const session = await this.house.request('POST', '/session', { free_until: (until + skew) / 1000 })
+      for (const sessionId of [...this.controls.keys()]) await this.endControl(sessionId, 'free time', false)
+      const session = await this.house.request('POST', '/session', { free_until: (until + skew) / 1000, asleep: false })
       const look = await this.house.request('GET', '/look')
       const lastWake = state.lastWakeAt ? new Date(state.lastWakeAt) : undefined
       const lastRest = state.lastRestAt ? new Date(state.lastRestAt) : lastWake
@@ -339,6 +412,7 @@ export default class LittleHouse extends Service {
         news: news.map((n) => n.text),
         look: look.text,
         resumed,
+        wokeUp: plan.name === this.slots[0]?.name && localDay(new Date(plan.start)) === localDay(now),
       })
       await this.send(agent, text)
       await this.updateState((s) => ({ ...s, lastWakeAt: now.toISOString() }))
@@ -388,23 +462,66 @@ export default class LittleHouse extends Service {
     })
     if (!first) return ''
     const day = this.dayKey()
-    const lines = [`（${day} ${WEEKDAYS[new Date(day + 'T12:00').getDay()]}，新的一天。）`]
+    const lines = [`（${day} ${WEEKDAYS[new Date(day + 'T12:00').getDay()]}，新的一天。）`, '', '## 你是谁', await this.personaText()]
     const memory = await this.memoryText()
     if (memory) lines.push('', '## 你的记忆', '（你记得的事。越久的越模糊。）', memory)
     else {
       const note = await this.lastDiaryNote()
-      if (note) lines.push(`日记里最近的一段${note}`)
+      if (note) lines.push('', `日记里最近的一段${note}`)
     }
-    return lines.join('\n') + '\n\n'
+    return lines.join('\n') + '\n\n---\n\n'
   }
 
   /** A QQ message arrived: the phone buzzes in her day session, whatever she is doing. */
-  async phoneBuzz({ line, images = [], night = false }) {
+  async phoneBuzz({ line, images = [] }) {
     const agent = await this.dayAgent()
-    const head = night
-      ? `（深夜 ${hhmm(Date.now())}，你本来在睡觉，手机响了，把你吵醒了。是 QQ 消息：）`
-      : this.window(agent.id) ? '（手机响了，是 QQ 消息：）' : `（${hhmm(Date.now())}，手机响了，是 QQ 消息：）`
+    let head = '（手机响了，是 QQ 消息：）'
+    if (!this.window(agent.id) && !this.controls.has(agent.id)) {
+      // outside free time: tell her what her character is doing right now
+      try {
+        const s = await this.house.request('GET', '/status')
+        const doing = s.idle ? `，${s.idle.replace(/^在/, '')}` : s.doing ? `，正在 ${s.doing}` : ''
+        head = `（${hhmm(s.now * 1000)}，不是自由活动时间。你的角色此刻在${s.location_name}${doing}。手机响了，是 QQ 消息：）`
+      } catch {
+        head = `（${hhmm(Date.now())}，不是自由活动时间。手机响了，是 QQ 消息：）`
+      }
+    }
     await this.deliver(agent, [{ type: 'text', text: `${head}\n${line}` }, ...images], 'little-house-qq')
+  }
+
+  // ------------------------------------------------------------------ taking over outside free time
+
+  /** Whether she has taken over her character right now (outside free time). */
+  controlOpen(sessionId) {
+    return this.controls.has(sessionId)
+  }
+
+  /** She takes over her character (the owner asked her to do something in the house). */
+  async startControl(sessionId) {
+    const until = Date.now() + this.config.control.maxMinutes * 60_000
+    const skew = await this.clockSkew()
+    await this.house.request('POST', '/session', { free_until: (until + skew) / 1000, asleep: false })
+    const timer = setTimeout(() => void this.endControl(sessionId, 'time is up'), until - Date.now())
+    this.controls.set(sessionId, { until, timer })
+    this.budgets.set(sessionId, { actions: 0, max: this.config.wake.maxActionsPerWake })
+    this.log('info', `she took over her character (session ${sessionId})`)
+  }
+
+  /** Back to the everyday routine (end_of_current_operation, end of her turn, or the time limit). */
+  async endControl(sessionId, reason, release = true) {
+    const c = this.controls.get(sessionId)
+    if (!c) return false
+    clearTimeout(c.timer)
+    this.controls.delete(sessionId)
+    if (release) {
+      try {
+        await this.house.request('POST', '/session', { free_until: 0 })
+      } catch (e) {
+        this.log('warn', `could not hand her back to the routine: ${e.message}`)
+      }
+    }
+    this.log('info', `control over (session ${sessionId}): ${reason}`)
+    return true
   }
 
   // ------------------------------------------------------------------ the free-time window
@@ -513,6 +630,7 @@ export default class LittleHouse extends Service {
 
   /** Her turn ended. If she stopped early without end_free_time, look in on her a bit later. */
   onIdle(agent) {
+    if (agent.status === 'idle' && this.controls.has(agent.id)) void this.endControl(agent.id, 'her turn ended')
     const w = this.window(agent.id)
     if (!w || w.rested) return
     if (w.nudges >= this.config.wake.maxNudges) {

@@ -1,7 +1,7 @@
 # Little House of DeepSeek
 
 让一个 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) agent **住进一间海边小屋**：
-每天早、中、晚（有时还有深夜）各有一段四十分钟的自由活动时间，由她自己安排——做饭、种菜、钓鱼、捡贝壳、
+每天早、中、晚和睡前各有一段四十分钟的自由活动时间，由她自己安排——做饭、种菜、钓鱼、捡贝壳、
 把收获卖给开拓署换贝币、买家具布置房间、陪猫——每段结束前写几句日记。做事要花真实的时间：
 炖一锅汤要几分钟，下锅后可以先去院子里浇水。自由活动以外，她自己过着平淡的日常。
 
@@ -38,8 +38,9 @@ python scripts\install.py
 │                                                                            │
 │  index.js — 宿主级服务 `littleHouse`                                         │
 │   · 拉起 / 连接小屋进程（发现文件 + 令牌），挂了自动重启，DSH 退出时让它存档退出 │
-│   · 每天一个「小屋生活 · 日期」会话（凌晨 4 点换天）：几段自由活动 + 手机 QQ   │
-│     都在里面；第一条消息开头是日期和她的记忆                                   │
+│   · 每天一个「小屋生活 · 日期」会话（0 点换天）：几段自由活动 + 手机 QQ +       │
+│     睡前整理日记；第一条消息（早上醒来）开头是完整人设和她的记忆               │
+│   · 作息：23:30–24:00 睡觉，第一段自由活动开始时醒来；睡着时 QQ 消息挡掉       │
 │   · 作息表：每天几段自由活动（时段内随机开始，各 40 分钟），到点结束；          │
 │     开始消息 = 时段 +「刚才在…」+「这段时间里…」+ look（agent.steer 送进去） │
 │   · QQ（qq.js）：直连 NapCat（OneBot 11 正向 WebSocket）；私聊消息作为        │
@@ -49,10 +50,11 @@ python scripts\install.py
 │   · plugin.log                                                              │
 │                                                                            │
 │  preset `little-house`（cordis.patch.yml）— 生活会话只挂这些行：             │
-│   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、house_do（自由活动  │
-│     以外只能看）/ end_free_time / house_render / phone_message；               │
+│   · agent-scope.js：简短人设 + 小屋规则（complete 系统提示词）、house_do（自由  │
+│     活动以外只能看；主人请她做事时接管角色）/ end_free_time /                 │
+│     end_of_current_operation / house_render / phone_message；                │
 │     全局工具 deny + tools.guard 白名单                                        │
-│   · diary-scope.js：diary_write / diary_read                                 │
+│   · diary-scope.js：diary_write / diary_edit / diary_read（醒着时随时可用）     │
 │   · compaction                                                              │
 └───────────────┬────────────────────────────────────────────────────────────┘
                 │ HTTP 127.0.0.1 + X-House-Token
@@ -85,8 +87,9 @@ python scripts\install.py
 - **每段自由活动结束前写日记。** 写什么由她决定（重要的事、心情、想做的事）；每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。
 - **记忆。** 每天换天后，一个不带人设的会话把前一天的日记和 QQ 聊天整理成「最近的日子 / 想做的事 / 记得的事 / 认识的人」，
   第二天的会话开头给她看；越久越模糊，想做的事忘得更快，很重要的事不会忘。
-- **手机和 QQ。** 她背包里一直有一部手机：你随时可以用 QQ 私聊她，她用手机回你（同一天的聊天和小屋生活在一个会话里）；
-  她看得懂图片，会用 QQ 表情，能拍小屋的照片发给你；夜里多半睡着了。自由活动写完日记后，遇到有趣的事她可能主动给你发消息。
+- **手机和 QQ。** 她背包里一直有一部手机：她醒着时你随时可以用 QQ 私聊她，她用手机回你（同一天的聊天和小屋生活在一个会话里）；
+  不在自由活动时，你请她在屋里做什么，她会接过角色去做，做完交还给日常。她看得懂图片，会用 QQ 表情，能拍小屋的照片发给你；
+  睡着时消息不会打扰她。自由活动写完日记后，遇到有趣的事她可能主动给你发消息。
 - **成本。** DeepSeek-V4.1-Flash 实测一次唤醒约 1.2～2 万 token，约八成是缓存命中。
 
 更多：[伪代码与接口](docs/PROTOCOL.md) · [路线图与实测记录](docs/ROADMAP.md) · [交接文档](docs/HANDOFF.md)

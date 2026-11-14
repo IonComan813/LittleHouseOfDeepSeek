@@ -6,7 +6,6 @@
 // [表情:名称] turning back into real QQ faces, blank lines into separate bubbles.
 
 import { FACE_IDS, QQ_FACES } from './qq-faces.js'
-import { dayOf } from './wake.js'
 
 /** What she writes when she chooses not to answer (group chats). */
 export const SILENCE = '[不回复]'
@@ -155,23 +154,6 @@ export function splitReply(text) {
   const parts = clean.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)
   if (parts.length <= MAX_BUBBLES) return parts
   return [...parts.slice(0, MAX_BUBBLES - 1), parts.slice(MAX_BUBBLES - 1).join('\n')]
-}
-
-/** The day a QQ message belongs to (see wake.dayOf). */
-export const qqDay = dayOf
-
-/** @param {string} hhmm */
-function minutesOf(hhmm) {
-  const [h, m] = String(hhmm).split(':').map(Number)
-  return h * 60 + (m || 0)
-}
-
-/** Whether `at` falls in [from, to) (HH:MM, may wrap past midnight). */
-export function inHours(at, from, to) {
-  const t = at.getHours() * 60 + at.getMinutes()
-  const a = minutesOf(from)
-  const b = minutesOf(to)
-  return a <= b ? t >= a && t < b : t >= a || t < b
 }
 
 /**

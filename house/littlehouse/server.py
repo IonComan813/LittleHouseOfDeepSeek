@@ -37,6 +37,11 @@ class RenderUnavailable(Exception):
 ALLOWED_HOSTS = ("127.0.0.1", "localhost")
 
 
+class NeedsControl(ScriptError):
+    """A script outside free time that does more than look: the plugin decides
+    whether she may take over (the owner asked her to do something)."""
+
+
 class House:
     """World + persistence + a lock, shared by the HTTP threads and the ticker."""
 
@@ -118,7 +123,7 @@ class House:
 
         bad = [c.name for c in calls if c.name not in LOOK_ONLY]
         if bad:
-            raise ScriptError("现在不是自由活动时间，你在过自己的日常：只能看看（" + "、".join(f"{n}()" for n in LOOK_ONLY)
+            raise NeedsControl("现在不是自由活动时间，你在过自己的日常：只能看看（" + "、".join(f"{n}()" for n in LOOK_ONLY)
                               + "），不能做「" + "、".join(dict.fromkeys(bad)) + "」。想做的事等下次自由活动。")
         with self.lock:
             w = self.world
@@ -163,6 +168,7 @@ class House:
                 "idle": idle.text if idle else w.resident.get("idle", ""),
                 "location": w.location,
                 "location_name": C.ROOMS[w.location].name,
+                "asleep": w.resident.get("asleep"),
             }
 
 
@@ -296,6 +302,10 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
                     return
                 with house.lock:
                     house.world.update()
+                    if "asleep" in body:  # the plugin's day: asleep from bedtime until she wakes up
+                        house.world.resident["asleep"] = None if body["asleep"] is None else bool(body["asleep"])
+                        if house.world.runner.routine:
+                            house.world.runner.interrupt("睡觉" if body["asleep"] else "醒了")
                     before = house.world.set_free(until)
                     house.world.update()
                     house.world.save(house.save_path)
@@ -342,7 +352,8 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
             try:
                 out = house.do(script, max(0.0, min(wait, 3600.0)), look_only=bool(body.get("look_only")))
             except ScriptError as e:
-                self._send(200, {"ok": False, "done": True, "text": f"✗ 脚本错误：{e}", "results": []})
+                self._send(200, {"ok": False, "done": True, "text": f"✗ 脚本错误：{e}", "results": [],
+                                 "needs_control": isinstance(e, NeedsControl)})
                 return
             self._send(200, out)
 
