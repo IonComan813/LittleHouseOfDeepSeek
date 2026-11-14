@@ -69,3 +69,13 @@ test('the day session as a transcript for the summariser', () => {
   const p = buildSummaryPrompt({ name: '她', day: '2026-11-14', memoryText: '', diary: '日记', transcript: t })
   assert.ok(p.includes('2026-11-14 的对话记录') && p.includes('不能忘'))
 })
+
+test('render keeps under maxChars by dropping older days first', () => {
+  let mem = emptyMemory()
+  for (let d = 1; d <= 7; d++) mem = mergeDay(mem, `2026-11-0${d}`, { summary: '很长的一天'.repeat(100) }).mem
+  const full = render(mem, '2026-11-08')
+  const short = render(mem, '2026-11-08', { maxChars: 1500 })
+  assert.ok(full.length > 1500)
+  assert.ok(short.length <= 1500)
+  assert.ok(short.includes('11-07') && !short.includes('11-01'))
+})

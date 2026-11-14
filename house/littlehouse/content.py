@@ -484,28 +484,34 @@ MAX_WAIT_MINUTES = 30
 # day she "just lives": the house picks one of these each hour (stable within
 # the hour), walks her there, and the picture shows it. ``when``: night (she is
 # asleep), day, dry (daytime and not raining), clear_night (after dark, before bed, not raining).
+# Nothing she could not answer questions about (no "reading a book"): the chores
+# are really done, and what came of them is told to her when someone messages her.
 
 
 @dataclass(frozen=True)
 class Idle:
     text: str
-    room: str
+    room: str  # "" = decided when it starts (the cat's room, the dirtiest room...)
     focus: str | None
     effect: str | None
     when: str
     weight: int = 1
+    chore: str | None = None  # really done once she gets there (actions.CHORES); the result is kept for her
 
 
 IDLE_ACTIVITIES: tuple[Idle, ...] = (
     Idle("在床上睡觉", "bedroom", "bed", None, "night"),
-    Idle("窝在沙发上看书", "living_room", "sofa", "paper", "day", 3),
-    Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 2),
+    # Things she really does (what happened is kept, so she can tell someone about it):
+    Idle("在打扫、收拾屋子", "", None, "sparkle", "day", 3, chore="clean"),
+    Idle("在陪团子玩", "", None, "hearts", "day", 3, chore="play"),
+    Idle("在给植物浇水、擦叶子", "", None, "water", "day", 1, chore="water"),
+    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, chore="stargaze"),
+    # Just being there:
+    Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 1),
     Idle("在厨房的木桌边慢慢喝茶", "kitchen", "table", "eat", "day", 2),
-    Idle("在书架前翻书", "bedroom", "bookshelf", "paper", "day", 2),
     Idle("在床上睡午觉", "bedroom", "bed", "zzz", "day", 1),
     Idle("在院子里的树下晒太阳", "yard", "tree", None, "dry", 2),
     Idle("在沙滩上散步", "beach", None, "look", "dry", 2),
-    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3),
     Idle("在沙滩上吹着海风看夜里的海", "beach", None, "look", "clear_night", 1),
 )
 NIGHT_HOURS = (23, 7)  # asleep from 23:00 to 07:00 outside free time

@@ -25,7 +25,7 @@ import { HouseProcess } from './lib/house-process.js'
 import { DEFAULT_SLEEP, DEFAULT_SLOTS } from './lib/slots.js'
 import { QQ } from './qq.js'
 import {
-  TIME_UP_TEXT, buildNudge, endAsk, buildWakeMessage, checkSlots, dayOf, findSlot, formatDuration, hhmm, localDay, localIso, parseClock, planBed, planDay,
+  TIME_UP_TEXT, buildNudge, endAsk, overtimeText, buildWakeMessage, checkSlots, dayOf, findSlot, formatDuration, hhmm, localDay, localIso, parseClock, planBed, planDay,
   recapEvents,
 } from './lib/wake.js'
 
@@ -43,6 +43,7 @@ const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '�
 const MEMORY_DELAY_MINUTES = 10 // after the day changes, before the day is summarised
 const MEMORY_TIMEOUT_MS = 10 * 60_000
 const TRANSCRIPT_RESULT_CHARS = 400
+const OVERTIME_MS = 30 * 60_000 // free time runs over at most this long to finish what she started
 const INTRO_RE = /^（\d{4}-\d{2}-\d{2} 周.，新的一天。）/
 
 /** Identifies one slot on one day, e.g. "2026-11-14 早上". */
@@ -92,6 +93,7 @@ export default class LittleHouse extends Service {
     memory: Schema.object({
       enabled: Schema.boolean().default(true).description('每天换天后，用一个单独的会话（不带人设）把前一天的日记和 QQ 聊天整理进记忆'),
       preset: Schema.string().default('little-house-memory'),
+      maxChars: Schema.natural().default(6000).description('每天开头给她看的记忆最多多少字（超了先少放几天前的日子）'),
     }).default({}),
     qq: Schema.object({
       enabled: Schema.boolean().default(false).description('接入 QQ（NapCat 的 OneBot 11 WebSocket 服务端）'),
@@ -417,7 +419,8 @@ export default class LittleHouse extends Service {
         resumed,
         wokeUp: plan.name === this.slots[0]?.name && localDay(new Date(plan.start)) === localDay(now),
       })
-      await this.send(agent, text)
+      const requests = (await this.qq?.pendingRequestsText().catch(() => '')) || ''
+      await this.send(agent, requests ? `${text}\n\n${requests}` : text)
       await this.updateState((s) => ({ ...s, lastWakeAt: now.toISOString() }))
       this.log('info', `free time (${plan.name}, until ${hhmm(until)}) in session ${agent.id}`)
       return `woke: ${agent.id}`
@@ -476,17 +479,18 @@ export default class LittleHouse extends Service {
   }
 
   /** A QQ message arrived: the phone buzzes in her day session, whatever she is doing. */
-  async phoneBuzz({ line, images = [] }) {
+  async phoneBuzz({ line, images = [], what = 'QQ 消息' }) {
     const agent = await this.dayAgent()
-    let head = '（手机响了，是 QQ 消息：）'
+    let head = `（手机响了，是${what}：）`
     if (!this.window(agent.id) && !this.controls.has(agent.id)) {
       // outside free time: tell her what her character is doing right now
       try {
         const s = await this.house.request('GET', '/status')
         const doing = s.idle ? `，${s.idle.replace(/^在/, '')}` : s.doing ? `，正在 ${s.doing}` : ''
-        head = `（${hhmm(s.now * 1000)}，不是自由活动时间。你的角色此刻在${s.location_name}${doing}。手机响了，是 QQ 消息：）`
+        const note = s.idle_note ? `（${s.idle_note.replace(/。$/, '')}）` : ''
+        head = `（${hhmm(s.now * 1000)}，不是自由活动时间。你的角色此刻在${s.location_name}${doing}${note}。手机响了，是${what}：）`
       } catch {
-        head = `（${hhmm(Date.now())}，不是自由活动时间。手机响了，是 QQ 消息：）`
+        head = `（${hhmm(Date.now())}，不是自由活动时间。手机响了，是${what}：）`
       }
     }
     await this.deliver(agent, [{ type: 'text', text: `${head}\n${line}` }, ...images], 'little-house-qq')
@@ -547,6 +551,18 @@ export default class LittleHouse extends Service {
     return w && !w.ended ? w : undefined
   }
 
+  /** After a script in overtime: what is left to finish ('' when not in overtime). */
+  async overtimeTail(sessionId) {
+    const w = this.window(sessionId)
+    if (!w?.overtime) return ''
+    w.overtimeUntold = false
+    try {
+      return overtimeText((await this.house.request('GET', '/status')).unfinished ?? [])
+    } catch {
+      return overtimeText([])
+    }
+  }
+
   /** Whether this session has (or had) a free-time window. */
   hasWindow(sessionId) {
     return this.windows.has(sessionId)
@@ -576,11 +592,38 @@ export default class LittleHouse extends Service {
     return endAsk(Boolean(this.qq?.connected && this.config.qq.ownerQQ))
   }
 
-  /** Free time ran out. If she is idle (and has not ended it herself), tell her. */
+  /**
+   * Free time ran out. If she is in the middle of something, or started something
+   * that belongs together (food on the stove, a dish she made and has not eaten, a
+   * mess the cat made), it runs over until that is done (at most OVERTIME_MS): the
+   * house then only lets her finish those. Otherwise it ends; if she is idle, tell her.
+   */
   async timeUp(sessionId) {
     const w = this.windows.get(sessionId)
-    await this.endWindow(sessionId, 'time is up')
-    if (!w || w.rested || w.agent?.status !== 'idle') return
+    if (!w || w.ended) return
+    if (!w.overtime) {
+      let status
+      try {
+        status = await this.house.request('GET', '/status')
+      } catch {
+        status = undefined
+      }
+      const todo = status?.unfinished ?? []
+      if (todo.length || status?.busy) {
+        w.overtime = true
+        w.until = Date.now() + OVERTIME_MS
+        const skew = await this.clockSkew()
+        await this.house.request('POST', '/session', { free_until: (w.until + skew) / 1000, overtime: true })
+        clearTimeout(w.timer)
+        w.timer = setTimeout(() => void this.timeUp(sessionId), OVERTIME_MS)
+        this.log('info', `free time (${w.name}) runs over: ${todo.join('；') || status.doing}`)
+        if (w.agent?.status === 'idle') await this.send(w.agent, overtimeText(todo))
+        else w.overtimeUntold = true // house_do's result tells her
+        return
+      }
+    }
+    await this.endWindow(sessionId, w.overtime ? 'overtime is up' : 'time is up')
+    if (w.rested || w.agent?.status !== 'idle') return
     try {
       await this.send(w.agent, TIME_UP_TEXT)
       this.log('info', `asked for the diary at the end of ${w.name} (session ${sessionId})`)
@@ -626,6 +669,10 @@ export default class LittleHouse extends Service {
   onIdle(agent) {
     if (agent.status === 'idle' && this.controls.has(agent.id)) void this.endControl(agent.id, 'her turn ended')
     const w = this.window(agent.id)
+    if (w?.overtime && agent.status === 'idle') {
+      void this.endWindow(agent.id, 'overtime: she stopped')
+      return
+    }
     if (!w || w.rested) return
     if (w.nudges >= this.config.wake.maxNudges) {
       this.log('info', `she stopped early; no more nudges (session ${agent.id})`)
@@ -718,7 +765,7 @@ export default class LittleHouse extends Service {
   /** Her memory as she reads it at the start of the day ('' when there is none yet). */
   async memoryText() {
     const mem = await this.readMemory()
-    return mem.items.length || Object.keys(mem.people).length ? renderMemory(mem, this.dayKey()) : ''
+    return mem.items.length || Object.keys(mem.people).length ? renderMemory(mem, this.dayKey(), { maxChars: this.config.memory.maxChars }) : ''
   }
 
   /** Summarise every finished day not yet in memory, then again after the next day change. */

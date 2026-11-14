@@ -149,7 +149,27 @@ class EverydayLifeTest(unittest.TestCase):
             step(w, 10)
         idle = w.current_idle()
         self.assertIsNotNone(idle)
-        self.assertEqual(w.location, idle.room)
+        self.assertEqual(w.location, idle.room or w.location)
+        self.assertNotIn("看书", idle.text)  # nothing she could not answer questions about
+
+    def test_everyday_chores_are_really_done(self):
+        from littlehouse.actions import CHORES  # noqa: F401
+        w = new_world(when=(2026, 10, 15, 14), free=False)
+        w.dirt["kitchen"] = 80
+        act = next(a for a in C.IDLE_ACTIVITIES if a.chore == "clean")
+        w.idle_activity = lambda dt=None: act
+        for _ in range(40):
+            step(w, 10)
+        self.assertEqual(w.location, "kitchen")  # the dirtiest room
+        self.assertLess(w.dirt["kitchen"], 80)
+        self.assertIn("打扫", w.resident["idle_note"] + w.resident["idle"])
+        w2 = new_world(when=(2026, 10, 15, 14), free=False)
+        act = next(a for a in C.IDLE_ACTIVITIES if a.chore == "play")
+        w2.idle_activity = lambda dt=None: act
+        for _ in range(40):
+            step(w2, 10)
+        self.assertEqual(w2.location, w2.pet["room"])
+        self.assertTrue(w2.resident["idle_note"])  # how the cat took it
 
     def test_free_time_interrupts_the_routine(self):
         w = new_world(when=(2026, 10, 15, 14), free=False)

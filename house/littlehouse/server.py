@@ -113,6 +113,10 @@ class House:
         with self.lock:
             w.update()
             refuse_bad_steps(calls, w)
+            if w.resident.get("overtime"):
+                problem = w.overtime_problem(calls)
+                if problem:
+                    raise ScriptError(problem)
             free_until = w.resident.get("free_until", 0.0)
             deadline = free_until if free_until > w.clock.timestamp() else None
             rid = w.runner.submit(calls, deadline)
@@ -166,9 +170,12 @@ class House:
                 "busy": w.runner.busy() and not w.runner.routine,
                 "doing": w.runner.doing() if not w.runner.routine else "",
                 "idle": idle.text if idle else w.resident.get("idle", ""),
+                "idle_note": w.resident.get("idle_note", "") if idle else "",
                 "location": w.location,
                 "location_name": C.ROOMS[w.location].name,
                 "asleep": w.resident.get("asleep"),
+                "overtime": bool(w.resident.get("overtime")),
+                "unfinished": w.unfinished() if w.free_open() else [],
             }
 
 
@@ -306,7 +313,7 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
                         house.world.resident["asleep"] = None if body["asleep"] is None else bool(body["asleep"])
                         if house.world.runner.routine:
                             house.world.runner.interrupt("睡觉" if body["asleep"] else "醒了")
-                    before = house.world.set_free(until)
+                    before = house.world.set_free(until, overtime=bool(body.get("overtime")))
                     house.world.update()
                     house.world.save(house.save_path)
                 self._send(200, {"ok": True, "before": before, **house.status()})

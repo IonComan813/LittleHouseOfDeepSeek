@@ -6,7 +6,8 @@
 // The plugin dials ws://127.0.0.1:3001. Drive it over HTTP on the control port:
 //   POST /private {"user_id": "123", "text": "在吗", "image": true, "voice": true, "nickname": "主人"}
 //   POST /group   {"group_id": "456", "user_id": "789", "text": "...", "at": true, "card": "阿陆"}
-//   GET  /outbox  -> everything the plugin sent (send_private_msg / send_group_msg)
+//   POST /request {"user_id": "789", "nickname": "小林", "comment": "我是阿青的同学"}  (a friend request)
+//   GET  /outbox  -> everything the plugin sent (send_private_msg / send_group_msg / set_friend_add_request)
 //   GET  /img.png -> a test picture (what "image": true points at)
 // Needs the `ws` package: DSH ships it (LH_DSH_MODULES, default /opt/lh/dsh/node_modules).
 
@@ -30,6 +31,7 @@ const IMAGE = arg('image', '')
 const SELF = 10001
 
 const outbox = []
+const strangers = new Map()
 let client
 let msgId = 1000
 
@@ -53,6 +55,13 @@ wss.on('connection', (ws, req) => {
     let data = null
     if (action === 'get_login_info') data = { user_id: SELF, nickname: '小栖' }
     else if (action === 'get_group_info') data = { group_id: Number(params.group_id), group_name: '潮汐湾居民群' }
+    else if (action === 'get_stranger_info') data = { user_id: Number(params.user_id), nickname: strangers.get(String(params.user_id)) ?? '陌生人' }
+    else if (action === 'set_friend_add_request') {
+      const entry = { action, flag: params.flag, approve: params.approve }
+      outbox.push(entry)
+      log({ dir: 'out', ...entry })
+      console.log('OUT', JSON.stringify(entry))
+    }
     else if (action === 'send_private_msg' || action === 'send_group_msg') {
       data = { message_id: ++msgId }
       const shown = params.message.map((s) => s.type === 'text' ? s.data.text
@@ -98,7 +107,10 @@ createServer((req, res) => {
       if (p.image) message.push({ type: 'image', data: { file: 'img.png', url: `http://127.0.0.1:${CONTROL}/img.png` } })
       if (p.voice) message.push({ type: 'record', data: { file: 'voice.amr' } })
       const base = { post_type: 'message', time: Math.floor(Date.now() / 1000), self_id: SELF, message_id: ++msgId, message, raw_message: p.text ?? '', font: 0 }
-      if (req.url === '/private') {
+      if (req.url === '/request') {
+        strangers.set(String(p.user_id), p.nickname ?? '陌生人')
+        push({ post_type: 'request', request_type: 'friend', time: Math.floor(Date.now() / 1000), self_id: SELF, user_id: Number(p.user_id), comment: p.comment ?? '', flag: `flag-${p.user_id}-${Date.now()}` })
+      } else if (req.url === '/private') {
         push({ ...base, message_type: 'private', sub_type: 'friend', user_id: Number(p.user_id), sender: { user_id: Number(p.user_id), nickname: p.nickname ?? '主人' } })
       } else if (req.url === '/group') {
         push({ ...base, message_type: 'group', sub_type: 'normal', group_id: Number(p.group_id), user_id: Number(p.user_id), sender: { user_id: Number(p.user_id), nickname: p.card ?? '群友', card: p.card ?? '' } })

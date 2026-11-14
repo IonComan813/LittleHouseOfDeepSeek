@@ -659,3 +659,30 @@ class ServerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OvertimeTest(unittest.TestCase):
+    def test_after_free_time_she_may_only_finish_what_she_started(self):
+        with tempfile.TemporaryDirectory() as d:
+            house = House(Path(d), new_world(free=False))
+            w = house.world
+            w.set_free(w.clock.timestamp() + 600)
+            self.assertTrue(ok(run(w, "goto(厨房); cook(白米饭)")))  # on the stove for 5 minutes
+            self.assertIn("等灶台上的白米饭好了盛出来（wait()）", w.unfinished())
+            w.clock.advance(200)  # the slot ends (the rice needs longer); the plugin asks what is unfinished
+            w.resident["free_until"] = w.clock.timestamp() - 1
+            self.assertIn("等灶台上的白米饭好了盛出来（wait()）", house.status()["unfinished"])
+            w.set_free(w.clock.timestamp() + 1800, overtime=True)  # time is up
+            self.assertIn("自由活动时间已经到了", w.free_time_text())
+            with self.assertRaises(ScriptError) as e:
+                house.do("goto(客厅); clean()", wait=0)
+            self.assertIn("只能做完没做完的事", str(e.exception))
+            self.assertIn("白米饭", str(e.exception))
+            self.assertTrue(ok(run(w, "wait()")))
+            self.assertIn("吃白米饭（eat(白米饭)）", w.unfinished())
+            with self.assertRaises(ScriptError):
+                house.do("eat(鸡蛋)", wait=0)
+            self.assertTrue(ok(run(w, "eat(白米饭)")))
+            self.assertEqual(w.unfinished(), [])
+            w.set_free(0)
+            self.assertFalse(w.resident["overtime"])

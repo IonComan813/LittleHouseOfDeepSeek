@@ -447,16 +447,54 @@ class World:
         ts = self.clock.timestamp() if ts is None else ts
         return self.resident.get("free_until", 0.0) > ts
 
-    def set_free(self, until: float) -> str:
-        """Start (until > now) or end (until <= now) free time. Returns what she was doing before."""
+    def free_open(self) -> bool:
+        """Free time has started and the plugin has not closed it yet (its end time may have
+        passed a moment ago: that is when the plugin asks what is unfinished)."""
+        return self.resident.get("free_until", 0.0) > 0
+
+    def set_free(self, until: float, overtime: bool = False) -> str:
+        """Start (until > now) or end (until <= now) free time. Returns what she was doing before.
+
+        ``overtime``: the free time is over, but she may finish what she started
+        (``unfinished()``) until ``until``; nothing else."""
         before = self.resident.get("idle", "")
         now = self.clock.timestamp()
+        starting = until > now and not self.free() and not overtime
+        if starting or until <= now:
+            self.resident["cooked"] = []  # what she cooks in this free time
+        self.resident["overtime"] = bool(overtime and until > now)
         self.resident["free_until"] = float(until) if until > now else 0.0
         if self.runner.routine:
             self.runner.interrupt("自由活动开始了")
         if until > now:
             self.resident["idle"] = ""
         return before
+
+    def cooked(self, dish: str) -> None:
+        """A dish she made in this free time (finishing a meal can run past its end)."""
+        if self.free_open():
+            self.resident.setdefault("cooked", []).append(dish)
+
+    def unfinished(self) -> list[str]:
+        """What she started in this free time and should finish when it is over: food on
+        the stove, dishes she made and has not eaten, messes the cat made."""
+        out = [f"等灶台上的{j['dish']}好了盛出来（wait()）" for j in self.jobs if not j["ready"]]
+        out += [f"去厨房把灶台上的{j['dish']}盛出来（goto(厨房)）" for j in self.jobs if j["ready"]]
+        out += [f"吃{d}（eat({d})）" for d in dict.fromkeys(self.resident.get("cooked", [])) if self.inventory.get(d, 0) > 0]
+        out += [f"收拾{C.ROOMS[o.room].name}里{o.name}（tidy()）" for o in self.objects.values() if o.kind == "mess"]
+        return out
+
+    def overtime_problem(self, calls) -> str:
+        """Why a script may not run in overtime ('' = it may)."""
+        dishes = set(self.resident.get("cooked", [])) | {j["dish"] for j in self.jobs}
+        for c in calls:
+            if c.name in ("goto", "wait", "tidy", "surroundings", "inventory", "help"):
+                continue
+            if c.name == "eat" and (not c.args or str(c.args[0]).strip() in dishes):
+                continue
+            todo = "；".join(self.unfinished()) or "都已经做完了"
+            return f"自由活动时间已经到了，现在只能做完没做完的事：{todo}。「{c.shown()}」等下次自由活动吧。写日记和 end_free_time 随时可以。"
+        return ""
 
     def idle_activity(self, dt: datetime | None = None) -> C.Idle:
         """What she does outside free time this hour (stable within the hour)."""
@@ -475,11 +513,31 @@ class World:
         if self.free() or self.runner.busy():
             return
         act = self.idle_activity()
-        if self.resident.get("idle") == act.text and self.location == act.room:
+        key = self.now().strftime("%Y-%m-%d %H ") + act.text  # one activity per hour, chores done once
+        if self.resident.get("idle_key") == key and self.resident.get("idle") == act.text:
             return
+        room = self.chore_room(act)
+        if room is None:  # e.g. the cat is outside: just sit by the window this hour
+            act = next(a for a in C.IDLE_ACTIVITIES if a.text == "坐在客厅的大窗边发呆")
+            room = act.room
         from .tasks import Call
 
-        self.runner.submit([Call("_settle", [act.room, act.focus, act.text])], routine=True)
+        self.resident["idle_key"] = key
+        self.resident["idle_note"] = ""
+        self.runner.submit([Call("_settle", [room, act.focus, act.text, act.chore])], routine=True)
+
+    def chore_room(self, act: C.Idle) -> str | None:
+        """Where an everyday activity happens (None: not possible right now)."""
+        if act.room:
+            return act.room
+        indoor = [r for r, room in C.ROOMS.items() if not room.outdoor]
+        if act.chore == "play":
+            return self.pet["room"] if self.pet["room"] in indoor else None
+        if act.chore == "water":
+            pots = [o for o in self.objects.values() if o.kind == "plant" and o.room in indoor]
+            return min(pots, key=lambda o: o.state.get("water", 100)).room if pots else None
+        # clean: the dirtiest room (it is fine if it is clean already: she tidies up)
+        return max(indoor, key=lambda r: self.dirt.get(r, 0.0))
 
     def current_idle(self) -> C.Idle | None:
         """The everyday thing she is settled into right now (None during free time or on her way)."""
@@ -526,6 +584,7 @@ class World:
                 got.append(f"{j['dish']}（糊了，成了一份焦掉的菜）")
                 continue
             self.add_item(j["dish"])
+            self.cooked(j["dish"])
             extra = "，火候刚刚好，格外好吃" if j["outcome"] == "great" else ""
             self.log("cook", f"用{self.format_items(j['use'])}{j['method']}了{j['dish']}{extra}")
             got.append(j["dish"] + ("（火候刚刚好，香极了）" if extra else ""))
@@ -678,6 +737,8 @@ class World:
         """'现在 08:12，自由活动还剩 28 分钟（到 08:40）' while free; '' otherwise."""
         if not self.free():
             return ""
+        if self.resident.get("overtime"):
+            return f"现在 {self.now():%H:%M}，自由活动时间已经到了，在做完开了头的事"
         until = self.resident["free_until"]
         left = max(0, round((until - self.clock.timestamp()) / 60))
         return f"现在 {self.now():%H:%M}，自由活动还剩 {left} 分钟（到 {datetime.fromtimestamp(until):%H:%M}）"

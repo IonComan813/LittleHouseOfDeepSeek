@@ -197,13 +197,45 @@ def walk_route(w: World, path: list[str], end: tuple[float, float] | None = None
     return ""
 
 
-def _settle(w: World, room: str, focus: str | None, text: str) -> Proc:
-    """Off-hours routine: go and do one of the everyday things (content.IDLE_ACTIVITIES)."""
+def _settle(w: World, room: str, focus: str | None, text: str, chore: str | None = None) -> Proc:
+    """Off-hours routine: go and do one of the everyday things (content.IDLE_ACTIVITIES).
+    A chore is really done; what came of it stays in resident["idle_note"]."""
     if room != w.location:
         yield from walk_route(w, w.path_to(room))
     yield from walk_to(w, focus)
     w.resident["idle"] = text
+    if chore in CHORES:
+        try:
+            note = yield from CHORES[chore](w)
+        except (ActionError, Interrupted):
+            note = ""
+        w.resident["idle_note"] = (note or "")[:160]
+        w.resident["idle"] = text  # the chore may have walked her about; she is still at it
     return ""
+
+
+def _chore_clean(w: World) -> Proc:
+    if w.dirt.get(w.location, 0.0) < 5 and not w.messes():
+        yield work(60, "clean", None, "收拾东西")
+        return "屋里本来就挺干净的，你把东西归了归位，擦了擦桌子。"
+    return (yield from _clean(w, 3))
+
+
+def _chore_water(w: World) -> Proc:
+    try:
+        return (yield from _water(w))
+    except ActionError:
+        yield work(40, "water", None, "擦叶子")
+        return "植物都不缺水，你拿湿布把叶子一片片擦干净了。"
+
+
+# Everyday chores the routine really does (see content.IDLE_ACTIVITIES).
+CHORES: dict[str, Callable[[World], Proc]] = {
+    "clean": _chore_clean,
+    "play": lambda w: _play(w, ""),
+    "water": _chore_water,
+    "stargaze": lambda w: _stargaze(w),
+}
 
 
 INTERNAL["_settle"] = _settle
@@ -425,6 +457,7 @@ def _serve(w: World, dish: str, use: dict[str, int], outcome: str) -> str:
         w.log("cook", f"想做{dish}，结果做焦了")
         return f"一走神，锅里的{dish}焦了……只得到一份焦掉的菜。"
     w.add_item(dish)
+    w.cooked(dish)
     if outcome == "great":
         w.log("cook", f"用{w.format_items(use)}做了{dish}，火候刚刚好，格外好吃")
         return f"今天手感特别好，{dish}的火候刚刚好，闻起来香极了。"

@@ -189,4 +189,11 @@ export function endAsk(phone) {
     + '都不需要的话，再调用一次 end_free_time 就好。'
 }
 /** The message sent when free time runs out while she is idle and has not written her diary. */
+/** Free time is over but she is finishing what she started (index.js timeUp). */
+export function overtimeText(todo) {
+  return todo.length
+    ? `（自由活动时间到了。还有开了头的事要做完：${todo.join('；')}。接下来只做这些（写日记、发消息、end_free_time 随时可以），都做完了就调用 end_free_time。）`
+    : '（自由活动时间到了，手上的事已经做完了。调用 end_free_time 结束这次自由活动。）'
+}
+
 export const TIME_UP_TEXT = '（自由活动时间到了。想写日记的话现在写，然后调用 end_free_time。）'

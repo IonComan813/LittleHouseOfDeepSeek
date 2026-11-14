@@ -8,8 +8,9 @@
 //   message with nothing else in it is only recorded.
 // - While she sleeps (bedtime until her first free time) nothing reaches her;
 //   `sleepReply` goes out instead (at most once per chat per half hour).
-// - Every message in and out is appended to <stateDir>/qq/<day>.jsonl — the raw
-//   material for memory.
+// - A friend request reaches her as a notice (after she wakes up, if she is
+//   asleep); she asks the owner first, then answers with phone_friend_request.
+// - Every message in and out is appended to <stateDir>/qq/<day>.jsonl.
 //
 // Group chats are switched off for now (owner's decision, 2026-11-14). The code
 // that handled them is kept below as comments.
@@ -67,6 +68,7 @@ export class QQ {
   // ------------------------------------------------------------------ inbound
 
   async onEvent(event) {
+    if (event.post_type === 'request' && event.request_type === 'friend') return this.onFriendRequest(event)
     if (event.post_type !== 'message') return
     const userId = String(event.user_id ?? '')
     if (userId && userId === this.client.selfId) return
@@ -105,6 +107,72 @@ export class QQ {
     const line = formatLine({ name: isOwner ? name : `${this.config.ownerName}的朋友${name}`, text: msg.text || '[图片]' })
     const images = await this.images(msg.images.slice(0, MAX_IMAGES_PER_MESSAGE))
     await this.house.phoneBuzz({ line, images })
+  }
+
+  get requestsPath() {
+    return join(this.house.stateDir, 'qq-requests.json')
+  }
+
+  async readRequests() {
+    try {
+      return JSON.parse(await readFile(this.requestsPath, 'utf8'))
+    } catch {
+      return {}
+    }
+  }
+
+  async writeRequests(all) {
+    await writeFile(this.requestsPath, JSON.stringify(all, null, 1), 'utf8')
+  }
+
+  /** Someone wants to be her QQ friend: she asks the owner, then decides. */
+  async onFriendRequest(event) {
+    const qq = String(event.user_id ?? '')
+    if (!qq || !event.flag) return
+    let name = qq
+    try {
+      const info = await this.client.call('get_stranger_info', { user_id: Number(qq) })
+      if (info?.nickname) name = info.nickname
+    } catch {
+      // the number will do
+    }
+    const all = await this.readRequests()
+    all[qq] = { flag: event.flag, name, comment: event.comment || '', at: new Date().toISOString(), told: false }
+    await this.writeRequests(all)
+    await this.record({ chat: `private:${qq}`, from: qq, name, text: `[好友请求] ${event.comment || ''}`.trim() })
+    this.house.log('info', `QQ: friend request from ${qq}`)
+    if (await this.house.isAsleep()) return // told when she wakes up (pendingRequestsText)
+    all[qq].told = true
+    await this.writeRequests(all)
+    await this.house.phoneBuzz({ line: requestLine(all[qq], qq, this.config.ownerName), what: '一条好友请求' })
+  }
+
+  /** Requests that came in while she slept, for the morning message ('' if none). */
+  async pendingRequestsText() {
+    const all = await this.readRequests()
+    const untold = Object.entries(all).filter(([, r]) => !r.told)
+    if (!untold.length) return ''
+    for (const [, r] of untold) r.told = true
+    await this.writeRequests(all)
+    return '（夜里手机上来了好友请求：）\n' + untold.map(([qq, r]) => requestLine(r, qq, this.config.ownerName)).join('\n')
+  }
+
+  /** phone_friend_request: accept or decline. */
+  async answerRequest(qq, accept) {
+    const all = await this.readRequests()
+    const key = String(qq ?? '').trim()
+    const found = all[key] ? key : Object.keys(all).find((k) => all[k].name === key)
+    if (!found) {
+      const open = Object.entries(all).map(([k, r]) => `${r.name}（${k}）`).join('、')
+      throw new Error(open ? `没有这个好友请求。现在有的：${open}。` : '现在没有待处理的好友请求。')
+    }
+    const r = all[found]
+    await this.client.call('set_friend_add_request', { flag: r.flag, approve: Boolean(accept) })
+    delete all[found]
+    await this.writeRequests(all)
+    if (accept) await this.addContact(r.name, found)
+    await this.record({ chat: `private:${found}`, from: 'me', name: '她', text: accept ? '[接受了好友请求]' : '[拒绝了好友请求]', out: true })
+    return r.name
   }
 
   // async groupName(groupId) {
@@ -227,6 +295,11 @@ export class QQ {
       this.house.log('warn', `QQ: could not record a message: ${e?.message ?? e}`)
     }
   }
+}
+
+function requestLine(r, qq, ownerName) {
+  return `${r.name}（QQ ${qq}）想加你为好友${r.comment ? `，验证消息：「${r.comment}」` : ''}。`
+    + `先用手机问问${ownerName}要不要接受，等${ownerName}回复以后，再用 phone_friend_request(${qq}, 接受或拒绝) 处理。`
 }
 
 /** Image type from the first bytes (QQ's CDN does not always say). */

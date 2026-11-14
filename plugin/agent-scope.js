@@ -13,7 +13,7 @@ import { REST_TEXT } from './lib/wake.js'
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
 
-const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'end_of_current_operation', 'house_render', 'phone_message', ...DIARY_TOOLS])
+const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'end_of_current_operation', 'house_render', 'phone_message', 'phone_friend_request', ...DIARY_TOOLS])
 
 const IMAGE_SCHEMA = {
   type: 'object',
@@ -39,10 +39,14 @@ function phoneRules(ownerName, maxMinutes) {
   像平时用手机聊天一样：口语、简短，不用 Markdown；想分几条发就用空行隔开；
   可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，一两个就好。photo=true 会附一张小屋现在的照片。
 - 想发几条就发几条，不想回也可以不回。
-- 不是自由活动时间的时候，消息开头会告诉你角色此刻在做什么（看书、发呆、晒太阳……）。这时你只用手机回消息，也可以用 house_do 看看四周（surroundings()、inventory()）。
+- 不是自由活动时间的时候，消息开头会告诉你角色此刻在做什么、做得怎么样（打扫屋子、陪团子玩、晒太阳……）。这时你只用手机回消息，也可以用 house_do 看看四周（surroundings()、inventory()）。
   **如果${ownerName}或朋友请你在屋里做什么事**（浇浇花、做顿饭、看看星星……），你可以直接用 house_do 去做：这会接过角色的控制权（最多 ${maxMinutes} 分钟）。
   做完以后调用 end_of_current_operation，把角色交还给日常。没人请你做的事，就留到自由活动时间。
-- 自由活动里，如果有你觉得有趣、重要、想让${ownerName}知道的事，可以主动发条消息；平常的流水账不用发。
+- 自由活动里随时都可以主动给${ownerName}发消息：有你觉得有趣、重要、想让${ownerName}知道的事就发，平常的流水账不用发。
+- **别答应「待会儿」做什么，除非你确定做得到。** 不是自由活动时间的时候，你只在有消息来时醒来，回完就又不在了，到时候没法自己想起来去做。
+  所以自由活动以外，如果有人让你稍后做什么（或者你自己想稍后做什么），就请对方晚点再来跟你说一次；也可以说下次自由活动时再做，并把它写进日记，免得忘了。
+  在自由活动里，如果估计在这段时间结束前做得完，就可以答应下来、排进这段时间去做；做不完的，同样请对方晚点再说，或者写进日记留到以后。
+- 有人加你 QQ 好友时，会告诉你对方是谁。先用手机问问${ownerName}要不要接受，${ownerName}回复以后再用 phone_friend_request 接受或拒绝。
 
 `
 }
@@ -163,7 +167,9 @@ export async function apply(ctx) {
       try {
         const r = await house.doScript(args.script, signal)
         const lowBudget = Number.isFinite(budget.left) && budget.left <= 5 ? `\n（这次还能行动 ${budget.left} 次）` : ''
-        const over = house.window(sessionId) || house.controlOpen(sessionId) ? ''
+        const overtime = await house.overtimeTail(sessionId)
+        const over = overtime ? `\n${overtime}`
+          : house.window(sessionId) || house.controlOpen(sessionId) ? ''
           : !house.windowOver(sessionId, true) ? '\n（时间到了，角色回到了日常。）'
           : house.diaryWritten(sessionId) ? '\n（自由活动时间到了。请调用 end_free_time。）'
           : '\n（自由活动时间到了。用 diary_write 写下这次的日记，然后调用 end_free_time。）'
@@ -200,6 +206,26 @@ export async function apply(ctx) {
           return n > 1 ? `（发出去了，${n} 条。）` : '（发出去了。）'
         } catch (e) {
           return `消息没发出去：${e?.message ?? e}`
+        }
+      },
+    }))
+  }
+
+  if (house.qq) {
+    ctx.tools.register(defineTool({
+      name: 'phone_friend_request',
+      description: '处理手机上的 QQ 好友请求：qq 是对方的 QQ 号（或名字），accept 为 true 接受、false 拒绝。先问过主人再处理。',
+      parameters: {
+        qq: { type: 'string', required: true, description: '对方的 QQ 号或名字' },
+        accept: { type: 'boolean', required: true, description: 'true = 接受，false = 拒绝' },
+      },
+      output: textOutput,
+      async execute(args) {
+        try {
+          const name = await house.qq.answerRequest(args.qq, Boolean(args.accept))
+          return args.accept ? `（接受了${name}的好友请求，以后${name}可以给你发消息了。）` : `（拒绝了${name}的好友请求。）`
+        } catch (e) {
+          return `没处理成：${e?.message ?? e}`
         }
       },
     }))

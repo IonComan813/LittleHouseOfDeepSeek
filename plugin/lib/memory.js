@@ -21,6 +21,7 @@
 export const CLARITY = ['vivid', 'clear', 'fuzzy', 'trace', 'forgotten']
 export const MAX_SUMMARY_CHARS = 600
 export const MAX_ITEM_CHARS = 120
+export const MAX_PERSON_CHARS = 240
 
 /** Whole days from `from` to `to` (YYYY-MM-DD). */
 export function daysBetween(from, to) {
@@ -99,7 +100,7 @@ export function mergeDay(mem, day, reply) {
   for (const p of reply.plans ?? []) add('plan', typeof p === 'string' ? p : p?.text, typeof p === 'string' ? 40 : p?.importance ?? 40)
   for (const m of reply.memories ?? []) add('event', typeof m === 'string' ? m : m?.text, typeof m === 'string' ? 40 : m?.importance)
   for (const [name, note] of Object.entries(reply.people ?? {})) {
-    if (name && note) out.people[clip(name, 20)] = { note: clip(note, MAX_ITEM_CHARS), day }
+    if (name && note) out.people[clip(name, 20)] = { note: clip(note, MAX_PERSON_CHARS), day }
   }
   if (!out.doneDays.includes(day)) out.doneDays = [...out.doneDays, day].sort().slice(-60)
   return { mem: out, added }
@@ -115,7 +116,8 @@ const md = (day) => day.slice(5)
 /**
  * The memory as she reads it at the start of a day.
  * @param {ReturnType<typeof emptyMemory>} mem @param {string} today
- * @param {{ ids?: boolean }} [opts] ids: show [m12] for the summariser
+ * @param {{ ids?: boolean, maxChars?: number }} [opts] ids: show [m12] for the summariser;
+ *   maxChars: drop older days, then plans and events, until it fits
  */
 export function render(mem, today, opts = {}) {
   const live = mem.items
@@ -123,16 +125,22 @@ export function render(mem, today, opts = {}) {
     .filter((i) => i.c !== 'forgotten')
     .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
   const line = (i) => `- ${opts.ids ? `[${i.id}] ` : ''}${md(i.day)}：${fade(i.text, i.c)}`
-  const sections = []
-  const days = live.filter((i) => i.kind === 'day').slice(0, 7)
-  if (days.length) sections.push('### 最近的日子', ...days.map(line))
-  const plans = live.filter((i) => i.kind === 'plan')
-  if (plans.length) sections.push('### 想做的事', ...plans.map(line))
-  const events = live.filter((i) => i.kind === 'event').sort((a, b) => b.importance - a.importance || (a.day < b.day ? 1 : -1)).slice(0, 30)
-  if (events.length) sections.push('### 记得的事', ...events.map(line))
   const people = Object.entries(mem.people)
-  if (people.length) sections.push('### 认识的人', ...people.map(([n, p]) => `- ${n}：${p.note}`))
-  return sections.join('\n')
+  // Too long for opts.maxChars? Fewer old days first, then fewer plans and things to remember.
+  for (const [nDays, nPlans, nEvents] of [[7, 30, 30], [5, 20, 20], [3, 15, 15], [2, 10, 10], [1, 5, 5]]) {
+    const sections = []
+    const days = live.filter((i) => i.kind === 'day').slice(0, nDays)
+    if (days.length) sections.push('### 最近的日子', ...days.map(line))
+    const plans = live.filter((i) => i.kind === 'plan').slice(0, nPlans)
+    if (plans.length) sections.push('### 想做的事', ...plans.map(line))
+    const events = live.filter((i) => i.kind === 'event')
+      .sort((a, b) => b.importance - a.importance || (a.day < b.day ? 1 : -1)).slice(0, nEvents)
+    if (events.length) sections.push('### 记得的事', ...events.map(line))
+    if (people.length) sections.push('### 认识的人', ...people.map(([n, p]) => `- ${n}：${p.note}`))
+    const text = sections.join('\n')
+    if (!opts.maxChars || text.length <= opts.maxChars || nDays === 1) return text.slice(0, opts.maxChars || undefined)
+  }
+  return ''
 }
 
 /** The summariser's instructions for one day. */
@@ -152,10 +160,10 @@ export function buildSummaryPrompt({ name, day, memoryText, diary, transcript = 
     '## 输出',
     '只输出一个 JSON 对象，不要别的文字：',
     '{',
-    '  "summary": "第一人称（我）写这一天：先写最重要的事和心情；篇幅允许的话，平凡的日常也可以写一些（做了什么饭、天气、团子），四到八句；不要以「这一天」开头",',
+    '  "summary": "第一人称（我）写这一天：先写最重要的事和心情；篇幅允许的话，平凡的日常也可以写一些，四到八句；不要以「这一天」开头",',
     '  "plans": ["想做的事、打算、没做完的事，第一人称，一条一句。日记和对话里提到的都要列上（包括答应别人的事）；已经做完的不要列；现有记忆里已有的不要重复"],',
     '  "memories": [{"text": "不能忘的重要的事，第一人称一句话", "importance": 80到100}],',
-    '  "people": {"名字": "对这个人的印象、他的习惯和喜好、最近和他有关的事，一两句（会替换旧的）"},',
+    '  "people": {"名字": "对这个人的印象、他的习惯和喜好、最近和他有关的事，两三句（会替换旧的。初期可以写一些相对琐碎的内容，后期随着对一个人的了解增多，可以逐渐归纳为人物画像）"},',
     '  "recalled": ["这一天又提到或想起的旧记忆的编号，如 m3"],',
     '  "done": ["「想做的事」里这一天已经做到了的编号"]',
     '}',
