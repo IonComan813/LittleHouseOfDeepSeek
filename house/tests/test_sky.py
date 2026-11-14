@@ -37,3 +37,19 @@ class SkyTest(unittest.TestCase):
         self.assertNotIn("stargaze", w.actions_here())
         self.assertIn("天还亮着", run(w, "goto(庭院); stargaze()")[-1].text)
         self.assertIn("到外面去", run(new_world(when=(2026, 8, 12, 22)), "stargaze()")[0].text)
+
+    def test_wade_and_the_light_on_the_sea(self):
+        w = new_world(when=(2026, 11, 14, 17))
+        res = run(w, "goto(沙滩); wade()")
+        self.assertTrue(res[-1].ok, res)
+        self.assertIn("夕阳", res[-1].text)
+        self.assertIn("蛾眉月", run(new_world(when=(2026, 11, 14, 20)), "goto(沙滩); wade()")[-1].text)
+        self.assertIn("这件事要在沙滩做", run(new_world(), "wade()")[0].text)
+
+    def test_fishing_in_everyday_life_needs_the_rod(self):
+        from littlehouse import content as C
+        w = new_world(when=(2026, 10, 15, 14), free=False)
+        act = next(a for a in C.IDLE_ACTIVITIES if a.story == "fish")
+        self.assertEqual(w.idle_room(act), "beach")
+        del w.inventory["鱼竿"]
+        self.assertIsNone(w.idle_room(act))

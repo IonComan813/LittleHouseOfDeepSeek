@@ -21,7 +21,7 @@
 export const CLARITY = ['vivid', 'clear', 'fuzzy', 'trace', 'forgotten']
 export const MAX_SUMMARY_CHARS = 600
 export const MAX_ITEM_CHARS = 120
-export const MAX_PERSON_CHARS = 240
+export const MAX_PERSON_CHARS = 360
 
 /** Whole days from `from` to `to` (YYYY-MM-DD). */
 export function daysBetween(from, to) {
@@ -163,11 +163,11 @@ export function buildSummaryPrompt({ name, day, memoryText, diary, transcript = 
     '  "summary": "第一人称（我）写这一天：先写最重要的事和心情；篇幅允许的话，平凡的日常也可以写一些，四到八句；不要以「这一天」开头",',
     '  "plans": ["想做的事、打算、没做完的事，第一人称，一条一句。日记和对话里提到的都要列上（包括答应别人的事）；已经做完的不要列；现有记忆里已有的不要重复"],',
     '  "memories": [{"text": "不能忘的重要的事，第一人称一句话", "importance": 80到100}],',
-    '  "people": {"名字": "对这个人的印象、他的习惯和喜好、最近和他有关的事，两三句（会替换旧的。初期可以写一些相对琐碎的内容，后期随着对一个人的了解增多，可以逐渐归纳为人物画像）"},',
+    '  "people": {"名字": "TA的身份或职业（只写对方提到过的，不要猜）、喜好和习惯、最近和TA有关的事（最近的事应当用新的逐渐替换旧的，不超过四件事；身份和喜好、习惯也可以根据实际情况更新和增改）"},',
     '  "recalled": ["这一天又提到或想起的旧记忆的编号，如 m3"],',
     '  "done": ["「想做的事」里这一天已经做到了的编号"]',
     '}',
-    'memories 只放**重要、不能忘**的事：和别人的约定、主人的习惯和喜好、很重要的第一次、改变生活的大事。平常的事写进 summary，不要放进 memories。大多数日子是 0 条，最多 3 条。',
+    'memories 只放**重要、不能忘**的事：和别人的长期约定、小屋生活中很重要的大事、给自己立下的 flag 等等。平常的事写进 summary，不要放进 memories。大多数日子是 0 条，最多 3 条。',
     '只根据上面的内容，不要编造。',
   ].join('\n')
 }

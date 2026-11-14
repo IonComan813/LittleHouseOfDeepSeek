@@ -529,14 +529,13 @@ class World:
 
     def idle_room(self, act: C.Idle) -> str | None:
         """Where an everyday activity happens (None: not possible right now)."""
+        if act.story == "fish" and (self.inventory.get("鱼竿", 0) < 1 or self.weather() == "雷阵雨"):
+            return None
         if act.room:
             return act.room
         indoor = [r for r, room in C.ROOMS.items() if not room.outdoor]
         if act.story == "play":
             return self.pet["room"] if self.pet["room"] in indoor else None
-        if "植物" in act.text:
-            pots = [o.room for o in self.objects.values() if o.kind == "plant" and o.room in indoor]
-            return pots[0] if pots else None
         return min(indoor, key=lambda r: self.dirt.get(r, 0.0))  # tidying: the tidiest room
 
     def idle_story(self) -> str:

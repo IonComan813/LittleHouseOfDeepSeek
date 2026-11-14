@@ -33,7 +33,7 @@ ROOMS: dict[str, Room] = {
         Room("yard", "庭院", "屋前的小草地院子，有三块菜地、一个邮箱和开拓署的寄售箱，东边长着一棵树，角落里有几丛灌木，院子和沙滩之间隔着一道矮木篱笆。往前走就是沙滩。", ("living_room", "beach"), outdoor=True,
              hints=("open(邮箱)", "open(包裹)", "sell(物品, 数量)", "plant(种子, 菜地)", "water()", "harvest()")),
         Room("beach", "沙滩", "细细的白沙滩，海浪会把贝壳冲上岸，岸边有一块适合钓鱼的礁石。", ("yard",), outdoor=True,
-             hints=("pick(东西)", "fish()")),
+             hints=("pick(东西)", "fish()", "wade()")),
     )
 }
 
@@ -463,6 +463,7 @@ STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"]); cooking 
 CLEAN_DIRT_PER_MINUTE = 25.0  # a filthy room (100) takes four minutes; progress is kept if she stops
 FISH_SECONDS = (60, 180)  # each cast waits this long (random) for a bite
 STARGAZE_SECONDS = (120, 240)  # stargaze(): how long she looks up
+WADE_SECONDS = (60, 150)  # wade(): playing in the waves
 
 # Things that may happen while she looks at the night sky: (text, chance, condition).
 # Conditions: summer / warm (summer, autumn) / yard / beach / clear / cloudy /
@@ -504,18 +505,27 @@ IDLE_ACTIVITIES: tuple[Idle, ...] = (
     Idle("在床上睡觉", "bedroom", "bed", None, "night"),
     Idle("在收拾屋子、擦擦桌子", "", None, "sparkle", "day", 2),  # the tidiest room: real cleaning waits for her
     Idle("在陪团子玩", "", None, "hearts", "day", 3, story="play"),
-    Idle("在给植物擦叶子、看看新芽", "", None, "water", "day", 1),
     Idle("在海边玩水、踩浪", "beach", None, "water", "dry", 2, story="beach"),
+    Idle("在礁石边钓鱼", "beach", "rock", "fishing", "dry", 2, story="fish"),
     Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, story="stargaze"),
     Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 1),
     Idle("在厨房的木桌边慢慢喝茶", "kitchen", "table", "eat", "day", 2),
     Idle("在床上睡午觉", "bedroom", "bed", "zzz", "noon", 1),
     Idle("在院子里的树下晒太阳", "yard", "tree", None, "dry", 2),
-    Idle("在沙滩上散步", "beach", None, "look", "dry", 1),
-    Idle("在沙滩上吹着海风看夜里的海", "beach", None, "look", "clear_night", 1),
+    Idle("在沙滩上散步", "beach", None, "look", "dry", 1, story="sea"),
+    Idle("在沙滩上吹着海风看夜里的海", "beach", None, "look", "clear_night", 1, story="sea"),
 )
 
-# How playing at the beach is going, when someone asks (one of these, at random).
+# How fishing is going (the everyday activity, when someone asks; nothing is really caught).
+FISH_STORIES = (
+    "浮漂一动不动，你看着海面发呆。",
+    "鱼咬了一下钩，等你提竿已经跑了。",
+    "钓上来一条小鱼，太小了，你又把它放回了海里。",
+    "钓上来一团海草，你笑着把它摘了下来。",
+    "刚换了鱼饵，正等着下一口。",
+)
+
+# wade() and the beach in the everyday life: one of these, at random (plus the light on the sea).
 BEACH_PLAY = (
     "一个浪打过来，裙摆湿了一截，你笑着往后跳。",
     "你追着退下去的浪跑，又被下一个浪追回来。",

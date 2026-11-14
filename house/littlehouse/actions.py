@@ -221,7 +221,9 @@ INTERNAL["_settle"] = _settle
 # someone wakes her with a message (world.idle_story), never applied to the world.
 STORIES: dict[str, Callable[[World], str]] = {
     "play": _story_play,
-    "beach": lambda w: w.rng.choice(C.BEACH_PLAY),
+    "beach": lambda w: w.rng.choice(C.BEACH_PLAY) + sea_light(w),
+    "sea": lambda w: sea_light(w),
+    "fish": lambda w: w.rng.choice(C.FISH_STORIES),
     "stargaze": lambda w: sky_view(w, w.rng)[0],
 }
 
@@ -819,6 +821,43 @@ def sky_view(w: World, rng) -> tuple[str, str]:
     return "".join(lines), f"看了夜空：{phase}" + (f"，看到了 {meteors} 颗流星" if meteors > 1 else "，看到了流星" if meteors else "")
 
 
+def sea_light(w: World) -> str:
+    """The light on the sea right now: the sun by the hour, the moon by its real phase."""
+    now = w.now()
+    weather = w.weather()
+    h = now.hour
+    if weather in C.RAINY:
+        return "雨点密密地落在海面上，看不到什么光。"
+    if 5 <= h < 8:
+        return "海面灰蒙蒙的，看不到朝阳。" if weather == "阴" else "朝阳从海面上升起来，海上铺开一条金红色的光带。"
+    if 8 <= h < 16:
+        if weather == "阴":
+            return "天阴着，海面灰灰的。"
+        return "云缝里漏下来的阳光，在海面上一块一块地亮着。" if weather == "多云" else "太阳照在海面上，浪尖一闪一闪地发亮。"
+    if 16 <= h < 19:
+        return "天阴着，傍晚的海面暗下来了。" if weather == "阴" else "夕阳快落进海里了，海面被染成一片橘红。"
+    phase = sky.moon_phase(now)
+    if weather == "阴" or phase == "新月" or not sky.moon_up(now):
+        return "没有月光，海面黑黑的，只有浪花泛着一点白。"
+    light = {"满月": "满月的光在海面上铺成一条亮亮的路。", "盈凸月": "月光在海面上碎成一片银色。", "亏凸月": "月光在海面上碎成一片银色。",
+             "上弦月": "半个月亮在海面上投下一道淡淡的银光。", "下弦月": "半个月亮在海面上投下一道淡淡的银光。"}
+    return light.get(phase, f"细细的{phase}在海面上只映出一点点光。")
+
+
+@action("wade()", "在海边玩水、踩浪（沙滩上，一两分钟）", 0, 0, proc=True)
+def _wade(w: World) -> Proc:
+    _need_room(w, "beach")
+    if w.weather() == "雷阵雨":
+        raise ActionError("在打雷，别下水了。")
+    yield from walk_to(w, None, "wade")
+    try:
+        yield work(w.rng.uniform(*C.WADE_SECONDS), "wade", None, "玩水")
+    except Interrupted:
+        return "你刚踩了两下水就上岸了。"
+    w.log("beach", "在海边玩了一会儿水")
+    return w.rng.choice(C.BEACH_PLAY) + sea_light(w)
+
+
 @action("read(东西)", "读漂流瓶里的纸条", 1, 1)
 def _read(w: World, ref: str) -> str:
     name = w.item_name(ref)
@@ -1122,7 +1161,7 @@ SHORT = {
     "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water": "浇水", "open": "看信 / 拆包裹", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick": "捡东西", "fish": "钓鱼", "read": "读纸条",
-    "display": "摆上收藏架", "stargaze": "看夜空", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩", "tidy": "收拾乱子",
+    "display": "摆上收藏架", "stargaze": "看夜空", "wade": "玩水踩浪", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩", "tidy": "收拾乱子",
 }
 
 
