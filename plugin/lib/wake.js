@@ -140,7 +140,7 @@ export function buildWakeMessage({ slotName, start, until, before, recap = [], n
   lines.push('', look, '')
   lines.push('这段时间由你自己安排，想做什么都可以，用 house_do 行动。动作会花真实的时间（走路、做饭、打扫……），'
     + 'house_do 等整段脚本做完才给出结果；炖、煮、烤、蒸的菜下锅以后可以先去做别的。')
-  lines.push('时间到了，或者你想结束的时候，调用 end_free_time。之后你的角色会自己去做一些日常事务，直到下一次自由活动。')
+  lines.push('时间到了，或者你想结束的时候，先用 diary_write 写下这次的日记，再调用 end_free_time。之后你的角色会自己去做一些日常事务，直到下一次自由活动。')
   return lines.join('\n')
 }
 
@@ -154,9 +154,13 @@ export function buildNudge({ left, look }) {
     '',
     look,
     '',
-    '想继续做点什么就接着用 house_do；不想了就调用 end_free_time。',
+    '想继续做点什么就接着用 house_do；不想了就写下这次的日记（diary_write），再调用 end_free_time。',
   ].join('\n')
 }
 
 export const REST_TEXT = '（这次自由活动结束了。接下来你的角色会自己去做一些日常事务，直到下一次自由活动时间。）'
 export const OVER_TEXT = '自由活动时间已经结束了，现在不能再行动。请调用 end_free_time。'
+export const OVER_DIARY_TEXT = '自由活动时间已经结束了，现在不能再行动。用 diary_write 写下这次的日记，然后调用 end_free_time。'
+export const DIARY_FIRST_TEXT = '结束之前，先用 diary_write 写下这次自由活动的日记，写完再调用 end_free_time。'
+/** The message sent when free time runs out while she is idle and has not written her diary. */
+export const TIME_UP_TEXT = '（自由活动时间到了。用 diary_write 写下这次的日记，然后调用 end_free_time。）'

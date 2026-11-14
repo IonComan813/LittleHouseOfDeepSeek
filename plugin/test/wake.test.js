@@ -60,7 +60,7 @@ test('buildWakeMessage', () => {
   const first = buildWakeMessage({ slotName: '早上', start: at(7, 52), until: at(8, 32), news: [], look: 'LOOK' })
   assert.match(first, /^（自由活动时间到了：早上，07:52–08:32，共 40 分钟。）/)
   assert.doesNotMatch(first, /这段时间里|在这之前/)
-  assert.match(first, /end_free_time/)
+  assert.match(first, /先用 diary_write 写下这次的日记，再调用 end_free_time/)
   assert.match(first, /日常事务/)
   const later = buildWakeMessage({
     slotName: '中午', start: at(12, 0), until: at(12, 40), before: '窝在沙发上看书',
@@ -76,7 +76,7 @@ test('buildWakeMessage', () => {
 test('buildNudge', () => {
   const n = buildNudge({ left: 12, look: 'LOOK' })
   assert.match(n, /还剩 12 分钟/)
-  assert.match(n, /end_free_time/)
+  assert.match(n, /diary_write.*end_free_time/)
 })
 
 test('recapEvents skips moves and duplicates', () => {

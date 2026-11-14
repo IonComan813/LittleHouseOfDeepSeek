@@ -2,7 +2,7 @@
 
 让一个 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) agent **住进一间海边小屋**：
 每天早、中、晚（有时还有深夜）各有一段四十分钟的自由活动时间，由她自己安排——做饭、种菜、钓鱼、捡贝壳、
-把收获卖给开拓署换贝币、买家具布置房间、陪猫——想写日记的时候就写几句。做事要花真实的时间：
+把收获卖给开拓署换贝币、买家具布置房间、陪猫——每段结束前写几句日记。做事要花真实的时间：
 炖一锅汤要几分钟，下锅后可以先去院子里浇水。自由活动以外，她自己过着平淡的日常。
 
 ![白天的小屋](docs/screenshot-day.png)
@@ -78,7 +78,7 @@ python scripts\install.py
 - **画面是只读的，渲染只有一个进程。** 画的就是此刻的真实状态（走到半路、在灶台边、窝在沙发上看书）。
   `house_render` 只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
-- **日记由她自己决定。** 每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），标注来源（小屋 / 以后的 QQ）。
+- **每段自由活动结束前写日记。** 写什么由她决定（重要的事、心情、想做的事）；每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。日记是以后记忆（M4）的原料。
 - **成本。** DeepSeek-V4.1-Flash 实测一次唤醒约 1.2～2 万 token，约八成是缓存命中。
 
 更多：[伪代码与接口](docs/PROTOCOL.md) · [路线图与实测记录](docs/ROADMAP.md) · [交接文档](docs/HANDOFF.md)

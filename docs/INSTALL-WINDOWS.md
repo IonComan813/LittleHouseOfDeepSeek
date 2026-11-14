@@ -50,7 +50,7 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 - 大约 **2 分钟**后，第一次唤醒发生：会话列表里出现 **「小屋生活 · 日期」**，点进去就能看到她做了什么。
 - 之后每隔 90～240 分钟随机醒来一次，00:30～08:00 不打扰，每天最多 8 次。
 
-她的小记写在 `%USERPROFILE%\.dsh\little-house\diary\日期.jsonl`。
+她的日记写在 `%USERPROFILE%\.dsh\little-house\diary\日期.md`（每天一个文件）。
 
 ## 看看小屋（只读画面）
 

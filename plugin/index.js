@@ -23,7 +23,7 @@ import { lastEntry } from './lib/diary.js'
 import { HouseProcess } from './lib/house-process.js'
 import { DEFAULT_SLOTS } from './lib/slots.js'
 import {
-  buildNudge, buildWakeMessage, checkSlots, findSlot, formatDuration, hhmm, localDay, localIso, planDay, recapEvents,
+  TIME_UP_TEXT, buildNudge, buildWakeMessage, checkSlots, findSlot, formatDuration, hhmm, localDay, localIso, planDay, recapEvents,
 } from './lib/wake.js'
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
@@ -333,8 +333,8 @@ export default class LittleHouse extends Service {
       clearTimeout(old.timer)
       clearTimeout(old.nudgeTimer)
     }
-    const win = { name: plan.name, key: slotKey(plan), until, ended: false, rested: false, nudges: 0, timer: undefined, nudgeTimer: undefined }
-    win.timer = setTimeout(() => void this.endWindow(agent.id, 'time is up'), Math.max(0, until - Date.now()))
+    const win = { name: plan.name, key: slotKey(plan), until, agent, ended: false, rested: false, diary: false, nudges: 0, timer: undefined, nudgeTimer: undefined }
+    win.timer = setTimeout(() => void this.timeUp(agent.id), Math.max(0, until - Date.now()))
     this.windows.set(agent.id, win)
     this.budgets.set(agent.id, { actions: 0, max: this.config.wake.maxActionsPerWake })
   }
@@ -343,6 +343,40 @@ export default class LittleHouse extends Service {
   window(sessionId) {
     const w = this.windows.get(sessionId)
     return w && !w.ended ? w : undefined
+  }
+
+  /** Whether this session has (or had) a free-time window. */
+  hasWindow(sessionId) {
+    return this.windows.has(sessionId)
+  }
+
+  /** Whether she wrote her diary during this session's current (or just ended) free time. */
+  diaryWritten(sessionId) {
+    return Boolean(this.windows.get(sessionId)?.diary)
+  }
+
+  /**
+   * diary_write was called: remember it for end_free_time and say which free time it belongs to.
+   * @returns {string | undefined} the slot name ("早上"), if the session has free time
+   */
+  markDiary(sessionId) {
+    const w = this.windows.get(sessionId)
+    if (!w) return undefined
+    w.diary = true
+    return w.name
+  }
+
+  /** Free time ran out. If she is idle and has not written her diary, ask her to. */
+  async timeUp(sessionId) {
+    const w = this.windows.get(sessionId)
+    await this.endWindow(sessionId, 'time is up')
+    if (!w || w.rested || w.diary || w.agent?.status !== 'idle') return
+    try {
+      await this.send(w.agent, TIME_UP_TEXT)
+      this.log('info', `asked for the diary at the end of ${w.name} (session ${sessionId})`)
+    } catch (e) {
+      this.log('warn', `could not ask for the diary: ${e?.message ?? e}`)
+    }
   }
 
   /** Whether this session had free time that is now over. */

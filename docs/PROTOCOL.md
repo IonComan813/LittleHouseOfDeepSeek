@@ -166,7 +166,7 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 | `world/world.json` | 世界存档 |
 | `world/events.jsonl` | 事件日志（追加写），记忆系统的原料 |
 | `world/house.json` | 运行中小屋的端口与令牌（退出时删除） |
-| `diary/YYYY-MM-DD.md` | 她的日记：每天一个文件，每段标注时间和来源（小屋 / QQ）。写不写由她决定 |
+| `diary/YYYY-MM-DD.md` | 她的日记：每天一个文件，每段标注时间和来源（`### 08:35 · 小屋 · 早上`，以后有 QQ）。每次自由活动结束前必须写一段（`end_free_time` 在写之前会拒绝）；这是记忆（M4）的原料 |
 | `plugin.log` | 插件日志（超过 1 MB 轮换为 `.1`） |
 | `world/latest.png` | 最近一次截图 |
 | `plugin-state.json` | 今天的生活会话 id、今明两天投好的自由活动时间（`plans`）、已经结束的时段（`doneSlots`）、上次自由活动开始 / 结束时间 |
@@ -179,7 +179,7 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 | --- | --- |
 | `diary_write(entry)` | 往今天的日记里追加一段（最多 2000 字） |
 | `diary_read(day?)` | 读某天的日记：今天 / 昨天 / 前天 / YYYY-MM-DD |
-| `end_free_time(note?)` | 结束这次自由活动；note 可选，写的话也进日记 |
+| `end_free_time()` | 结束这次自由活动。这次还没写日记时不结束，提示先 `diary_write`；时间到了她却停着没写日记时，插件会发一句「写下这次的日记，然后 end_free_time」 |
 
 ## 画面
 

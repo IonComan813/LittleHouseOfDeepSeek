@@ -5,12 +5,9 @@
 // Ordinary Web/QQ sessions never see them. The diary tools come from the
 // sibling `diary-scope.js` row in the same preset.
 
-import { join } from 'node:path'
-
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { DIARY_TOOLS } from './diary-scope.js'
-import { appendEntry } from './lib/diary.js'
-import { OVER_TEXT, REST_TEXT } from './lib/wake.js'
+import { DIARY_FIRST_TEXT, OVER_DIARY_TEXT, OVER_TEXT, REST_TEXT } from './lib/wake.js'
 
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
@@ -62,14 +59,18 @@ const HOUSE_RULES = `## 你的生活
 - house_render：看一眼小屋现在的样子（一张静态像素画，只在你看的那一刻画一帧）。
   画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_do（和里面的 surroundings()）就够了，
   只在真想看看整个家、院子和海边的样子时偶尔看一眼，一次自由活动最多一两次。
-- end_free_time：结束这次自由活动。
+- end_free_time：结束这次自由活动。结束前要先写这次的日记。
 
 ## 日记
-diary_write 会把一段话写进你今天的日记（每天一个本子，长期保存），diary_read 可以翻看某天的日记。
-日记是你自己的，写不写、写什么都由你决定：值得记住的发现、心情、想法，想写就写；平淡的时候不写也没关系。
+每次自由活动结束前，用 diary_write 写一段这次的日记，然后再 end_free_time。diary_read 可以翻看某天的日记。
+日记每天一本、长期保存，**以后你记得的事主要来自日记**：没写进去的，过些日子就淡忘了。所以写你觉得重要的、想记住的：
+- 值得记住的事和新发现（第一次做成的菜、团子做了什么、收到的信、看到的景色……）；
+- 心情和想法；
+- 想做的事、打算和没做完的事（下次想种什么、想买什么、想试试什么）。
+不用记流水账，也不用面面俱到；平淡的时候写一两句就好。一次自由活动写一段就够了。
 
 ## 注意
-- 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就 end_free_time。
+- 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就写日记、end_free_time。
 - 尽量一次写好几步，少来回问。
 - 只描述真正发生的事，不要编造没有执行过的动作。
 - 回复保持简短，像在写自己的生活片段。`
@@ -116,7 +117,7 @@ export async function apply(ctx) {
     timeoutMs: 60 * 60_000,
     async execute(args, exec) {
       const sessionId = exec.agent?.id
-      if (house.windowOver(sessionId)) return OVER_TEXT
+      if (house.windowOver(sessionId)) return house.diaryWritten(sessionId) ? OVER_TEXT : OVER_DIARY_TEXT
       const budget = house.takeAction(sessionId)
       if (!budget.ok) return '这次已经做了很多事了，就先到这里吧。请调用 end_free_time 结束这次自由活动。'
       const signal = exec.signal
@@ -125,7 +126,9 @@ export async function apply(ctx) {
       try {
         const r = await house.doScript(args.script, signal)
         const lowBudget = Number.isFinite(budget.left) && budget.left <= 5 ? `\n（这次还能行动 ${budget.left} 次）` : ''
-        const over = house.windowOver(sessionId) ? '\n（自由活动时间到了。请调用 end_free_time。）' : ''
+        const over = !house.windowOver(sessionId) ? ''
+          : house.diaryWritten(sessionId) ? '\n（自由活动时间到了。请调用 end_free_time。）'
+          : '\n（自由活动时间到了。用 diary_write 写下这次的日记，然后调用 end_free_time。）'
         return r.text + lowBudget + over
       } finally {
         signal?.removeEventListener('abort', onAbort)
@@ -145,16 +148,13 @@ export async function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'end_free_time',
-    description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。note 可选：想在日记里留一句才写；这次已经用 diary_write 写过就不要再重复。',
-    parameters: {
-      note: { type: 'string', description: '可选：写进今天日记的一句话' },
-    },
+    description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。结束前要先用 diary_write 写下这次的日记。',
+    parameters: {},
     output: textOutput,
-    async execute(args, exec) {
-      if (args.note && String(args.note).trim()) {
-        await appendEntry(join(house.stateDir, 'diary'), new Date(), '小屋', args.note)
-      }
-      await house.endFreeTime(exec.agent?.id)
+    async execute(_args, exec) {
+      const sessionId = exec.agent?.id
+      if (house.hasWindow(sessionId) && !house.diaryWritten(sessionId)) return DIARY_FIRST_TEXT
+      await house.endFreeTime(sessionId)
       exec.concludeTurn()
       return REST_TEXT
     },
