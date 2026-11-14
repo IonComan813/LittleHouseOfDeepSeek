@@ -96,13 +96,20 @@ class MovementTest(unittest.TestCase):
         w = new_world()
         res = run(w, "goto(庭院); plant(萝卜)")
         self.assertFalse(res[-1].ok)
-        self.assertIn("你是不是说萝卜种子", res[-1].text)
+        self.assertIn("背包里没有「萝卜」。", res[-1].text)
+        self.assertIn("背包里有：", res[-1].text)  # the full names are listed, not guessed
+        self.assertIn("萝卜种子×2", res[-1].text)
+        self.assertNotIn("你是不是", res[-1].text)
         self.assertFalse(w.objects["plot#1"].state.get("seed"))
         w.add_item("萝卜")
         res = run(w, "plant(萝卜)")  # the vegetable, not the seed
-        self.assertIn("你是不是想种萝卜种子？那就写 plant(萝卜种子)", res[0].text)
-        self.assertIn("你是不是说菜地1", run(w, "water(菜地)")[0].text)
-        self.assertIn("番茄种子", run(w, "goto(客厅); order(番茄种)")[-1].text)
+        self.assertIn("萝卜不是种子。背包里的种子：萝卜种子、菠菜种子", res[0].text)
+        text = run(w, "water(菜地)")[0].text
+        self.assertIn("这里没有「菜地」。这里有：", text)
+        self.assertIn("菜地1", text)
+        text = run(w, "goto(客厅); order(番茄种)")[-1].text
+        self.assertIn("目录里没有「番茄种」。目录上有：", text)
+        self.assertIn("番茄种子", text)
         self.assertTrue(ok(run(w, "goto(庭院); plant(萝卜种子, 菜地1)")))
 
     def test_one_wrong_step_and_nothing_runs(self):
@@ -111,12 +118,15 @@ class MovementTest(unittest.TestCase):
             run(w, "goto(厨房); look(); cook(白米饭); go(沙滩)")
         msg = str(e.exception)
         self.assertIn("一步都没有执行", msg)
-        self.assertIn("第 2 步：没有「look」这个动作。你是不是想用 surroundings()？", msg)
-        self.assertIn("第 4 步：没有「go」这个动作。你是不是想用 goto(地点)？", msg)
+        self.assertIn("第 2 步：没有「look」这个动作。\n第 4 步：没有「go」这个动作。", msg)
+        self.assertIn("这里能用的动作：", msg)  # the real names are listed, nothing is guessed
+        self.assertIn("surroundings", msg)
+        self.assertNotIn("你是不是", msg)
         self.assertEqual(w.location, "living_room")  # not even the first step ran
         with self.assertRaises(ScriptError) as e:
             run(w, "harvst()")  # a typo
-        self.assertIn("harvest(菜地)", str(e.exception))
+        self.assertIn("其他地方的动作：", str(e.exception))
+        self.assertIn("harvest", str(e.exception))
 
     def test_look_mentions_status_and_hints(self):
         text = run(new_world(), "surroundings()")[0].text
@@ -388,7 +398,8 @@ class HouseworkTest(unittest.TestCase):
         self.assertNotIn("累", w.status_line())
         with self.assertRaises(ScriptError) as e:
             run(w, "rest()")  # no lying down during free time
-        self.assertIn("wait(分钟)", str(e.exception))
+        self.assertIn("没有「rest」这个动作", str(e.exception))
+        self.assertIn("wait", str(e.exception))
 
 
 class CatTest(unittest.TestCase):
@@ -462,7 +473,7 @@ class CatTest(unittest.TestCase):
         self.assertIn("可以 tidy() 收拾", run(w, "examine(撒了一地的土)")[0].text)
         with self.assertRaises(ScriptError) as e:
             run(w, "fix(撒了一地的土)")
-        self.assertIn("tidy(乱子)", str(e.exception))  # suggested, not run for her
+        self.assertIn("这里能用的动作：tidy", str(e.exception))  # listed, not run for her
         self.assertTrue(pot.state["fallen"])
         res = run(w, "tidy(撒了一地的土)")
         self.assertTrue(ok(res), res)

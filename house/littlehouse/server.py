@@ -96,10 +96,10 @@ class House:
         calls = parse(src)
         if not calls:
             raise ScriptError("脚本是空的。试试 surroundings()。")
-        refuse_bad_steps(calls)
         w = self.world
         with self.lock:
             w.update()
+            refuse_bad_steps(calls, w)
             free_until = w.resident.get("free_until", 0.0)
             deadline = free_until if free_until > w.clock.timestamp() else None
             rid = w.runner.submit(calls, deadline)

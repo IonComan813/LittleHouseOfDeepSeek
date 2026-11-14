@@ -14,7 +14,6 @@ agent turns.
 
 from __future__ import annotations
 
-import difflib
 import math
 from dataclasses import dataclass
 from datetime import timedelta
@@ -213,8 +212,13 @@ def _examine(w: World, ref: str) -> str:
     ref = str(ref)
     try:
         o = w.resolve(ref)
-    except ActionError:
-        name = w.item_name(ref)
+    except ActionError as here_error:
+        try:
+            name = w.item_name(ref)
+        except ActionError:
+            if "不在这里" in str(here_error) or str(ref).strip() in (w.pet["name"],) + PET_WORDS:
+                raise here_error from None
+            raise ActionError(f"这里和背包里都没有「{ref}」。{w.here_text()}{w.bag_text()}") from None
         item = C.ITEMS.get(name)
         return f"{name}：{item.desc or '没什么特别的。'}" if item else f"{name}。"
     if o.kind == "mess":
@@ -584,9 +588,7 @@ def _order(w: World, ref: str, n: float = 1) -> str:
     _need_indoor(w)
     name = str(ref).strip()
     if name not in C.CATALOG:
-        cands = [k for k in C.CATALOG if name and (name in k or k in name)]
-        hint = f"你是不是说{'、'.join(cands)}？要写全名。" if cands else "用 catalog() 看看。"
-        raise ActionError(f"目录里没有「{name}」。{hint}")
+        raise ActionError(f"目录里没有「{name}」。目录上有：{'、'.join(C.CATALOG)}。")
     count = int(n)
     if count < 1 or count > 20:
         raise ActionError("数量要在 1 到 20 之间。")
@@ -622,9 +624,8 @@ def _plant(w: World, seed_ref: str, plot_ref: str = "") -> str:
     _need_room(w, "yard")
     seed = w.item_name(seed_ref)
     if seed not in C.CROPS:
-        seeds = [s for s in w.items_with_tag("seed") if seed in s]
-        hint = f"你是不是想种{seeds[0]}？那就写 plant({seeds[0]})。" if seeds else ""
-        raise ActionError(f"{seed}不是种子。{hint}")
+        seeds = w.items_with_tag("seed")
+        raise ActionError(f"{seed}不是种子。" + (f"背包里的种子：{'、'.join(seeds)}。" if seeds else "背包里没有种子，可以订购。"))
     if plot_ref:
         plot = w.resolve(plot_ref)
         if plot.kind != "plot":
@@ -1053,46 +1054,28 @@ def menu_line(w: World) -> str:
 # ---------------------------------------------------------------- checking a script before it runs
 #
 # A script runs only if every step names a real action with a sensible number of
-# arguments; otherwise nothing runs and she is told what to write instead. A
-# wrong name is never quietly replaced by the right one.
-
-SYNONYMS = {
-    "look": "surroundings", "see": "surroundings", "view": "surroundings", "observe": "surroundings",
-    "lookaround": "surroundings", "around": "surroundings", "status": "surroundings", "看": "surroundings",
-    "fix": "tidy", "repair": "tidy", "tidyup": "tidy", "cleanup": "tidy", "收拾": "tidy",
-    "rest": "wait", "sleep": "wait", "nap": "wait", "idle": "wait", "relax": "wait",
-    "go": "goto", "walk": "goto", "move": "goto", "travel": "goto", "enter": "goto",
-    "buy": "order", "purchase": "order", "shop": "order", "shopping": "catalog", "menu": "recipes",
-    "make": "cook", "cooking": "cook", "fry": "cook", "boil": "cook",
-    "drink": "eat", "consume": "eat", "meal": "eat",
-    "sweep": "clean", "wash": "clean", "mop": "clean",
-    "grab": "pick", "collect": "pick", "pickup": "pick", "take": "pick", "gather": "pick",
-    "sow": "plant", "seed": "plant", "reap": "harvest",
-    "put": "place", "decorate": "place", "store": "stow",
-    "pat": "pet", "stroke": "pet", "cuddle": "pet", "toy": "play", "plaything": "play",
-    "talk": "say", "speak": "say", "bag": "inventory", "inv": "inventory", "items": "inventory",
-    "fishing": "fish", "mail": "open", "letter": "open", "parcel": "open", "inspect": "examine", "check": "examine",
-}
+# arguments; otherwise nothing runs and she is told which actions there are.
+# A wrong name is never guessed at or quietly replaced by the right one.
 
 
-def suggest(name: str) -> str | None:
-    """The real action a wrong name probably meant, if any."""
-    key = name.strip().lower().replace("_", "")
-    if key in SYNONYMS:
-        return SYNONYMS[key]
-    close = difflib.get_close_matches(key, list(ACTIONS), n=1, cutoff=0.6)
-    return close[0] if close else None
+def action_list(w: World | None = None) -> str:
+    """'这里能用：…；其他动作：…' (or every action when there is no world at hand)."""
+    if w is None:
+        return f"动作有：{'、'.join(ACTIONS)}。"
+    here = list(dict.fromkeys([*actions_here(w), *ALWAYS]))
+    rest = [n for n in ACTIONS if n not in here]
+    return f"这里能用的动作：{'、'.join(here)}；其他地方的动作：{'、'.join(rest)}。"
 
 
-def check_calls(calls) -> list[str]:
+def check_calls(calls, w: World | None = None) -> list[str]:
     """Problems that keep a script from running at all (empty if it can run)."""
     problems = []
     for i, c in enumerate(calls, 1):
         spec = ACTIONS.get(c.name)
         if spec is None:
-            guess = suggest(c.name)
-            hint = f"你是不是想用 {ACTIONS[guess].signature}？" if guess else "用 help() 看看有哪些动作。"
-            problems.append(f"第 {i} 步：没有「{c.name}」这个动作。{hint}")
+            problems.append(f"第 {i} 步：没有「{c.name}」这个动作。")
         elif len(c.args) > spec.max_args:
             problems.append(f"第 {i} 步：{c.name} 的参数太多了，用法是 {spec.signature}。")
+    if any("这个动作" in p for p in problems):
+        problems.append(action_list(w))
     return problems

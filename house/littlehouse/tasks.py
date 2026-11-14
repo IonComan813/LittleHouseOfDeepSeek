@@ -219,7 +219,7 @@ class Runner:
     # ------------------------------------------------------------------ internals
 
     def _start(self, call: Call) -> None:
-        from .actions import ACTIONS, INTERNAL, options, process, suggest
+        from .actions import ACTIONS, INTERNAL, action_list, options, process
 
         w = self.w
         if self.deadline is not None and self.cursor >= self.deadline:
@@ -234,9 +234,7 @@ class Runner:
         else:
             spec = ACTIONS.get(call.name)
             if spec is None:  # normally caught before the script starts (actions.check_calls)
-                guess = suggest(call.name)
-                hint = f"你是不是想用 {ACTIONS[guess].signature}？" if guess else "用 help() 查看可用动作。"
-                self._finish(False, f"没有「{call.name}」这个动作。{hint}")
+                self._finish(False, f"没有「{call.name}」这个动作。{action_list(w)}")
                 return
             if len(call.args) < spec.min_args:  # "cook" alone: say what it can be used with
                 self._finish(True, options(w, call.name), hint=True)  # no side effects: go on
