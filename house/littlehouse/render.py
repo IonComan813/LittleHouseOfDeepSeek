@@ -403,7 +403,16 @@ def _shelf(surf, r, items):
         pygame.draw.rect(surf, PAL[look], (x, y, 4, 3))
 
 
-def _catalog_table(surf, r):
+def _booklet(surf, x, y):
+    pygame.draw.rect(surf, PAL["q"], (x, y, 12, 8))
+    pygame.draw.rect(surf, PAL["n"], (x, y, 12, 8), 1)
+    pygame.draw.line(surf, PAL["x"], (x + 3, y + 3), (x + 9, y + 3))
+
+
+def _catalog_table(surf, r, on_table=True):
+    if SP.get("round_table") is not None and not on_table:
+        _spr(surf, "round_table", r)
+        return
     if _spr(surf, "round_table", r):  # with the bureau's catalog (a teal booklet) on top
         pygame.draw.rect(surf, PAL["q"], (r.centerx - 6, r.top + 6, 12, 8))
         pygame.draw.rect(surf, PAL["n"], (r.centerx - 6, r.top + 6, 12, 8), 1)
@@ -440,12 +449,16 @@ def _table(surf, r):
         pygame.draw.rect(surf, PAL["w"], (r.centerx + dx - 3, r.bottom - 7, 6, 5), border_radius=1)
 
 
-def _pot(surf, r, water, name):
+def _pot(surf, r, water, name, fallen=False):
     img = SP.get("succulent" if "多肉" in name else "pothos")
     if img is not None:
         if water < 60:  # thirsty leaves fade towards yellow-brown
             img = img.copy()
             img.fill((235, 215, 150) if water >= 30 else (210, 170, 110), special_flags=pygame.BLEND_MULT)
+        if fallen:  # knocked over: lying on its side, leaves on the floor
+            img = pygame.transform.rotate(img, 90)
+            surf.blit(img, (r.centerx - img.get_width() // 2 - 6, r.bottom - img.get_height()))
+            return
         surf.blit(img, (r.centerx - img.get_width() // 2, r.bottom - img.get_height()))
         return
     cx, base = r.centerx, r.bottom - 2
@@ -579,9 +592,13 @@ def _find(surf, tx, ty, item):
         pygame.draw.ellipse(surf, c, (cx - 3, cy - 2, 6, 4))
 
 
-def _decor(surf, tx, ty, name, lit):
+def _decor(surf, tx, ty, name, lit, fallen=False):
     x, y = tx * T, ty * T
     img = SP.get(name) if name in SP.SPRITES else None
+    if img is not None and fallen:
+        img = pygame.transform.rotate(img, -90)
+        surf.blit(img, (x + 8 - img.get_width() // 2, y + T - img.get_height()))
+        return
     if img is not None:
         if name == "挂画":  # hangs on the back wall above its spot
             surf.blit(img, (x + 8 - img.get_width() // 2, 4))
@@ -832,6 +849,52 @@ def _effect(surf, pose, world, t):
                 surf.set_at((bubble.centerx + dx, bubble.centery), PAL["k"])
 
 
+def _messes(surf, world):
+    """What the cat left behind: spilled soil and water, a book, the catalog, a cushion, a trampled quilt."""
+    for o in world.objects.values():
+        if o.kind != "mess":
+            continue
+        kind = o.state.get("kind")
+        spot = o.state.get("spot")
+        rect = None
+        if spot in S.FIXTURES:
+            rect = _r(*S.FIXTURES[spot])
+        elif spot and spot in world.objects and world.objects[spot].kind == "decor":
+            ids = [d.id for d in world.objects.values() if d.kind == "decor" and d.room == o.room]
+            tx, ty = S.decor_spots(o.room, ids).get(spot, S.ANCHORS[o.room])
+            rect = _r(tx, ty)
+        if rect is None:
+            ax, ay = S.ANCHORS[o.room]
+            rect = _r(ax, ay)
+        rng = _rng("mess", o.id)
+        if kind == "soil":
+            for _ in range(14):
+                x = rect.centerx + rng.randint(-14, 16)
+                y = rect.bottom + rng.randint(-4, 6)
+                pygame.draw.circle(surf, (110, 74, 48) if rng.random() < 0.7 else (140, 98, 64), (x, y), rng.randint(1, 3))
+        elif kind == "water":
+            pygame.draw.ellipse(surf, (150, 200, 230), (rect.centerx - 4, rect.bottom - 6, 26, 9))
+            pygame.draw.ellipse(surf, (200, 232, 248), (rect.centerx, rect.bottom - 5, 10, 3))
+        elif kind == "book":
+            x, y = rect.centerx + 6, rect.bottom + 10
+            pygame.draw.rect(surf, PAL["R"], (x, y, 12, 9))
+            pygame.draw.rect(surf, PAL["x"], (x + 2, y + 1, 8, 7))
+            pygame.draw.line(surf, PAL["R"], (x + 6, y + 1), (x + 6, y + 7))
+        elif kind == "catalog":
+            _booklet(surf, rect.centerx + 10, rect.bottom + 6)
+        elif kind == "cushion":
+            x, y = rect.centerx + 22, rect.bottom + 6
+            pygame.draw.rect(surf, PAL["y"], (x, y, 10, 9), border_radius=3)
+            pygame.draw.rect(surf, PAL["o"], (x, y, 10, 9), 1, border_radius=3)
+        elif kind == "quilt":
+            for i in range(5):
+                x = rect.left + 12 + rng.randint(0, rect.width - 24)
+                y = rect.top + 26 + rng.randint(0, 30)
+                pygame.draw.line(surf, (120, 40, 34), (x, y), (x + rng.randint(4, 9), y + rng.randint(-3, 3)), 1)
+            for _ in range(4):  # orange cat hairs
+                surf.set_at((rect.left + 14 + rng.randint(0, 20), rect.top + 30 + rng.randint(0, 20)), PAL["o"])
+
+
 def _base(season: str) -> pygame.Surface:
     """Terrain and floors: the expensive, rarely-changing layer, cached per season."""
     key = ("base", season)
@@ -889,7 +952,7 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
         ids = [o.id for o in decor if o.room == room]
         spots = S.decor_spots(room, ids)
         for o in sorted((o for o in decor if o.room == room), key=lambda o: o.name != "小地毯"):
-            _decor(surf, *spots[o.id], o.name, lamps)
+            _decor(surf, *spots[o.id], o.name, lamps, o.state.get("fallen", False))
 
     objects = world.objects
     _counter(surf, _r(*S.EXTRAS["counter"]))
@@ -903,12 +966,14 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     _bookshelf(surf, _r(*S.FIXTURES["bookshelf"]))
     _sofa(surf, _r(*S.FIXTURES["sofa"]))
     _shelf(surf, _r(*S.FIXTURES["shelf"]), world.shelf)
-    _catalog_table(surf, _r(*S.FIXTURES["catalog"]))
+    mess_kinds = {o.state.get("kind") for o in world.objects.values() if o.kind == "mess"}
+    _catalog_table(surf, _r(*S.FIXTURES["catalog"]), on_table="catalog" not in mess_kinds)
     _stove(surf, _r(*S.FIXTURES["stove"]), recently_cooked)
     _table(surf, _r(*S.FIXTURES["table"]))
     for pid in ("pot#1", "pot#2"):
         if pid in objects:
-            _pot(surf, _r(*S.FIXTURES[pid]), objects[pid].state.get("water", 0), objects[pid].name)
+            _pot(surf, _r(*S.FIXTURES[pid]), objects[pid].state.get("water", 0), objects[pid].name,
+                 objects[pid].state.get("fallen", False))
     for pid in ("plot#1", "plot#2", "plot#3"):
         if pid in objects:
             _plot(surf, _r(*S.FIXTURES[pid]), objects[pid].state, season)
@@ -917,6 +982,7 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     if world.parcels:
         _parcel(surf, _r(*S.FIXTURES["parcel"]))
     _rock(surf, _r(*S.FIXTURES["rock"]))
+    _messes(surf, world)
     finds = {o.id: o for o in objects.values() if o.kind == "find"}
     find_pos = S.find_spots(list(finds))
     for fid, (tx, ty) in find_pos.items():

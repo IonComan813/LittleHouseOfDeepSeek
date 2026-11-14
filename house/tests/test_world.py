@@ -420,6 +420,36 @@ class CatTest(unittest.TestCase):
                 hits += 1
         self.assertGreater(hits, 0)
 
+    def test_messes_can_be_tidied(self):
+        w = new_world()
+        pot = w.objects["pot#1"]
+        w.add_mess("soil", "living_room", pot)
+        w.add_mess("catalog", "living_room")
+        look = w.look()
+        self.assertIn("撒了一地的土", look)
+        self.assertIn("盆倒在地上", look)
+        self.assertIn("tidy", w.actions_here())
+        self.assertIn("tidy()", run(w, "water(绿萝)")[0].text)
+        self.assertIn("可以 tidy() 收拾", run(w, "examine(撒了一地的土)")[0].text)
+        res = run(w, "fix(撒了一地的土)")
+        self.assertTrue(ok(res), res)
+        self.assertFalse(pot.state["fallen"])
+        self.assertEqual(len(w.messes()), 1)
+        res = run(w, "clean()")
+        self.assertIn("先收拾了掉在地上的订货目录", res[0].text)
+        self.assertEqual(w.messes(), [])
+
+    def test_the_cat_makes_messes_when_alone(self):
+        w = new_world(free=False)
+        w.pet["room"] = "bedroom"
+        w.pet["hunger"] = 90
+        for _ in range(20 * 24):  # a few weeks, an hour at a time
+            w.clock.advance(3600)
+            w.tick()
+        news = [e.text for e in w.news_since("") if "团子" in e.text and ("掉" in e.text or "乱" in e.text or "倒" in e.text)]
+        self.assertTrue(news)
+        self.assertTrue(any(o.kind == "mess" for o in w.objects.values()))
+
     def test_parcel_leaves_a_box(self):
         w = new_world()
         w.parcels["鸡蛋"] = 2

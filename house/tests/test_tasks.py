@@ -93,6 +93,8 @@ class DurationTest(unittest.TestCase):
         t0 = w.clock.timestamp()
         res = run(w, "call(); feed(); goto(厨房); cook(萝卜炖排骨); clean(); goto(庭院); water(); open(邮箱)")
         self.assertTrue(ok(res), res)
+        for j in w.jobs:
+            j["outcome"] = "ok"  # not today's random burnt pot
         res = run(w, "goto(沙滩); pick(); fish(); fish(); goto(厨房); eat(萝卜炖排骨); goto(客厅); display()")
         self.assertTrue(ok(res), res)
         minutes = (w.clock.timestamp() - t0) / 60

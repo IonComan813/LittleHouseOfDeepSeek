@@ -384,21 +384,46 @@ PLAY_TOY_LINES = {
     "猫薄荷玩偶": "{pet}抱着猫薄荷玩偶又啃又蹬，晕乎乎地翻了个肚皮。",
     "逗猫棒": "{pet}追着羽毛跳得老高。",
 }
-# room -> [(text, effect, weight)]; {pet} is the cat's name, {pot} a potted plant here
+# Messes the cat leaves behind. They are things in the room (look() lists them,
+# the picture shows them) until she tidies them up: tidy() / fix(), or clean().
+# kind -> (name, seconds to tidy, dirt it took into the room, how it looks, where she stands)
+MESSES: dict[str, tuple[str, float, float, str, str]] = {
+    "soil": ("撒了一地的土", 60, 20, "{target}的盆倒在地上，土撒了一片。", ""),
+    "water": ("洒了一地的水", 40, 10, "花瓶倒在地上，水在地板上淌开一小摊。", ""),
+    "book": ("掉在地上的书", 10, 0, "一本从书架上掉下来的书，书页摊开着。", "bookshelf"),
+    "catalog": ("掉在地上的订货目录", 10, 0, "开拓署的订货目录摊在地板上。", "catalog"),
+    "quilt": ("被踩乱的被子", 30, 0, "被子被踩得皱巴巴的，上面还粘着几根橘色的猫毛。", "bed"),
+    "cushion": ("掉在地上的靠垫", 15, 0, "沙发上的靠垫被蹬到了地板上。", "sofa"),
+}
+
+# While they play. room -> [(text, effect, weight)]; effect is a MESSES kind, "dirt", or "".
+# {pet} is the cat's name, {pot} a potted plant here.
 PLAY_EVENTS: dict[str, list[tuple[str, str, int]]] = {
-    "living_room": [("{pet}一跃跳上沙发，在靠垫上打了个滚。", "", 3),
-                    ("{pet}扑过头，把圆桌上的订货目录扫到了地上。", "", 2),
+    "living_room": [("{pet}一跃跳上沙发，在上面打了个滚，把靠垫蹬到了地上。", "cushion", 3),
+                    ("{pet}扑过头，把圆桌上的订货目录扫到了地上。", "catalog", 2),
                     ("{pet}跳上窗台，盯着窗外的海鸥看了半天。", "", 2),
-                    ("{pet}追得太急，一头撞翻了{pot}，土撒了一地。", "pot", 2),
-                    ("{pet}把花瓶推倒了，水洒了一地。", "vase", 2)],
-    "bedroom": [("{pet}跳到床上，把被子踩得乱七八糟。", "", 3),
+                    ("{pet}追得太急，一头撞翻了{pot}，土撒了一地。", "soil", 2),
+                    ("{pet}把花瓶推倒了，水洒了一地。", "water", 2)],
+    "bedroom": [("{pet}跳到床上，把被子踩得乱七八糟。", "quilt", 3),
                 ("{pet}钻进了床底下，过了好一会儿才顶着一身灰出来。", "dirt", 2),
-                ("{pet}蹿上书架，碰掉了一本书。", "", 2),
-                ("{pet}把{pot}从窗边推了下来，土撒了一地。", "pot", 1)],
+                ("{pet}蹿上书架，碰掉了一本书。", "book", 2),
+                ("{pet}把{pot}从窗边推了下来，土撒了一地。", "soil", 1)],
     "kitchen": [("{pet}跳上木桌，脚下一滑从桌边跌了下去，若无其事地舔了舔爪子。", "", 3),
                 ("{pet}跳上台面，差点把水槽边的碗碰下去。", "", 2),
                 ("{pet}钻到冰箱和墙的缝里，蹭了一身灰。", "dirt", 1)],
 }
+
+# When nobody is watching (about once a day; more on a cranky or hungry day).
+CAT_MISCHIEF: dict[str, list[tuple[str, str, int]]] = {
+    "living_room": [("{pet}在沙发上磨爪子，把靠垫蹬到了地上", "cushion", 3),
+                    ("{pet}把订货目录从圆桌上扫了下去", "catalog", 2),
+                    ("{pet}撞翻了{pot}的盆，土撒了一地", "soil", 1),
+                    ("{pet}把花瓶推倒了，水洒了一地", "water", 1)],
+    "bedroom": [("{pet}在床上踩来踩去，把被子弄得乱七八糟", "quilt", 3),
+                ("{pet}从书架上碰掉了一本书", "book", 2),
+                ("{pet}把{pot}推倒了，土撒了一地", "soil", 1)],
+}
+MISCHIEF_PER_HOUR = 0.04
 PLAY_SECONDS = (60, 120)
 
 # --------------------------------------------------------------------------- the cat's temper (rolled once per day)

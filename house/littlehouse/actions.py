@@ -222,6 +222,9 @@ def _examine(w: World, ref: str) -> str:
         name = w.item_name(ref)
         item = C.ITEMS.get(name)
         return f"{name}：{item.desc or '没什么特别的。'}" if item else f"{name}。"
+    if o.kind == "mess":
+        target = w.objects.get(o.state.get("target") or "")
+        return C.MESSES[o.state["kind"]][3].format(target=target.name if target else "") + "可以 tidy() 收拾。"
     look = C.APPEARANCE.get(o.id) or C.APPEARANCE.get(o.name, "")
     if o.id == "shelf":
         return look + "上面摆着：" + (w.format_items(w.shelf) if w.shelf else "什么都还没有。")
@@ -467,18 +470,25 @@ def _clean(w: World, minutes: float = 0) -> Proc:
     before = w.dirt[w.location]
     room = C.ROOMS[w.location].name
     rate = C.CLEAN_DIRT_PER_MINUTE / 60.0  # dirt per second
+    tidied = ""
+    if w.messes():  # put things back first, then sweep
+        done = yield from tidy_messes(w, w.messes())
+        if done:
+            w.log("clean", "收拾了" + "、".join(done))
+            tidied = "你先收拾了" + "、".join(done) + "。"
+        before = w.dirt[w.location]
     need = max(20.0, before / rate)
     secs = min(need, float(minutes) * 60) if minutes else need
     yield from walk_to(w, None, "clean")
     try:
         yield work(secs, "clean", None, f"打扫{room}")
     except Interrupted as e:
-        return _clean_partly(w, room, e.done, rate)
+        return tidied + _clean_partly(w, room, e.done, rate)
     if secs < need:
-        return _clean_partly(w, room, secs, rate)
+        return tidied + _clean_partly(w, room, secs, rate)
     w.dirt[w.location] = 0.0
     w.log("clean", f"打扫了{room}")
-    text = f"你把{room}打扫得干干净净。" if before >= 40 else f"{room}本来就挺干净，你又擦了擦。"
+    text = tidied + (f"你把{room}打扫得干干净净。" if before >= 40 else f"{room}本来就挺干净，你又擦了擦。")
     if w.rng.random() < 0.04 + before / 400:  # dirtier rooms hide more
         found = _weighted(w.rng, C.CLEAN_FINDS)
         if found == "@coins":
@@ -534,6 +544,10 @@ def _water(w: World, ref: str = "") -> Proc:
     for o in targets:
         if o.kind not in ("plant", "plot"):
             raise ActionError(f"{o.name}不需要浇水。")
+    fallen = [o for o in targets if o.state.get("fallen")]
+    if fallen and len(fallen) == len(targets):
+        raise ActionError(f"{fallen[0].name}的盆倒在地上，先 tidy() 把它扶起来。")
+    targets = [o for o in targets if not o.state.get("fallen")]
     w.stand_near(start)
     watered: list[Obj] = []
 
@@ -882,6 +896,8 @@ def actions_here(w: World) -> list[str]:
         names.append("eat")
     if w.items_with_tag("readable"):
         names.append("read")
+    if w.messes():
+        names.insert(0, "tidy")
     return list(dict.fromkeys(n for n in names if n in ACTIONS))
 
 
@@ -991,23 +1007,65 @@ def _play_event(w: World, mood: str) -> str:
     """Maybe something happens in the room while they play (more likely when the cat is excited)."""
     if w.rng.random() > (0.55 if mood == "happy" else 0.3):
         return ""
-    pots = [o for o in w.here() if o.kind == "plant"]
-    vases = [o for o in w.here() if o.kind == "decor" and o.name == "花瓶"]
+    pots = [o for o in w.here() if o.kind == "plant" and not o.state.get("fallen")]
+    vases = [o for o in w.here() if o.kind == "decor" and o.name == "花瓶" and not o.state.get("fallen")]
+    have = {o.state.get("kind") for o in w.messes()}
     options = [(t, eff) for t, eff, wt in C.PLAY_EVENTS.get(w.location, []) for _ in range(wt)
-               if (eff != "pot" or pots) and (eff != "vase" or vases)]
+               if (eff != "soil" or pots) and (eff != "water" or vases) and eff not in have]
     if not options:
         return ""
     text, effect = w.rng.choice(options)
-    pot = w.rng.choice(pots) if pots else None
-    if effect == "pot" and pot:
-        pot.state["water"] = max(0.0, pot.state.get("water", 50) - 30)
-        w.dirt[w.location] = min(100.0, w.dirt[w.location] + 25)
-    elif effect == "vase":
-        w.dirt[w.location] = min(100.0, w.dirt[w.location] + 15)
-    elif effect == "dirt":
+    target = w.rng.choice(pots) if effect == "soil" else vases[0] if effect == "water" else None
+    if effect == "dirt":
         w.dirt[w.location] = min(100.0, w.dirt[w.location] + 10)
-    return text.format(pet=w.pet["name"], pot=pot.name if pot else "")
+    elif effect:
+        w.add_mess(effect, w.location, target)
+    return text.format(pet=w.pet["name"], pot=target.name if target else "")
 
+
+# ---------------------------------------------------------------- tidying up after the cat
+
+ALIASES = {"fix": "tidy"}  # other names she may use for an action
+
+
+@action("tidy(乱子)", "收拾乱子（猫弄倒的盆、洒的水、掉在地上的书……）；不写参数就收拾这里所有的。也可以写 fix()", 0, 1, proc=True)
+def _tidy(w: World, ref: str = "") -> Proc:
+    if ref:
+        o = w.resolve(ref)
+        if o.kind != "mess" and not o.state.get("fallen"):
+            raise ActionError(f"{o.name}好好的，不用收拾。")
+        messes = [m for m in w.messes() if m is o or m.state.get("target") == o.id]
+    else:
+        messes = w.messes()
+    if not messes:
+        raise ActionError("这里没有要收拾的东西。")
+    done = yield from tidy_messes(w, messes)
+    if not done:
+        return "你还没来得及收拾。"
+    w.log("clean", "收拾了" + "、".join(done))
+    return "你收拾好了" + "、".join(done) + "。"
+
+
+def tidy_messes(w: World, messes: list[Obj]) -> Proc:
+    """Go to each mess and put things right; returns the names of what got done."""
+    done: list[str] = []
+    try:
+        for m in messes:
+            yield from walk_to(w, m.state.get("spot") or None, "tidy")
+            yield work(C.MESSES[m.state["kind"]][1], "tidy", m.state.get("spot"), f"收拾{m.name}")
+            _put_right(w, m)
+            done.append(m.name)
+    except Interrupted:
+        pass
+    return done
+
+
+def _put_right(w: World, m: Obj) -> None:
+    target = w.objects.get(m.state.get("target") or "")
+    if target is not None:
+        target.state["fallen"] = False
+    w.dirt[m.room] = max(0.0, w.dirt[m.room] - C.MESSES[m.state["kind"]][2])
+    del w.objects[m.id]
 
 
 # A few words on each action, for the menu after every script.
@@ -1016,7 +1074,7 @@ SHORT = {
     "rest": "躺一会儿", "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water": "浇水", "open": "看信 / 拆包裹", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick": "捡东西", "fish": "钓鱼", "read": "读纸条",
-    "display": "摆上收藏架", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩",
+    "display": "摆上收藏架", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩", "tidy": "收拾乱子",
 }
 
 

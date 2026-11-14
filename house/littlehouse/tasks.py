@@ -219,7 +219,7 @@ class Runner:
     # ------------------------------------------------------------------ internals
 
     def _start(self, call: Call) -> None:
-        from .actions import ACTIONS, INTERNAL, options, process
+        from .actions import ACTIONS, ALIASES, INTERNAL, options, process
 
         w = self.w
         if self.deadline is not None and self.cursor >= self.deadline:
@@ -232,6 +232,9 @@ class Runner:
         if call.name in INTERNAL and self.routine:
             self.gen = INTERNAL[call.name](w, *call.args)
         else:
+            if call.name in ALIASES:
+                call = Call(ALIASES[call.name], call.args, call.line)
+                self.call = call
             spec = ACTIONS.get(call.name)
             if spec is None:
                 self._finish(False, f"没有「{call.name}」这个动作。用 help() 查看可用动作。")

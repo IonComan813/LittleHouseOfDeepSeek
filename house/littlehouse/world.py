@@ -226,10 +226,51 @@ class World:
         busy_with_her = at.timestamp() - p.get("last_with", 0.0) < 600  # fed, petted, played: it stays a while
         if not busy_with_her and self.rng.random() < min(1.0, hours):
             p["room"] = self.rng.choice(C.INDOOR_ROOMS)
+        if not busy_with_her:
+            self._mischief(at, hours)
         self.dirt[p["room"]] = min(100.0, self.dirt[p["room"]] + 2.0 * days)
         if p["hunger"] >= 80 and not p["hungry_noted"]:
             p["hungry_noted"] = True
             self.log("pet", f"{p['name']}饿得在{C.ROOMS[p['room']].name}喵喵叫", actor="world", at=at)
+
+    def _mischief(self, at: datetime, hours: float) -> None:
+        """Left alone, the cat now and then knocks something over (news for her)."""
+        p = self.pet
+        rate = C.MISCHIEF_PER_HOUR * (2.5 if self.pet_temper(at) == "烦躁" else 1.0)
+        if p["hunger"] >= 70:
+            rate += 0.04
+        if self.rng.random() >= rate * hours:
+            return
+        room = p["room"]
+        pots = [o for o in self.objects.values() if o.room == room and o.kind == "plant" and not o.state.get("fallen")]
+        vases = [o for o in self.objects.values() if o.room == room and o.kind == "decor" and o.name == "花瓶" and not o.state.get("fallen")]
+        options = [(t, k) for t, k, wt in C.CAT_MISCHIEF.get(room, []) for _ in range(wt)
+                   if (k != "soil" or pots) and (k != "water" or vases)]
+        if not options:
+            return
+        text, kind = self.rng.choice(options)
+        target = (self.rng.choice(pots) if kind == "soil" else vases[0] if kind == "water" else None)
+        if self.add_mess(kind, room, target) is not None:
+            self.log("pet", text.format(pet=p["name"], pot=target.name if target else ""), actor="world", at=at)
+
+    def add_mess(self, kind: str, room: str, target: Obj | None = None) -> Obj | None:
+        """Leave a mess in a room (at most one of each kind per room). None if there already is one."""
+        if any(o.kind == "mess" and o.room == room and o.state.get("kind") == kind for o in self.objects.values()):
+            return None
+        name, _, dirt, _, spot = C.MESSES[kind]
+        o = Obj(self.new_id("mess"), name, "mess", room, {"kind": kind, "target": target.id if target else None,
+                                                           "spot": target.id if target else spot})
+        self.objects[o.id] = o
+        self.dirt[room] = min(100.0, self.dirt[room] + dirt)
+        if target is not None:
+            target.state["fallen"] = True
+            if target.kind == "plant":
+                target.state["water"] = max(0.0, target.state.get("water", 50) - 30)
+        return o
+
+    def messes(self, room: str | None = None) -> list[Obj]:
+        room = room or self.location
+        return [o for o in self.objects.values() if o.kind == "mess" and o.room == room]
 
     def _grow_plot(self, o: Obj, days: float, rain: bool, season: str, at: datetime) -> None:
         before = o.state.get("water", 0.0)
@@ -545,7 +586,11 @@ class World:
         if o.kind == "plant":
             w = s.get("water", 0)
             mood = "叶子很精神" if w >= 60 else "土有点干了" if w >= 30 else "蔫蔫的，很缺水"
+            if s.get("fallen"):
+                mood = "盆倒在地上，" + mood
             return f"{o.name}[{o.id}]（{mood}）"
+        if o.kind == "mess":
+            return f"{o.name}[{o.id}]"
         if o.kind == "plot":
             seed = s.get("seed")
             w = s.get("water", 0)

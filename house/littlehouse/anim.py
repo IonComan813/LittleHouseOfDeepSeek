@@ -22,7 +22,7 @@ EFFECT_SECONDS = 1.6  # one loop of an effect animation
 EFFECTS = {
     "water": "water", "cook": "steam", "clean": "sparkle", "pick": "sparkle", "display": "sparkle",
     "place": "sparkle", "stow": "sparkle", "plant": "dirt", "harvest": "pop", "fish": "fishing",
-    "pet": "hearts", "feed": "hearts", "call": "hearts", "play": "hearts", "eat": "eat", "rest": "zzz",
+    "pet": "hearts", "feed": "hearts", "call": "hearts", "play": "hearts", "tidy": "sparkle", "eat": "eat", "rest": "zzz",
     "open": "paper", "read": "paper", "catalog": "paper", "order": "coin",
     "sell": "coin", "say": "speech", "examine": "look",
 }
