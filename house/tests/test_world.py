@@ -183,14 +183,13 @@ class KitchenTest(unittest.TestCase):
         self.assertIn("可以去：", res[2].text)
         self.assertIn("这里能做：recipes、cook、eat、clean", w.look())
 
-    def test_dish_aliases_and_menu_hint(self):
+    def test_unknown_dish_lists_the_menu(self):
         w = new_world()
-        res = run(w, "goto(厨房); cook(煎蛋)")
+        res = run(w, "goto(厨房); cook(煎蛋)")  # not a menu name: nothing is cooked, no guessing
         self.assertFalse(res[-1].ok)
-        self.assertIn("你是不是想做荷包蛋？那就写 cook(荷包蛋)", res[-1].text)
+        self.assertIn("菜谱里没有「煎蛋」。要写菜谱上的菜名：白米饭、荷包蛋、红烧肉", res[-1].text)
+        self.assertNotIn("鸡蛋", res[-1].text)  # dish names only, no ingredients
         self.assertNotIn("荷包蛋", w.inventory)
-        res = run(w, "cook(宫保鸡丁)")
-        self.assertIn("会做的菜：白米饭、荷包蛋、红烧肉", res[0].text)
 
     def test_fried_rice_needs_cooked_rice(self):
         w = new_world()

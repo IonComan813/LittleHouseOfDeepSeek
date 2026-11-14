@@ -374,9 +374,7 @@ def _cook(w: World, dish: str) -> Proc:
     _need_room(w, "kitchen")
     dish = str(dish).strip()
     if dish not in C.RECIPES:
-        guess = C.DISH_ALIASES.get(dish) or next(iter(difflib.get_close_matches(dish, list(C.RECIPES), n=1, cutoff=0.5)), None)
-        hint = f"你是不是想做{guess}？那就写 cook({guess})。" if guess else ""
-        raise ActionError(f"菜谱里没有「{dish}」。{hint}会做的菜：{'、'.join(C.RECIPES)}。")
+        raise ActionError(f"菜谱里没有「{dish}」。要写菜谱上的菜名：{'、'.join(C.RECIPES)}。")
     r = C.RECIPES[dish]
     ok, use, missing = _recipe_status(w, r.ingredients)
     if not ok:

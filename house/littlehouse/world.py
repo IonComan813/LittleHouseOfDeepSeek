@@ -541,8 +541,8 @@ class World:
             how.append(f"可以在客厅的订货目录上买（order({ref}, 数量)）")
         if any(c.name == ref for c in C.CROPS.values()):
             how.append("也可以自己种")
-        if ref in C.RECIPES or ref in C.DISH_ALIASES:
-            how.append(f"可以在厨房 cook({C.DISH_ALIASES.get(ref, ref)})")
+        if ref in C.RECIPES:
+            how.append(f"可以在厨房 cook({ref})")
         raise ActionError(f"背包里没有「{ref}」。" + ("，".join(how) + "。" if how else ""))
 
     def add_item(self, name: str, n: int = 1) -> None:
