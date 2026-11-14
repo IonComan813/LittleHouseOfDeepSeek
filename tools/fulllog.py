@@ -89,10 +89,11 @@ def export(events: list[dict]) -> str:
             out += [f"结果（{hm(e['time'])}）：", "", fence(text), ""]
         elif t == "turn/end":
             out += [f"*— {hm(e['time'])} 这一轮结束（{d.get('reason', {}).get('kind', '')}）—*", ""]
-    billed = usage["inputTokens"] - usage["cacheReadTokens"]
+    total = usage["inputTokens"] + usage["cacheReadTokens"]  # inputTokens does not include cache hits
+    hit = usage["cacheReadTokens"] / total * 100 if total else 0
     out += ["## 用量", "",
-            f"模型调用 {calls} 次；输入 {usage['inputTokens']} token（缓存命中 {usage['cacheReadTokens']}，计费输入约 {billed}），"
-            f"输出 {usage['outputTokens']} token。", ""]
+            f"模型调用 {calls} 次；输入共 {total} token，其中缓存命中 {usage['cacheReadTokens']}（{hit:.0f}%），"
+            f"未命中 {usage['inputTokens']}；输出 {usage['outputTokens']} token。", ""]
     return "\n".join(out)
 
 
