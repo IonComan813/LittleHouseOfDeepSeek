@@ -34,7 +34,7 @@ class Pose:
     y: float
     facing: int = 1  # 1 = right, -1 = left
     walking: bool = False
-    step: int = 0  # walk frame
+    step: int = 0  # walk frame (0-7, eight steps a second)
     effect: str | None = None
     effect_p: float = 0.0  # 0..1 progress of the effect loop
     focus: str | None = None
@@ -53,7 +53,7 @@ def current_pose(world, now: float | None = None) -> Pose:
         elapsed = max(0.0, min(phase.seconds, now - r.phase_start))
         if phase.kind == "walk" and len(phase.points) >= 2:
             px, py, f = along(phase.points, elapsed * C.WALK_TILES_PER_SEC)
-            return Pose(px, py, f, walking=True, step=int(elapsed * 4) % 2, active=True)
+            return Pose(px, py, f, walking=True, step=int(elapsed * 8) % 8, active=True)
         if phase.kind == "work":
             effect = EFFECTS.get(phase.action)
             if phase.action == "rest" and phase.focus == "bed":

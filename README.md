@@ -101,4 +101,4 @@ cd plugin && npm test                               # 作息表、唤醒消息�
 
 Apache-2.0。设计参考了 [surfcore](https://github.com/Mieksido/surfcore)（MIT）和
 [dsh-onebot](https://github.com/mario841859784/dsh-onebot)（BSD-3-Clause），见 [NOTICE](NOTICE)。
-屋里的家具、灶台、水槽、菜地和部分作物用的是 OpenGameArt 上的 LPC 像素素材（CC-BY-SA 3.0 / GPL 3.0，署名见 [house/littlehouse/assets/lpc/CREDITS.md](house/littlehouse/assets/lpc/CREDITS.md)，不属于 Apache-2.0）；其余（墙、地板、院子、沙滩、海、她和团子、冰箱等）由代码绘制。
+画面用的是 OpenGameArt 上的 LPC 像素素材（家具、灶台、草地、沙滩、海、树、礁石、作物、团子；她由 LPC 角色生成器的图层拼成，蓝发、鲸鳍耳、呆毛、鲸尾和围裙上的小鲸鱼由代码画上去）。这些素材是 CC-BY-SA 3.0 / GPL 3.0 等许可，不属于 Apache-2.0，署名见 [house/littlehouse/assets/lpc/CREDITS.md](house/littlehouse/assets/lpc/CREDITS.md)；墙、地板、冰箱、邮箱和菠菜 / 葱 / 南瓜 / 草莓等由代码绘制。

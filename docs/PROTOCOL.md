@@ -184,7 +184,7 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 
 ## 画面
 
-两种方式，同一个渲染器（`house/littlehouse/render.py`，pygame-ce；家具、灶台、水槽、菜地土和番茄 / 土豆 / 萝卜 / 白菜 / 生菜 / 黄瓜用 LPC 素材，见 `house/littlehouse/assets/lpc/CREDITS.md`；素材文件缺失时退回代码绘制），都在**小屋进程内**：
+两种方式，同一个渲染器（`house/littlehouse/render.py`，pygame-ce；大部分画面用 LPC 素材，她由 LPC 角色图层拼成再加上鲸鱼的部分，见 `house/littlehouse/assets/lpc/CREDITS.md`；素材文件缺失时退回代码绘制），都在**小屋进程内**：
 
 | 方式 | 什么时候渲染 | 画面 |
 | --- | --- | --- |

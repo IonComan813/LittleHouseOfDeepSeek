@@ -196,7 +196,32 @@ def _floor_tiles(surf, rect):
             pygame.draw.rect(surf, color, (tx, ty, 8, 8))
 
 
+SEASON_TINT = {"spring": (255, 255, 255), "summer": (225, 240, 215), "autumn": (240, 205, 125), "winter": (215, 222, 228)}
+
+
+def _tiles(surf, rect, names, seed):
+    """Fill rect with 32x32 LPC tiles, picking among variants at random (stable per spot)."""
+    imgs = [SP.get(n) for n in names]
+    if any(i is None for i in imgs):
+        return False
+    rng = _rng("tiles", seed)
+    for y in range(rect.top, rect.bottom, 32):
+        for x in range(rect.left, rect.right, 32):
+            img = imgs[0] if rng.random() < 0.6 else rng.choice(imgs[1:])
+            surf.blit(img, (x, y), (0, 0, min(32, rect.right - x), min(32, rect.bottom - y)))
+    return True
+
+
 def _grass(surf, rect, season):
+    if _tiles(surf, rect, ("grass", "grass2", "grass3", "grass4"), "grass"):
+        tint = pygame.Surface(rect.size)
+        tint.fill(SEASON_TINT[season])
+        surf.blit(tint, rect.topleft, special_flags=pygame.BLEND_MULT)
+        if season == "winter":  # a dusting of frost
+            rng = _rng("frost")
+            for _ in range(rect.width * rect.height // 60):
+                surf.set_at((rng.randrange(rect.left, rect.right), rng.randrange(rect.top, rect.bottom)), PAL["x"])
+        return
     base = {"spring": (140, 190, 96), "summer": (112, 172, 82), "autumn": (176, 170, 90), "winter": (200, 206, 196)}[season]
     pygame.draw.rect(surf, base, rect)
     rng = _rng("grass", rect.topleft)
@@ -212,13 +237,42 @@ def _grass(surf, rect, season):
 
 
 def _sand(surf, rect):
+    if _tiles(surf, rect, ("sand", "sand2", "sand3", "sand4"), "sand"):
+        return
     pygame.draw.rect(surf, PAL["s"], rect)
     rng = _rng("sand", rect.topleft)
     for _ in range(rect.width * rect.height // 40):
         surf.set_at((rng.randrange(rect.left, rect.right), rng.randrange(rect.top, rect.bottom)), PAL["S"])
 
 
+def _sea_base(rect):
+    """Water tiles with the wet shoreline along the top (static: cached)."""
+    key = ("sea", tuple(rect))
+    if key not in _cache:
+        layer = pygame.Surface((rect.width, rect.height + 16), pygame.SRCALPHA)
+        shore = SP.get("shore")
+        if shore is None or not _tiles(layer, pygame.Rect(0, 16, rect.width, rect.height), ("water", "water2", "water3"), "sea"):
+            _cache[key] = None
+            return None
+        for x in range(0, rect.width, 32):  # sand above, water below: overlaps the beach's last 16 px
+            layer.blit(shore, (x, 0))
+        _cache[key] = layer
+    return _cache[key]
+
+
 def _sea(surf, rect, t):
+    base = _sea_base(rect)
+    if base is not None:
+        surf.blit(base, (rect.left, rect.top - 16))
+        rng = _rng("waves")
+        for _ in range(26):  # drifting highlights
+            x0, y0 = rng.randrange(rect.left, rect.right), rng.randrange(rect.top + 6, rect.bottom)
+            x = int((x0 + t * 6) % rect.width)
+            pygame.draw.line(surf, (190, 226, 240), (x, y0), (x + 4, y0))
+        for x in range(rect.left, rect.right, 3):  # foam where the waves come in
+            off = int(2 * math.sin(x / 9 + t * 1.5))
+            surf.set_at((x, rect.top + 2 + off), PAL["x"])
+        return
     for i in range(rect.height):
         k = i / rect.height
         color = (int(110 - 40 * k), int(176 - 50 * k), int(214 - 30 * k))
@@ -291,7 +345,38 @@ def _wardrobe(surf, r):
 
 
 def _tree(surf, r, season):
-    """Round crown in the season's colour, darker underneath, lighter on top (no outline ring)."""
+    """The yard's tree: green in spring and summer (with blossom in spring), orange in autumn, bare in winter."""
+    img = SP.get("tree")
+    if img is not None and season == "winter":  # bare branches with frost on their tips
+        key = ("winter-tree",)
+        if key not in _cache:
+            _cache[key] = SP.bare(img)
+        trunk = _cache[key]
+        x, y = r.centerx - trunk.get_width() // 2, r.bottom - trunk.get_height()
+        surf.blit(trunk, (x, y))
+        top = (x + 32, y + 62)
+        for dx, dy in ((-18, -34), (-8, -44), (4, -46), (14, -38), (22, -26), (-22, -20)):
+            end = (top[0] + dx, top[1] + dy)
+            pygame.draw.line(surf, PAL["T"], top, end, 2)
+            pygame.draw.line(surf, PAL["T"], end, (end[0] + dx // 4, end[1] - 6), 1)
+            pygame.draw.circle(surf, PAL["x"], end, 2)
+        return
+    if img is not None:
+        if season == "autumn":
+            key = ("autumn-tree",)
+            if key not in _cache:
+                _cache[key] = SP.recolor_leaves(img, SP.AUTUMN_RAMP)
+            img = _cache[key]
+        x, y = r.centerx - img.get_width() // 2, r.bottom - img.get_height()
+        surf.blit(img, (x, y))
+        if season == "spring":
+            rng = _rng("blossom")
+            for _ in range(22):
+                bx, by = x + rng.randint(10, 54), y + rng.randint(8, 52)
+                pygame.draw.circle(surf, PAL["p"], (bx, by), 2)
+                surf.set_at((bx, by), PAL["x"])
+        return
+    r = pygame.Rect(r.centerx - 24, r.bottom - 48, 48, 48)
     trunk_x = r.centerx - 3
     pygame.draw.rect(surf, PAL["T"], (trunk_x, r.centery, 6, r.height // 2))
     pygame.draw.line(surf, PAL["d"], (trunk_x + 4, r.centery + 2), (trunk_x + 4, r.bottom - 2))
@@ -327,6 +412,13 @@ def _fence(surf, y_px):
 
 
 def _bush(surf, cx, cy, season):
+    img = SP.get("bush")
+    if img is not None:
+        if season in ("autumn", "winter"):
+            img = img.copy()
+            img.fill(SEASON_TINT[season], special_flags=pygame.BLEND_MULT)
+        surf.blit(img, (cx - 16, cy - 22))
+        return
     color = PAL["h"] if season != "winter" else PAL["e"]
     for dx in (-5, 0, 5):
         pygame.draw.circle(surf, color, (cx + dx, cy), 5)
@@ -496,7 +588,10 @@ def _plot(surf, r, state, season):
                 for x in range(r.left, r.right - 1, 32):
                     surf.blit(img, (x, r.bottom - 64 + 4))
                 return
-            _plot_crops(surf, r, state, season)
+            # no LPC picture for this crop: drawn here at the same scale
+            out_of_season = season not in crop.seasons
+            for x in range(r.left + 16, r.right - 1, 32):
+                _crop_drawn(surf, crop.name, x, r.bottom - 6, stage, out_of_season)
         return
     wet = state.get("water", 0) >= 40
     pygame.draw.rect(surf, PAL["T"] if wet else PAL["t"], r.inflate(-2, -2), border_radius=2)
@@ -504,6 +599,58 @@ def _plot(surf, r, state, season):
         pygame.draw.line(surf, PAL["k"] if wet else PAL["T"], (r.left + 3, yy), (r.right - 4, yy))
     if seed:
         _plot_crops(surf, r, state, season)
+
+
+def _crop_drawn(surf, name, cx, base, stage, wilted=False):
+    """菠菜 / 葱 / 南瓜 / 草莓 at the LPC scale: stage 0-3 growing, 4 ripe."""
+    k = (stage + 1) / 5  # size
+    leaf, dark, light = ((96, 150, 60), (52, 96, 40), (150, 196, 96)) if not wilted else ((150, 150, 90), (110, 100, 60), (190, 180, 120))
+    if stage == 0:  # every crop starts as a pair of seed leaves
+        pygame.draw.line(surf, dark, (cx, base), (cx, base - 4))
+        pygame.draw.ellipse(surf, leaf, (cx - 5, base - 7, 5, 3))
+        pygame.draw.ellipse(surf, leaf, (cx + 1, base - 7, 5, 3))
+        return
+    if name == "菠菜":  # a rosette of broad, veined leaves
+        for ang in range(0, 360, 60):
+            import math as _m
+            ex = cx + int(_m.cos(_m.radians(ang)) * 10 * k)
+            ey = base - 6 - int(_m.sin(_m.radians(ang)) * 6 * k)
+            pygame.draw.ellipse(surf, dark, (ex - 5 * k - 1, ey - 3 * k - 1, 10 * k + 2, 6 * k + 2))
+            pygame.draw.ellipse(surf, leaf, (ex - 5 * k, ey - 3 * k, 10 * k, 6 * k))
+            pygame.draw.line(surf, light, (cx, base - 6), (ex, ey))
+    elif name == "葱":  # tufts of tall, thin hollow leaves
+        h = int(8 + 20 * k)
+        for dx in (-5, -2, 1, 4):
+            top = (cx + dx + (1 if dx > 0 else -1) * int(3 * k), base - h + abs(dx))
+            pygame.draw.line(surf, dark, (cx + dx, base), top, 2)
+            pygame.draw.line(surf, light, (cx + dx, base - 2), (top[0], top[1] + 2), 1)
+        pygame.draw.rect(surf, (236, 236, 220), (cx - 6, base - 3, 12, 3))  # white stalks
+    elif name == "南瓜":  # big leaves on a vine, an orange ribbed pumpkin when ripe
+        for dx, dy in ((-10, -6), (8, -8), (0, -12)):
+            sz = int(6 + 6 * k)
+            pygame.draw.circle(surf, dark, (cx + int(dx * k), base + int(dy * k)), sz)
+            pygame.draw.circle(surf, leaf, (cx + int(dx * k) - 1, base + int(dy * k) - 1), sz - 2)
+        if stage >= 3:
+            size = 7 if stage == 3 else 11
+            body = pygame.Rect(cx - size, base - size - 2, size * 2, size + 4)
+            color = (236, 150, 48) if stage == 4 else (168, 186, 70)
+            pygame.draw.ellipse(surf, (150, 80, 26) if stage == 4 else (110, 130, 40), body.inflate(2, 2))
+            pygame.draw.ellipse(surf, color, body)
+            for dx in (-size // 2, 0, size // 2):
+                pygame.draw.line(surf, (196, 112, 34) if stage == 4 else (130, 150, 50), (cx + dx, body.top + 2), (cx + dx, body.bottom - 2))
+            pygame.draw.rect(surf, (96, 70, 40), (cx - 1, body.top - 3, 3, 4))
+    else:  # 草莓: low leafy plant with white flowers, then red berries
+        for dx, dy in ((-7, -5), (6, -5), (0, -9), (-2, -3)):
+            sz = int(3 + 4 * k)
+            pygame.draw.circle(surf, dark, (cx + dx, base + dy), sz)
+            pygame.draw.circle(surf, leaf, (cx + dx - 1, base + dy - 1), max(1, sz - 1))
+        if stage == 3:
+            for dx in (-6, 5):
+                pygame.draw.circle(surf, PAL["x"], (cx + dx, base - 10), 2)
+        if stage == 4:
+            for dx, dy in ((-8, -2), (7, -3), (1, -1)):
+                pygame.draw.polygon(surf, (210, 50, 54), [(cx + dx - 3, base + dy - 3), (cx + dx + 3, base + dy - 3), (cx + dx, base + dy + 3)])
+                surf.set_at((cx + dx, base + dy - 1), (250, 220, 120))
 
 
 def _plot_crops(surf, r, state, season):
@@ -529,6 +676,18 @@ def _plot_crops(surf, r, state, season):
 
 
 def _mailbox(surf, r, has_mail):
+    if SP.available():  # drawn at the LPC scale: a blue box on a wooden post
+        cx, base = r.centerx, r.bottom + 4
+        pygame.draw.rect(surf, PAL["T"], (cx - 2, base - 14, 4, 14))
+        pygame.draw.rect(surf, PAL["d"], (cx - 2, base - 14, 4, 14), 1)
+        box = pygame.Rect(cx - 9, base - 26, 18, 12)
+        pygame.draw.rect(surf, PAL["b"], box, border_radius=4)
+        pygame.draw.rect(surf, PAL["n"], box, 1, border_radius=4)
+        pygame.draw.line(surf, PAL["B"], (box.left + 3, box.top + 3), (box.right - 4, box.top + 3))
+        if has_mail:
+            pygame.draw.rect(surf, PAL["r"], (box.right, box.top - 6, 2, 9))
+            pygame.draw.rect(surf, PAL["r"], (box.right, box.top - 6, 5, 4))
+        return
     pygame.draw.rect(surf, PAL["d"], (r.centerx - 1, r.top + 8, 3, 8))
     pygame.draw.rect(surf, PAL["b"], (r.left + 2, r.top + 2, 12, 8), border_radius=3)
     pygame.draw.rect(surf, PAL["n"], (r.left + 2, r.top + 2, 12, 8), 1, border_radius=3)
@@ -538,6 +697,15 @@ def _mailbox(surf, r, has_mail):
 
 
 def _consign(surf, r, has_goods):
+    img = SP.get("chest")
+    if img is not None:  # a wooden chest with the bureau's teal stripe
+        x, y = r.centerx - img.get_width() // 2, r.bottom - img.get_height() + 4
+        surf.blit(img, (x, y))
+        pygame.draw.line(surf, PAL["q"], (x + 3, y + 17), (x + img.get_width() - 4, y + 17), 2)
+        if has_goods:
+            pygame.draw.circle(surf, PAL["o"], (x + 9, y + 2), 2)
+            pygame.draw.circle(surf, PAL["b"], (x + 15, y + 1), 2)
+        return
     pygame.draw.rect(surf, PAL["w"], r.inflate(-2, -2))
     pygame.draw.rect(surf, PAL["d"], r.inflate(-2, -2), 1)
     pygame.draw.line(surf, PAL["q"], (r.left + 2, r.centery), (r.right - 3, r.centery), 2)
@@ -554,6 +722,9 @@ def _parcel(surf, r):
 
 
 def _rock(surf, r):
+    if _spr(surf, "rock", r):
+        return
+    r = pygame.Rect(r.centerx - 16, r.bottom - 32, 32, 32)
     """A big grey reef rock with a flat top (where she sits to fish) and wet foam at its foot."""
     base = [(r.left + 1, r.bottom - 4), (r.left + 3, r.top + 9), (r.left + 9, r.top + 4),
             (r.right - 8, r.top + 3), (r.right - 2, r.top + 10), (r.right - 1, r.bottom - 4)]
@@ -788,7 +959,7 @@ def _effect(surf, pose, world, t):
     e = pose.effect
     if not e:
         return
-    px, py = int(pose.x * T + 8), int(pose.y * T + T - 58)  # top of her head (drawn at 2x)
+    px, py = int(pose.x * T + 8), int(pose.y * T + T - 52)  # just above her head
     p = pose.effect_p
     wobble = math.sin(t * 6)
     focus_rect = None
@@ -994,19 +1165,29 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     cx, cy = S.ANCHORS[pet["room"]]
     if pet["room"] == world.location and abs(cx - pose.x) < 1.5 and abs(cy - pose.y) < 1:
         cx += 3
-    cat = CAT_ASLEEP if asleep or (pet["affection"] >= 50 and hour % 3 == 0) else CAT
-    cat_img = big_sprite(cat)
-    surf.blit(cat_img, (cx * T + 8, cy * T + T - cat_img.get_height()))
+    cat_sleeps = asleep or (pet["affection"] >= 50 and hour % 3 == 0)
+    cat_img = SP.cat("sleep" if cat_sleeps else "sit")
+    if cat_img is not None:
+        surf.blit(cat_img, (cx * T, cy * T + T - 30))
+    else:
+        cat_img = big_sprite(CAT_ASLEEP if cat_sleeps else CAT)
+        surf.blit(cat_img, (cx * T + 8, cy * T + T - cat_img.get_height()))
     if asleep:  # her blue hair on the pillow, the quilt pulled up
         bx, by, bw, _ = S.FIXTURES["bed"]
         hx = bx * T + bw * T // 2
         pygame.draw.circle(surf, PAL["u"], (hx, by * T + 12), 8)
         pygame.draw.circle(surf, PAL["f"], (hx, by * T + 15), 5)
     else:
-        frame = RESIDENT_STEP if pose.walking and pose.step else RESIDENT
-        bob = 0 if pose.walking else 2 * int(math.sin(t * 2) > 0.6)  # idle breathing
-        img = big_sprite(frame, flip=pose.facing < 0)
-        surf.blit(img, (int(pose.x * T) + 8 - img.get_width() // 2, int(pose.y * T) + T - img.get_height() - bob))
+        lpc = (SP.resident(("right" if pose.facing > 0 else "left"), 1 + pose.step % 8) if pose.walking
+               else SP.resident("down", 0))
+        if lpc is not None:  # 64x64 frame, her feet about 2 px above its bottom
+            bob = 0 if pose.walking else int(math.sin(t * 2) > 0.6)
+            surf.blit(lpc, (int(pose.x * T) + 8 - 32, int(pose.y * T) + T - 62 - bob))
+        else:
+            frame = RESIDENT_STEP if pose.walking and pose.step % 2 else RESIDENT
+            bob = 0 if pose.walking else 2 * int(math.sin(t * 2) > 0.6)  # idle breathing
+            img = big_sprite(frame, flip=pose.facing < 0)
+            surf.blit(img, (int(pose.x * T) + 8 - img.get_width() // 2, int(pose.y * T) + T - img.get_height() - bob))
         _effect(surf, pose, world, t)
 
     # light, weather, HUD

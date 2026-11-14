@@ -55,7 +55,7 @@ FIXTURES: dict[str, Rect] = {
     "parcel": (21, 13, 1, 1),
     "mailbox": (24, 13, 1, 1),
     "consign": (26, 13, 2, 1),
-    "rock": (33, 20, 2, 2),
+    "rock": (32, 19, 4, 4),
 }
 
 # Static scenery that is not a world object.
@@ -63,7 +63,7 @@ EXTRAS: dict[str, Rect] = {
     "counter": (30, 2, 4, 4),
     "fridge": (34, 2, 2, 4),
     "wardrobe": (10, 2, 2, 4),
-    "tree": (33, 14, 3, 3),
+    "tree": (32, 13, 4, 6),
 }
 BUSHES = [(1, 13), (17, 13), (30, 17), (38, 15)]
 
