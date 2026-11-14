@@ -39,6 +39,8 @@ class ActionSpec:
     proc: bool  # fn is a generator of phases
 
 
+PET_WORDS = ("猫", "小猫", "橘猫")
+
 ACTIONS: dict[str, ActionSpec] = {}
 # Steps only the off-hours routine may run (not callable from her scripts).
 INTERNAL: dict[str, Callable[..., Proc]] = {}
@@ -127,18 +129,18 @@ def visit(w: World, targets: list[Obj], action: str, apply: Callable[[Obj], None
 def _need_room(w: World, *rooms: str) -> None:
     if w.location not in rooms:
         names = "或".join(C.ROOMS[r].name for r in rooms)
-        raise ActionError(f"这件事要在{names}做。")
+        raise ActionError(f"这件事要在{names}做，先 goto({C.ROOMS[rooms[0]].name})。")
 
 
 def _need_indoor(w: World) -> None:
     if C.ROOMS[w.location].outdoor:
-        raise ActionError("这件事要在屋里做。")
+        raise ActionError("这件事要在屋里做（客厅、厨房、卧室），先 goto(客厅) 之类的走进屋。")
 
 
 def _pet_here(w: World) -> dict:
     p = w.pet
     if p["room"] != w.location:
-        raise ActionError(f"{p['name']}不在这里。可以试试 call() 叫它过来。")
+        raise ActionError(f"{p['name']}在{C.ROOMS[p['room']].name}，不在这里。可以 goto({p['name']}) 走过去，或者在屋里 call() 叫它过来。")
     return p
 
 
@@ -159,13 +161,22 @@ def _help(w: World) -> str:
     return help_text()
 
 
-@action("goto(地点)", "走到某处（自动穿过中间的房间，按路程花时间），如 goto(沙滩)", 1, 1, proc=True)
+@action("goto(地点)", "走到某处（自动穿过中间的房间，按路程花时间），如 goto(沙滩)；也可以 goto(团子) 走到猫身边、goto(灶台) 走到某样东西所在的房间", 1, 1, proc=True)
 def _goto(w: World, place: str) -> Proc:
     room = w.resolve_room(place)
-    if room.id == w.location:
+    if room.id == w.location and str(place).strip() not in PET_WORDS + (w.pet["name"],):
         return f"你已经在{room.name}了。"
+    to_pet = str(place).strip() in PET_WORDS + (w.pet["name"],)
+    if to_pet:
+        ax, ay = S.ANCHORS[room.id]
+        end = (ax + 1, ay)
+        if room.id == w.location:
+            start = w.tile()
+            w.stand_near(end)
+            yield from walk_from(w, start)
+            return f"你走到了{w.pet['name']}身边。"
     path = w.path_to(room.id)
-    yield from walk_route(w, path)
+    yield from walk_route(w, path, end if to_pet else None)
     w.log("move", f"走到了{room.name}")
     via = "、".join(C.ROOMS[r].name for r in path[:-1])
     note = w.collect_dishes()
@@ -289,7 +300,7 @@ def _rest(w: World, ref: str = "") -> Proc:
     return f"你在{where.name}上歇了一会儿，精神好多了。"
 
 
-@action("eat(食物)", "吃东西（一顿饭约 3 分钟，零嘴约 1 分钟）", 1, 1, proc=True)
+@action("eat(食物)", "吃东西（一顿饭约 2 分钟，零嘴不到 1 分钟）", 1, 1, proc=True)
 def _eat(w: World, ref: str) -> Proc:
     name = w.item_name(ref)
     item = C.ITEMS.get(name)
@@ -355,7 +366,7 @@ def _recipe_status(w: World, ingredients: dict[str, int]) -> tuple[bool, dict[st
 
 
 def method_note(dish: str) -> str:
-    """How a dish is cooked and how long it takes, e.g. '炖：先忙 3 分钟，再自己炖 8 分钟'."""
+    """How a dish is cooked and how long it takes, e.g. '炖：先忙 2 分钟，再自己炖 5 分钟'."""
     r = C.RECIPES[dish]
     if not r.wait:
         return f"{r.method}，{'要一直守着，' if r.stove else ''}约 {_duration(r.work)}"

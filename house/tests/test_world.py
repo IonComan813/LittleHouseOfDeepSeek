@@ -373,6 +373,24 @@ class CatTest(unittest.TestCase):
         self.assertLess(w.pet["hunger"], 50)
         self.assertEqual(w.inventory["猫粮"], C.START_INVENTORY["猫粮"] - 1)
 
+    def test_goto_the_cat(self):
+        w = new_world()
+        w.pet["room"] = "bedroom"
+        res = run(w, "feed(团子)")
+        self.assertIn("goto(团子)", res[0].text)
+        self.assertIn("团子：在卧室", w.look())
+        res = run(w, "goto(团子); feed(团子); pet(团子)")
+        self.assertTrue(ok(res), res)
+        self.assertEqual(w.location, "bedroom")
+
+    def test_hints_say_how_to_get_it_done(self):
+        w = new_world()
+        self.assertIn("先 goto(厨房)", run(w, "cook(白米饭)")[0].text)
+        self.assertIn("在庭院", run(w, "open(邮箱)")[0].text)
+        self.assertIn("order(五花肉", run(w, "eat(五花肉)")[0].text)
+        self.assertTrue(ok(run(w, "goto(灶台)")))
+        self.assertEqual(w.location, "kitchen")
+
     def test_cat_gets_hungry_and_news(self):
         w = new_world()
         advance(w, 24)

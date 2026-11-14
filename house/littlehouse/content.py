@@ -205,24 +205,24 @@ class Recipe:
 RECIPES: dict[str, Recipe] = {
     r.dish: r
     for r in (
-        Recipe("白米饭", {"大米": 1}, "煮", 30, 480, fill=30, how="淘米加水，盖上锅盖煮着就行"),
+        Recipe("白米饭", {"大米": 1}, "煮", 30, 300, fill=30, how="淘米加水，盖上锅盖煮着就行"),
         Recipe("荷包蛋", {"鸡蛋": 1}, "煎", 90, fill=15, how="小火煎到蛋白凝固、蛋黄溏心"),
-        Recipe("红烧肉", {"五花肉": 1}, "炖", 180, 480, fill=45, how="焯水、炒糖色，加酱油和水小火慢炖"),
+        Recipe("红烧肉", {"五花肉": 1}, "炖", 120, 300, fill=45, how="焯水、炒糖色，加酱油和水小火慢炖"),
         Recipe("番茄炒蛋", {"番茄": 1, "鸡蛋": 2}, "炒", 120, fill=35),
         Recipe("蛋炒饭", {"白米饭": 1, "鸡蛋": 1, "葱": 1}, "炒", 120, fill=50, how="用煮好的白米饭"),
-        Recipe("酸辣土豆丝", {"土豆": 2}, "炒", 150, fill=30, how="切丝、泡水，大火快炒"),
+        Recipe("酸辣土豆丝", {"土豆": 2}, "炒", 120, fill=30, how="切丝、泡水，大火快炒"),
         Recipe("蒜蓉菠菜", {"菠菜": 1}, "炒", 60, fill=15),
         Recipe("蚝油生菜", {"生菜": 1}, "炒", 60, fill=15),
         Recipe("醋溜白菜", {"白菜": 1}, "炒", 90, fill=20),
         Recipe("拍黄瓜", {"黄瓜": 1}, "拌", 60, stove=False, fill=10, how="拍碎，拌上蒜末、醋和香油"),
         Recipe("番茄蛋汤", {"番茄": 1, "鸡蛋": 1}, "煮", 60, 180, fill=20),
-        Recipe("萝卜炖排骨", {"萝卜": 1, "排骨": 1}, "炖", 120, 480, fill=45),
-        Recipe("南瓜小米粥", {"南瓜": 1, "小米": 1}, "煮", 60, 480, fill=35),
-        Recipe("清蒸鲈鱼", {"鲈鱼": 1}, "蒸", 120, 360, fill=40, how="改刀、铺上姜丝上锅蒸，出锅淋热油"),
-        Recipe("干煎小黄鱼", {"小黄鱼": 1}, "煎", 180, fill=30),
-        Recipe("红烧鱼", {"#fish": 1}, "烧", 150, 300, fill=40, how="煎到两面金黄，再加酱汁焖烧"),
-        Recipe("葱油饼", {"面粉": 1, "葱": 1}, "煎", 240, fill=45, how="和面、擀开、抹葱油，煎到两面焦黄"),
-        Recipe("白菜猪肉饺子", {"面粉": 1, "猪肉馅": 1, "白菜": 1}, "包", 300, 180, fill=60, how="和面、调馅、包好下锅煮"),
+        Recipe("萝卜炖排骨", {"萝卜": 1, "排骨": 1}, "炖", 120, 300, fill=45),
+        Recipe("南瓜小米粥", {"南瓜": 1, "小米": 1}, "煮", 60, 300, fill=35),
+        Recipe("清蒸鲈鱼", {"鲈鱼": 1}, "蒸", 90, 240, fill=40, how="改刀、铺上姜丝上锅蒸，出锅淋热油"),
+        Recipe("干煎小黄鱼", {"小黄鱼": 1}, "煎", 120, fill=30),
+        Recipe("红烧鱼", {"#fish": 1}, "烧", 120, 240, fill=40, how="煎到两面金黄，再加酱汁焖烧"),
+        Recipe("葱油饼", {"面粉": 1, "葱": 1}, "煎", 120, fill=45, how="和面、擀开、抹葱油，煎到两面焦黄"),
+        Recipe("白菜猪肉饺子", {"面粉": 1, "猪肉馅": 1, "白菜": 1}, "包", 180, 180, fill=60, how="和面、调馅、包好下锅煮"),
     )
 }
 
@@ -383,7 +383,7 @@ ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
     "water": (15, 10), "pick": (10, 8), "harvest": (40, 30),
     "plant": 60, "place": 60, "stow": 40,
 }
-EAT_SECONDS = {"dish": 180, "other": 60}  # a proper meal takes a while; a snack is quick
+EAT_SECONDS = {"dish": 120, "other": 45}  # a meal takes a couple of minutes; a snack is quick
 
 STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"]); cooking times are in RECIPES
 

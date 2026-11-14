@@ -327,8 +327,15 @@ class World:
             if found:
                 self.stand_at(found[0].id)
                 return found[0]
-        if ref in (self.pet["name"], "猫", "小猫") and self.pet["room"] == self.location:
-            raise ActionError(f"用 pet()/feed() 和{self.pet['name']}互动吧。")
+        pet = self.pet["name"]
+        if ref in (pet, "猫", "小猫", "橘猫"):
+            if self.pet["room"] == self.location:
+                raise ActionError(f"用 pet()/feed() 和{pet}互动吧。")
+            raise ActionError(f"{pet}在{C.ROOMS[self.pet['room']].name}。可以 goto({pet}) 走过去。")
+        elsewhere = [o for o in self.objects.values() if o.room != self.location and (o.id == ref or o.name == ref)]
+        if elsewhere and not (elsewhere[0].id == "parcel" and not self.parcels):
+            room = C.ROOMS[elsewhere[0].room].name
+            raise ActionError(f"「{ref}」在{room}，不在这里。先 goto({room})。")
         raise ActionError(f"这里没有「{ref}」。")
 
     # ================================================================== where she is (for the picture)
@@ -360,7 +367,12 @@ class World:
         for r in C.ROOMS.values():
             if ref in (r.id, r.name):
                 return r
-        raise ActionError(f"没有叫「{ref}」的地方。可去：{'、'.join(r.name for r in C.ROOMS.values())}")
+        if ref in (self.pet["name"], "猫", "小猫", "橘猫"):  # goto(团子): to wherever the cat is
+            return C.ROOMS[self.pet["room"]]
+        things = [o for o in self.objects.values() if o.kind != "find" and (o.id == ref or o.name == ref)]
+        if things:  # goto(灶台): to the room it is in
+            return C.ROOMS[things[0].room]
+        raise ActionError(f"没有叫「{ref}」的地方。可去：{'、'.join(r.name for r in C.ROOMS.values())}，或者 goto({self.pet['name']})")
 
     def path_to(self, target: str) -> list[str]:
         """Rooms walked through from the current location to ``target`` (BFS)."""
@@ -485,7 +497,14 @@ class World:
             return partial[0]
         if len(partial) > 1:
             raise ActionError(f"「{ref}」指的是哪一个？{'、'.join(partial)}")
-        raise ActionError(f"背包里没有「{ref}」。")
+        how = []
+        if ref in C.CATALOG:
+            how.append(f"可以在客厅的订货目录上买（order({ref}, 数量)）")
+        if any(c.name == ref for c in C.CROPS.values()):
+            how.append("也可以自己种")
+        if ref in C.RECIPES or ref in C.DISH_ALIASES:
+            how.append(f"可以在厨房 cook({ref})")
+        raise ActionError(f"背包里没有「{ref}」。" + ("，".join(how) + "。" if how else ""))
 
     def add_item(self, name: str, n: int = 1) -> None:
         self.inventory[name] = self.inventory.get(name, 0) + n
@@ -578,6 +597,8 @@ class World:
         lines += [
             "这里能做：" + "、".join(self.actions_here()) + "；随时能做：goto、look、examine、inventory、wait、say、help",
             "可去：" + "、".join(C.ROOMS[e].name for e in room.exits),
+            *([f"{self.pet['name']}：在{C.ROOMS[self.pet['room']].name}（goto({self.pet['name']}) 可以走过去）"]
+              if self.pet["room"] != self.location else []),
             f"你：{self.status_line()}",
             "背包：" + self.format_items(self.inventory),
         ]
