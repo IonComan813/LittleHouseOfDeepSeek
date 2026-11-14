@@ -111,6 +111,13 @@ ITEMS: dict[str, Item] = _items(
     ("排骨", "ingredient meat", 0, "斩成小段的猪肋排。", "半斤"),
     ("猪肉馅", "ingredient meat", 0, "三肥七瘦的猪肉馅。", "半斤"),
     ("猫粮", "petfood", 0, "", "1份"),
+    # ready-to-eat food from the catalog: open and eat, no cooking
+    ("饭团", "food packaged", 30, "海苔包着的饭团，里面是金枪鱼蛋黄酱。", "1个"),
+    ("三明治", "food packaged", 30, "鸡蛋火腿三明治，切成两个三角。", "1个"),
+    ("面包", "food packaged", 20, "软软的牛奶面包。", "1个"),
+    ("即食便当", "food packaged", 45, "米饭配红烧鸡块和青菜，开盖即食。", "1盒"),
+    ("酸奶", "food packaged", 10, "", "1杯"),
+    ("苏打饼干", "food packaged", 10, "", "1包"),
     # produce (grown, or bought)
     ("番茄", "ingredient food produce", 8, "", "1个"), ("萝卜", "ingredient produce", 0, "", "1根"),
     ("生菜", "ingredient produce", 0, "", "1颗"), ("草莓", "ingredient food produce", 10, "", "1盒"),
@@ -235,7 +242,7 @@ RECIPES: dict[str, Recipe] = {
     )
 }
 
-# Other names people use for the same dish.
+# Other names people use for the same dish: cook() suggests the menu name (it never cooks under another name).
 DISH_ALIASES: dict[str, str] = {
     "米饭": "白米饭", "饭": "白米饭", "煮饭": "白米饭",
     "煎蛋": "荷包蛋", "煎鸡蛋": "荷包蛋",
@@ -313,6 +320,7 @@ CATALOG: dict[str, int] = {
     "番茄种子": 3, "萝卜种子": 2, "生菜种子": 2, "草莓种子": 5, "南瓜种子": 3, "菠菜种子": 2,
     "土豆种子": 3, "黄瓜种子": 2, "白菜种子": 2, "葱种子": 2,
     "鸡蛋": 1, "大米": 3, "小米": 5, "面粉": 3, "牛奶": 4, "猫粮": 3,
+    "饭团": 6, "三明治": 9, "面包": 5, "即食便当": 16, "酸奶": 4, "苏打饼干": 5,
     "五花肉": 9, "排骨": 15, "猪肉馅": 7,
     "番茄": 2, "萝卜": 2, "生菜": 3, "菠菜": 3, "南瓜": 6, "土豆": 2, "黄瓜": 2, "白菜": 4, "葱": 2, "草莓": 10,
     "逗猫棒": 9, "小铃铛球": 5, "猫薄荷玩偶": 12, "毛线球": 4,
@@ -456,12 +464,11 @@ ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
     "water": (15, 10), "pick": (10, 8), "harvest": (40, 30),
     "plant": 60, "place": 60, "stow": 40,
 }
-EAT_SECONDS = {"dish": 120, "other": 45}  # a meal takes a couple of minutes; a snack is quick
+EAT_SECONDS = {"dish": 120, "packaged": 60, "other": 45}  # a cooked meal, something ready-made, a snack
 
 STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"]); cooking times are in RECIPES
 
 CLEAN_DIRT_PER_MINUTE = 25.0  # a filthy room (100) takes four minutes; progress is kept if she stops
-MEAL_ENERGY = 10.0  # a proper meal gives back this much energy (there is no lying down during free time)
 FISH_SECONDS = (60, 180)  # each cast waits this long (random) for a bite
 MAX_WAIT_MINUTES = 30
 
@@ -495,4 +502,3 @@ IDLE_ACTIVITIES: tuple[Idle, ...] = (
 )
 NIGHT_HOURS = (23, 7)  # asleep from 23:00 to 07:00 outside free time
 OFF_HOURS_HUNGER_CAP = 60.0  # she grabs a bite on her own; still peckish when free time starts
-OFF_HOURS_ENERGY_FLOOR = 35.0

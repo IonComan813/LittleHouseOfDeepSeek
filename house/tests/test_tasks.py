@@ -164,7 +164,6 @@ class EverydayLifeTest(unittest.TestCase):
         w.clock.advance(20 * 3600)
         w.tick()
         self.assertLessEqual(w.resident["hunger"], C.OFF_HOURS_HUNGER_CAP)
-        self.assertGreaterEqual(w.resident["energy"], C.OFF_HOURS_ENERGY_FLOOR - 0.01)
 
     def test_pots_survive_a_restart(self):
         w = new_world()

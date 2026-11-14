@@ -32,8 +32,6 @@ POT_DRAIN_PER_DAY = 30.0
 PLOT_DRAIN_PER_DAY = 50.0
 DIRT_PER_DAY = 6.0
 HUNGER_PER_HOUR = 5.0
-ENERGY_DRAIN_PER_HOUR = 3.0
-ENERGY_SLEEP_PER_HOUR = 12.0
 PET_HUNGER_PER_HOUR = 4.0
 PET_AFFECTION_DECAY_PER_DAY = 2.0
 BEACH_FINDS_PER_DAY = 2.0
@@ -123,7 +121,7 @@ class World:
         self.objects: dict[str, Obj] = {o.id: o for o in _fixtures()}
         self.objects["find#1"] = Obj("find#1", "白色扇贝壳", "find", "beach", {"item": "白色扇贝壳"})
         self._next_id = 2
-        self.resident = {"hunger": 30.0, "energy": 80.0, "last_rest": 0.0}
+        self.resident = {"hunger": 30.0}
         self.pet = {"name": C.PET_NAME, "room": "living_room", "hunger": 30.0, "affection": 30.0,
                     "last_pet": 0.0, "hungry_noted": False}
         self.dirt: dict[str, float] = {r: 10.0 for r in C.INDOOR_ROOMS}
@@ -213,12 +211,7 @@ class World:
         r["hunger"] = min(100.0, r["hunger"] + HUNGER_PER_HOUR * hours)
         if not free:  # living her everyday life: she grabs a bite when hungry
             r["hunger"] = min(r["hunger"], C.OFF_HOURS_HUNGER_CAP)
-        if not free and night(at.hour):
-            r["energy"] = min(100.0, r["energy"] + ENERGY_SLEEP_PER_HOUR * hours)
-        else:
-            r["energy"] = max(0.0, r["energy"] - ENERGY_DRAIN_PER_HOUR * hours)
-            if not free:
-                r["energy"] = max(r["energy"], min(C.OFF_HOURS_ENERGY_FLOOR, r["energy"] + ENERGY_DRAIN_PER_HOUR * hours))
+
 
         p = self.pet
         p["hunger"] = min(100.0, p["hunger"] + PET_HUNGER_PER_HOUR * hours)
@@ -545,7 +538,7 @@ class World:
         if any(c.name == ref for c in C.CROPS.values()):
             how.append("也可以自己种")
         if ref in C.RECIPES or ref in C.DISH_ALIASES:
-            how.append(f"可以在厨房 cook({ref})")
+            how.append(f"可以在厨房 cook({C.DISH_ALIASES.get(ref, ref)})")
         raise ActionError(f"背包里没有「{ref}」。" + ("，".join(how) + "。" if how else ""))
 
     def add_item(self, name: str, n: int = 1) -> None:
@@ -616,10 +609,9 @@ class World:
         return f"{o.name}[{o.id}]"
 
     def status_line(self) -> str:
-        h, e = self.resident["hunger"], self.resident["energy"]
+        h = self.resident["hunger"]
         hunger = "很饿" if h >= 75 else "有点饿" if h >= 45 else "不饿"
-        energy = "很困" if e <= 20 else "有点累" if e <= 45 else "精神不错"
-        return f"{hunger}，{energy}，钱包里有 {self.money} {C.CURRENCY}"
+        return f"{hunger}，钱包里有 {self.money} {C.CURRENCY}"
 
     def look(self) -> str:
         now = self.now()

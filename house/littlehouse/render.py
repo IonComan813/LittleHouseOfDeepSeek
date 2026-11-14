@@ -943,10 +943,9 @@ def _hud(surf, world, now, weather):
     pygame.draw.circle(surf, PAL["y"], (mx + 4, H + 10), 4)
     pygame.draw.circle(surf, PAL["o"], (mx + 4, H + 10), 4, 1)
     _digits(surf, str(world.money), mx + 12, y, PAL["y"])
-    # her needs (fullness, energy) and the cat's affection
+    # how full she is, and the cat's affection
     bx = W - 150
-    _bar(surf, bx, H + 3, 100 - world.resident["hunger"], PAL["o"])
-    _bar(surf, bx, H + 11, world.resident["energy"], PAL["B"])
+    _bar(surf, bx, H + 7, 100 - world.resident["hunger"], PAL["o"])
     pygame.draw.circle(surf, PAL["p"], (bx + 52, H + 10), 3)
     _bar(surf, bx + 58, H + 7, world.pet["affection"], PAL["p"])
 

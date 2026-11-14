@@ -89,7 +89,21 @@ class MovementTest(unittest.TestCase):
         self.assertEqual([r.ok for r in res], [True, False])
 
     def test_unknown_action(self):
-        self.assertFalse(run(new_world(), "dance()")[0].ok)
+        with self.assertRaises(ScriptError):
+            run(new_world(), "dance()")
+
+    def test_one_wrong_step_and_nothing_runs(self):
+        w = new_world()
+        with self.assertRaises(ScriptError) as e:
+            run(w, "goto(厨房); look(); cook(白米饭); go(沙滩)")
+        msg = str(e.exception)
+        self.assertIn("一步都没有执行", msg)
+        self.assertIn("第 2 步：没有「look」这个动作。你是不是想用 surroundings()？", msg)
+        self.assertIn("第 4 步：没有「go」这个动作。你是不是想用 goto(地点)？", msg)
+        self.assertEqual(w.location, "living_room")  # not even the first step ran
+        with self.assertRaises(ScriptError) as e:
+            run(w, "harvst()")  # a typo
+        self.assertIn("harvest(菜地)", str(e.exception))
 
     def test_look_mentions_status_and_hints(self):
         text = run(new_world(), "surroundings()")[0].text
@@ -135,6 +149,18 @@ class KitchenTest(unittest.TestCase):
             if name in C.CATALOG:
                 self.assertLess(price, C.CATALOG[name], name)  # the bureau buys below retail
 
+    def test_ready_to_eat_food(self):
+        w = new_world()
+        w.resident["hunger"] = 70
+        res = run(w, "order(饭团, 2)")
+        self.assertTrue(ok(res), res)
+        w.add_item("饭团")
+        t0 = w.clock.timestamp()
+        res = run(w, "eat(饭团)")  # anywhere, no kitchen needed
+        self.assertTrue(ok(res), res)
+        self.assertLess(w.resident["hunger"], 45)
+        self.assertLessEqual(w.clock.timestamp() - t0, C.EAT_SECONDS["packaged"] + 15)
+
     def test_bare_action_lists_its_options(self):
         w = new_world()
         res = run(w, "goto(厨房); cook; goto")
@@ -147,8 +173,9 @@ class KitchenTest(unittest.TestCase):
     def test_dish_aliases_and_menu_hint(self):
         w = new_world()
         res = run(w, "goto(厨房); cook(煎蛋)")
-        self.assertTrue(ok(res), res)
-        self.assertTrue("荷包蛋" in w.inventory or "焦掉的菜" in w.inventory)
+        self.assertFalse(res[-1].ok)
+        self.assertIn("你是不是想做荷包蛋？那就写 cook(荷包蛋)", res[-1].text)
+        self.assertNotIn("荷包蛋", w.inventory)
         res = run(w, "cook(宫保鸡丁)")
         self.assertIn("会做的菜：白米饭、荷包蛋、红烧肉", res[0].text)
 
@@ -225,7 +252,7 @@ class EconomyTest(unittest.TestCase):
         advance(w, 14)  # Monday 10:00
         self.assertEqual(w.parcels.get("鸡蛋"), C.WEEKLY_SUPPLY["鸡蛋"])
         self.assertTrue(any("包裹" in e.text for e in w.news_since("")))
-        res = run(w, "goto(庭院); look(); open(包裹)")  # look() still works as another name
+        res = run(w, "goto(庭院); surroundings(); open(包裹)")
         self.assertTrue(ok(res), res)
         self.assertIn("门口的包裹", res[1].text)
         self.assertFalse(w.parcels)
@@ -268,7 +295,6 @@ class SurpriseTest(unittest.TestCase):
         found = 0
         for _ in range(60):
             w.dirt["living_room"] = 100
-            w.resident["energy"] = 100
             before = (w.money, sum(w.inventory.values()))
             run(w, "clean()")
             found += (w.money, sum(w.inventory.values())) != before
@@ -307,10 +333,8 @@ class BeachTest(unittest.TestCase):
         w.raining = lambda dt=None: False
         w.weather = lambda dt=None: "晴"
         run(w, "goto(沙滩)")
-        w.resident["energy"] = 100
         caught = 0
         for _ in range(20):
-            w.resident["energy"] = 100
             r = run(w, "fish()")[0]
             self.assertTrue(r.ok, r)
         caught = sum(n for k, n in w.inventory.items() if k in C.ITEMS and ("fish" in C.ITEMS[k].tags or k in ("旧靴子", "漂流瓶")))
@@ -346,19 +370,13 @@ class HouseworkTest(unittest.TestCase):
         self.assertTrue(ok(run(w, "stow(台灯)")))
         self.assertEqual(w.inventory["台灯"], 1)
 
-    def test_tired_blocks_effort(self):
+    def test_no_energy_to_run_out_of(self):
         w = new_world()
-        w.resident["energy"] = 0
-        self.assertFalse(run(w, "clean()")[0].ok)
-        self.assertTrue(run(w, "surroundings()")[0].ok)  # free actions still work
-
-    def test_a_meal_gives_back_some_energy(self):
-        w = new_world()
-        w.resident["energy"] = 20
-        w.add_item("红烧肉")
-        run(w, "eat(红烧肉)")
-        self.assertGreater(w.resident["energy"], 25)
-        self.assertFalse(ok(run(w, "rest()")))  # no lying down during free time any more
+        self.assertNotIn("energy", w.resident)
+        self.assertNotIn("累", w.status_line())
+        with self.assertRaises(ScriptError) as e:
+            run(w, "rest()")  # no lying down during free time
+        self.assertIn("wait(分钟)", str(e.exception))
 
 
 class CatTest(unittest.TestCase):
@@ -430,7 +448,11 @@ class CatTest(unittest.TestCase):
         self.assertIn("tidy", w.actions_here())
         self.assertIn("tidy()", run(w, "water(绿萝)")[0].text)
         self.assertIn("可以 tidy() 收拾", run(w, "examine(撒了一地的土)")[0].text)
-        res = run(w, "fix(撒了一地的土)")
+        with self.assertRaises(ScriptError) as e:
+            run(w, "fix(撒了一地的土)")
+        self.assertIn("tidy(乱子)", str(e.exception))  # suggested, not run for her
+        self.assertTrue(pot.state["fallen"])
+        res = run(w, "tidy(撒了一地的土)")
         self.assertTrue(ok(res), res)
         self.assertFalse(pot.state["fallen"])
         self.assertEqual(len(w.messes()), 1)

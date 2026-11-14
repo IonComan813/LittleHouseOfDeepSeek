@@ -14,6 +14,7 @@ agent turns.
 
 from __future__ import annotations
 
+import difflib
 import math
 from dataclasses import dataclass
 from datetime import timedelta
@@ -24,7 +25,6 @@ from . import scene as S
 from .tasks import Interrupted, Phase, Proc, walk
 from .world import ActionError, Obj, World, _weighted
 
-TIRED_THRESHOLD = 5.0
 
 
 @dataclass
@@ -35,7 +35,6 @@ class ActionSpec:
     fn: Callable[..., object]
     min_args: int
     max_args: int
-    effort: float  # energy cost; 0 = free
     proc: bool  # fn is a generator of phases
 
 
@@ -46,10 +45,10 @@ ACTIONS: dict[str, ActionSpec] = {}
 INTERNAL: dict[str, Callable[..., Proc]] = {}
 
 
-def action(signature: str, help: str, min_args: int = 0, max_args: int = 0, effort: float = 0.0, proc: bool = False):
+def action(signature: str, help: str, min_args: int = 0, max_args: int = 0, proc: bool = False):
     def wrap(fn):
         name = signature.split("(")[0]
-        ACTIONS[name] = ActionSpec(name, signature, help, fn, min_args, max_args, effort, proc)
+        ACTIONS[name] = ActionSpec(name, signature, help, fn, min_args, max_args, proc)
         return fn
 
     return wrap
@@ -66,8 +65,6 @@ ACTION_SPOTS = {"catalog": "catalog", "order": "catalog", "sell": "consign"}
 def process(w: World, name: str, args: list) -> Proc:
     """One action as a sequence of phases; returns the text of what happened."""
     spec = ACTIONS[name]
-    if spec.effort and w.resident["energy"] < TIRED_THRESHOLD:
-        raise ActionError("你太累了，做不动了。吃顿正经饭能缓过来一些，或者结束这次自由活动去休息。")
     if spec.proc:
         text = yield from spec.fn(w, *args)
     else:
@@ -84,8 +81,6 @@ def process(w: World, name: str, args: list) -> Proc:
         secs = secs[0] if isinstance(secs, tuple) else secs
         if secs:
             yield Phase("work", float(secs), name, w.resident.get("focus"))
-    if spec.effort:
-        w.resident["energy"] = max(0.0, w.resident["energy"] - spec.effort)
     return text
 
 
@@ -277,10 +272,8 @@ def _eat(w: World, ref: str) -> Proc:
     w.take_item(name)
     if w.location == "kitchen":
         yield from walk_to(w, "table", "eat")
-    secs = C.EAT_SECONDS["dish" if "dish" in item.tags else "other"]
+    secs = C.EAT_SECONDS["dish" if "dish" in item.tags else "packaged" if "packaged" in item.tags else "other"]
     w.resident["hunger"] = max(0.0, w.resident["hunger"] - item.fill)
-    if "dish" in item.tags:  # a proper meal also gives her some strength back
-        w.resident["energy"] = min(100.0, w.resident["energy"] + C.MEAL_ENERGY)
     w.log("eat", f"吃了{name}")
     try:
         yield work(secs, "eat", w.resident.get("focus"), f"吃{name}")
@@ -371,18 +364,19 @@ def _recipes(w: World) -> str:
 
 def _cook_outcome(w: World) -> str:
     """Roll how the dish turns out: 'burnt', 'great' or 'ok'."""
-    burn_chance = 0.15 if w.resident["energy"] < 30 else 0.04
+    burn_chance = 0.05
     roll = w.rng.random()
     return "burnt" if roll < burn_chance else "great" if roll > 0.93 else "ok"
 
 
-@action("cook(菜名)", "在厨房做菜，如 cook(番茄炒蛋)。炒、煎要一直守在灶台边；煮饭、炖、蒸先忙一会儿，之后自己熟，期间可以去做别的", 1, 1, effort=3, proc=True)
+@action("cook(菜名)", "在厨房做菜，如 cook(番茄炒蛋)。炒、煎要一直守在灶台边；煮饭、炖、蒸先忙一会儿，之后自己熟，期间可以去做别的", 1, 1, proc=True)
 def _cook(w: World, dish: str) -> Proc:
     _need_room(w, "kitchen")
-    asked = str(dish).strip()
-    dish = C.DISH_ALIASES.get(asked, asked)
+    dish = str(dish).strip()
     if dish not in C.RECIPES:
-        raise ActionError(f"不会做「{asked}」。会做的菜：{'、'.join(C.RECIPES)}。recipes() 里有每道菜要什么、做多久。")
+        guess = C.DISH_ALIASES.get(dish) or next(iter(difflib.get_close_matches(dish, list(C.RECIPES), n=1, cutoff=0.5)), None)
+        hint = f"你是不是想做{guess}？那就写 cook({guess})。" if guess else ""
+        raise ActionError(f"菜谱里没有「{dish}」。{hint}会做的菜：{'、'.join(C.RECIPES)}。")
     r = C.RECIPES[dish]
     ok, use, missing = _recipe_status(w, r.ingredients)
     if not ok:
@@ -437,7 +431,7 @@ def _serve(w: World, dish: str, use: dict[str, int], outcome: str) -> str:
 # ---------------------------------------------------------------- housework
 
 
-@action("clean(分钟)", "打扫当前房间（越脏越久，最脏约 4 分钟）；clean(2) 只扫 2 分钟，没扫完的下次接着扫", 0, 1, effort=5, proc=True)
+@action("clean(分钟)", "打扫当前房间（越脏越久，最脏约 4 分钟）；clean(2) 只扫 2 分钟，没扫完的下次接着扫", 0, 1, proc=True)
 def _clean(w: World, minutes: float = 0) -> Proc:
     _need_indoor(w)
     before = w.dirt[w.location]
@@ -483,7 +477,7 @@ def _clean_partly(w: World, room: str, secs: float, rate: float) -> str:
     return f"你扫了 {secs / 60:.1f} 分钟，{room}还有一部分没扫完（大约还要 {max(0.5, left):.1f} 分钟）。"
 
 
-@action("place(家具)", "把背包里的家具摆在当前房间", 1, 1, effort=2)
+@action("place(家具)", "把背包里的家具摆在当前房间", 1, 1)
 def _place(w: World, ref: str) -> str:
     _need_indoor(w)
     name = w.item_name(ref)
@@ -497,7 +491,7 @@ def _place(w: World, ref: str) -> str:
     return f"你把{name}摆在了{room}，看起来更像家了。"
 
 
-@action("stow(家具)", "把摆着的家具收回背包", 1, 1, effort=2)
+@action("stow(家具)", "把摆着的家具收回背包", 1, 1)
 def _stow(w: World, ref: str) -> str:
     o = w.resolve(ref)
     if o.kind != "decor":
@@ -508,7 +502,7 @@ def _stow(w: World, ref: str) -> str:
     return f"你把{o.name}收进了背包。"
 
 
-@action("water(植物)", "浇水；不写参数就挨个浇这里所有的植物和菜地", 0, 1, effort=1, proc=True)
+@action("water(植物)", "浇水；不写参数就挨个浇这里所有的植物和菜地", 0, 1, proc=True)
 def _water(w: World, ref: str = "") -> Proc:
     start = w.tile()
     targets = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind in ("plant", "plot")]
@@ -626,7 +620,7 @@ def _sell(w: World, ref: str, n: float = 0) -> str:
     return f"你把{name}×{count}放进寄售箱，{when}收走后能入账 {price * count} {C.CURRENCY}。"
 
 
-@action("plant(种子, 菜地)", "在菜地播种，如 plant(萝卜种子)；不写菜地就种在第一块空地", 1, 2, effort=2)
+@action("plant(种子, 菜地)", "在菜地播种，如 plant(萝卜种子)；不写菜地就种在第一块空地", 1, 2)
 def _plant(w: World, seed_ref: str, plot_ref: str = "") -> str:
     _need_room(w, "yard")
     seed = w.item_name(seed_ref)
@@ -651,7 +645,7 @@ def _plant(w: World, seed_ref: str, plot_ref: str = "") -> str:
     return f"你在{plot.name}种下了{crop.name}，大约 {crop.days:g} 天后成熟，记得浇水。{hint}"
 
 
-@action("harvest(菜地)", "收获成熟的作物；不写参数就挨个收这里所有熟了的", 0, 1, effort=2, proc=True)
+@action("harvest(菜地)", "收获成熟的作物；不写参数就挨个收这里所有熟了的", 0, 1, proc=True)
 def _harvest(w: World, ref: str = "") -> Proc:
     start = w.tile()
     plots = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind == "plot" and o.state.get("ripe")]
@@ -685,7 +679,7 @@ def _harvest(w: World, ref: str = "") -> Proc:
 # ---------------------------------------------------------------- beach
 
 
-@action("pick(东西)", "捡起地上的小东西；不写参数就挨个捡这里所有的", 0, 1, effort=1, proc=True)
+@action("pick(东西)", "捡起地上的小东西；不写参数就挨个捡这里所有的", 0, 1, proc=True)
 def _pick(w: World, ref: str = "") -> Proc:
     start = w.tile()
     finds = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind == "find"]
@@ -713,7 +707,7 @@ def _pick(w: World, ref: str = "") -> Proc:
     return f"你捡起了{text}。"
 
 
-@action("fish()", f"在沙滩的礁石上钓鱼（需要鱼竿；每一竿等 {C.FISH_SECONDS[0] // 60}–{C.FISH_SECONDS[1] // 60} 分钟）", effort=4, proc=True)
+@action("fish()", f"在沙滩的礁石上钓鱼（需要鱼竿；每一竿等 {C.FISH_SECONDS[0] // 60}–{C.FISH_SECONDS[1] // 60} 分钟）", proc=True)
 def _fish(w: World) -> Proc:
     _need_room(w, "beach")
     if w.inventory.get("鱼竿", 0) < 1:
@@ -924,7 +918,7 @@ def options(w: World, name: str) -> str:
 # ---------------------------------------------------------------- playing with the cat
 
 
-@action("play(玩具)", "陪猫玩；玩具可选（逗猫棒、小铃铛球、猫薄荷玩偶、毛线球、纸箱），不写就用手逗它", 0, 1, effort=1, proc=True)
+@action("play(玩具)", "陪猫玩；玩具可选（逗猫棒、小铃铛球、猫薄荷玩偶、毛线球、纸箱），不写就用手逗它", 0, 1, proc=True)
 def _play(w: World, ref: str = "") -> Proc:
     p = _pet_here(w)
     toy = ""
@@ -998,10 +992,7 @@ def _play_event(w: World, mood: str) -> str:
 
 # ---------------------------------------------------------------- tidying up after the cat
 
-ALIASES = {"fix": "tidy", "look": "surroundings"}  # other names she may use for an action
-
-
-@action("tidy(乱子)", "收拾乱子（猫弄倒的盆、洒的水、掉在地上的书……）；不写参数就收拾这里所有的。也可以写 fix()", 0, 1, proc=True)
+@action("tidy(乱子)", "收拾乱子（猫弄倒的盆、洒的水、掉在地上的书……）；不写参数就收拾这里所有的", 0, 1, proc=True)
 def _tidy(w: World, ref: str = "") -> Proc:
     if ref:
         o = w.resolve(ref)
@@ -1057,3 +1048,52 @@ def menu_line(w: World) -> str:
     here = "、".join(f"{n} {SHORT.get(n, '')}".strip() for n in actions_here(w))
     exits = "、".join(C.ROOMS[e].name for e in room.exits)
     return f"在{room.name}可以：{here}；可去：{exits}（只写动作名会列出能填什么）"
+
+
+
+# ---------------------------------------------------------------- checking a script before it runs
+#
+# A script runs only if every step names a real action with a sensible number of
+# arguments; otherwise nothing runs and she is told what to write instead. A
+# wrong name is never quietly replaced by the right one.
+
+SYNONYMS = {
+    "look": "surroundings", "see": "surroundings", "view": "surroundings", "observe": "surroundings",
+    "lookaround": "surroundings", "around": "surroundings", "status": "surroundings", "看": "surroundings",
+    "fix": "tidy", "repair": "tidy", "tidyup": "tidy", "cleanup": "tidy", "收拾": "tidy",
+    "rest": "wait", "sleep": "wait", "nap": "wait", "idle": "wait", "relax": "wait",
+    "go": "goto", "walk": "goto", "move": "goto", "travel": "goto", "enter": "goto",
+    "buy": "order", "purchase": "order", "shop": "order", "shopping": "catalog", "menu": "recipes",
+    "make": "cook", "cooking": "cook", "fry": "cook", "boil": "cook",
+    "drink": "eat", "consume": "eat", "meal": "eat",
+    "sweep": "clean", "wash": "clean", "mop": "clean",
+    "grab": "pick", "collect": "pick", "pickup": "pick", "take": "pick", "gather": "pick",
+    "sow": "plant", "seed": "plant", "reap": "harvest",
+    "put": "place", "decorate": "place", "store": "stow",
+    "pat": "pet", "stroke": "pet", "cuddle": "pet", "toy": "play", "plaything": "play",
+    "talk": "say", "speak": "say", "bag": "inventory", "inv": "inventory", "items": "inventory",
+    "fishing": "fish", "mail": "open", "letter": "open", "parcel": "open", "inspect": "examine", "check": "examine",
+}
+
+
+def suggest(name: str) -> str | None:
+    """The real action a wrong name probably meant, if any."""
+    key = name.strip().lower().replace("_", "")
+    if key in SYNONYMS:
+        return SYNONYMS[key]
+    close = difflib.get_close_matches(key, list(ACTIONS), n=1, cutoff=0.6)
+    return close[0] if close else None
+
+
+def check_calls(calls) -> list[str]:
+    """Problems that keep a script from running at all (empty if it can run)."""
+    problems = []
+    for i, c in enumerate(calls, 1):
+        spec = ACTIONS.get(c.name)
+        if spec is None:
+            guess = suggest(c.name)
+            hint = f"你是不是想用 {ACTIONS[guess].signature}？" if guess else "用 help() 看看有哪些动作。"
+            problems.append(f"第 {i} 步：没有「{c.name}」这个动作。{hint}")
+        elif len(c.args) > spec.max_args:
+            problems.append(f"第 {i} 步：{c.name} 的参数太多了，用法是 {spec.signature}。")
+    return problems

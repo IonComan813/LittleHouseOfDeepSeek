@@ -22,7 +22,7 @@ from urllib.parse import parse_qs
 from . import __version__
 from .actions import help_text
 from .display import Display, pygame_available
-from .script import ScriptError, format_report, parse
+from .script import ScriptError, format_report, parse, refuse_bad_steps
 from .world import Event, World
 
 MAX_BODY = 16 * 1024
@@ -96,6 +96,7 @@ class House:
         calls = parse(src)
         if not calls:
             raise ScriptError("脚本是空的。试试 surroundings()。")
+        refuse_bad_steps(calls)
         w = self.world
         with self.lock:
             w.update()

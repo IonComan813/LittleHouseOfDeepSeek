@@ -132,6 +132,7 @@ def run(world: World, src: str, deadline: float | None = None) -> list[StepResul
     calls = parse(src)
     if not calls:
         raise ScriptError("脚本是空的。试试 surroundings()。")
+    refuse_bad_steps(calls)
     world.update()
     rid = world.runner.submit(calls, deadline)
     report = world.runner.reports[rid]
@@ -145,6 +146,15 @@ def run(world: World, src: str, deadline: float | None = None) -> list[StepResul
         world.clock.advance(max(0.0, nxt - world.clock.timestamp()) + 0.001)
         world.update()
     return report.results
+
+
+def refuse_bad_steps(calls: list[Call]) -> None:
+    """Run all of it or none of it: a script with a wrong action anywhere does not start."""
+    from .actions import check_calls
+
+    problems = check_calls(calls)
+    if problems:
+        raise ScriptError("这段脚本一步都没有执行。\n" + "\n".join(problems) + "\n改好以后重新发一遍。")
 
 
 def format_results(results: list[StepResult]) -> str:

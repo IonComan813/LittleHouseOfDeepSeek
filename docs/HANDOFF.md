@@ -6,6 +6,8 @@
 ## 1. 用户与环境
 
 - 用户用中文交流；**改动后用中文汇报**，要具体：做了什么、实测结果、用户要做什么。
+- **只在必要的时候用 API key 跑真实模型测试**：改动不太可能出问题、或者改动比较小时，单元测试 + 本地快进就够了，不调用 DeepSeek。
+  改了她看到的东西（规则、工具、开场消息）或者新玩法需要看她会不会用时才跑。
 - **每次用真实模型测试，都把完整的伪代码日志给用户一份**（插件发给她的消息、她的思考、每段 `house_do` 脚本和完整结果、日记、结束），
   用第 6 节的 `tools/fulllog.py` 导出成 Markdown，用 SendUserFile 发过去。
 - **交接文档只在用户明确说要换会话时更新**（这一版就是用户要求写的）；其他文档（PROTOCOL / README / ROADMAP）随代码一起改。
@@ -30,7 +32,7 @@
 | M3 | 动作花真实时间（实时执行器、可打断）；每日作息（自由活动 / 平淡的日常）；操作提示 |
 | M7（进行中） | 18 道家常菜、物价对齐人民币、新作物和肉类、陪猫玩 + 猫玩具、猫闯的祸和 `tidy()`、`goto(团子)` |
 
-测试：`house/` 87 个（`python -m unittest discover -s tests`，无 pygame 时跳过渲染测试），`plugin/` 11 个（`npm test`）。
+测试：`house/` 88 个（`python -m unittest discover -s tests`，无 pygame 时跳过渲染测试），`plugin/` 11 个（`npm test`）。
 在容器里用真实 DSH 0.2.2-rc.2 + deepseek-flash 跑过多次端到端（实测记录在 ROADMAP）。
 **还没在用户的 Windows 桌面上看过动画窗口和新画面**——请用户 `git pull` 后双击 `view.bat` 看。
 
@@ -70,7 +72,10 @@
   （`walk` 沿路点走、`work` 做事、`wait` 等待），返回结果文字。打断时把 `Interrupted(done)` 抛进生成器，由动作自己决定做一半的结果
   （炒菜糊、打扫进度保留、钓鱼空竿……）。执行器只在被推进时动：小屋 ticker 线程（忙时 0.25 秒一次）、等脚本的 HTTP 请求、测试里的快进。
 - 新动作：简单动作在 `content.ACTION_SECONDS` 配时长；要分阶段、能被打断的写成 `proc=True` 的生成器（参考 `_cook`、`_clean`、`_fish`、`_tidy`）。
-  特效名在 `anim.EFFECTS`，站位在 `actions.ACTION_SPOTS` / `world.stand_at`。别名在 `actions.ALIASES`（`fix`→`tidy`，`look`→`surroundings`）。
+  特效名在 `anim.EFFECTS`，站位在 `actions.ACTION_SPOTS` / `world.stand_at`。
+- **写错就整段不执行、只给建议（用户要求）**：脚本先过 `actions.check_calls`，有不存在的动作或参数太多就整段拒绝（`script.refuse_bad_steps`），
+  用 `actions.suggest`（常用词对照表 `SYNONYMS` + 拼写相近）给出建议。**绝不自动替她换成正确的动作**；菜名也一样
+  （`content.DISH_ALIASES` 只用来提示「你是不是想做荷包蛋」）。新动作要考虑往 `SYNONYMS` 里加常见的别称。
 - **操作提示**（用户要求）：每段结果末尾有 `menu_line`（这里能做的动作 + 简短说明，`actions.SHORT`）；只写动作名会走 `actions.options()`
   列出能填什么；做不了的动作要说怎么才能做（`先 goto(厨房)`、`团子在卧室……goto(团子)`、`可以 order(...)`）。**新动作要补这三处。**
 - 脚本只在内存里；灶台上的菜（`world.jobs`）、乱子（`kind="mess"` 的物件）、猫的状态在存档里（v4）。
@@ -78,8 +83,9 @@
 ### 小屋：时间和作息
 
 - 自由活动由插件 `POST /session {free_until}` 开关；小屋据此决定 `deadline`（到点不再开始新的一步）、结果里的「还剩多少分钟」、
-  时段外的日常（`content.IDLE_ACTIVITIES`，每小时挑一件走过去做；23–7 点睡觉）和时段外的需求上限（饥饿 ≤ 60、白天精力 ≥ 35）。
-- **自由活动里没有「躺一会儿」**（用户要求删掉 `rest()`）：等就 `wait()`，吃一顿正经饭回 10 点精力。
+  时段外的日常（`content.IDLE_ACTIVITIES`，每小时挑一件走过去做；23–7 点睡觉）和时段外的饥饿上限（≤ 60）。
+- **没有精力 / 疲劳**（用户要求去掉，自由活动本来就短，不强迫她休息）；只有饥饿。没有 `rest()`，等就 `wait()`。
+  饿了可以做饭，也可以订即食食品（饭团、三明治、便当……），省下做饭的时间去陪猫之类。
 - 时长全部在 `content.py`：`WALK_TILES_PER_SEC`、`ACTION_SECONDS`、`EAT_SECONDS`、`RECIPES`（每道菜的 `work` / `wait`）、
   `CLEAN_DIRT_PER_MINUTE`、`FISH_SECONDS`、`PLAY_SECONDS`、`MESSES`。`tests/test_tasks.py` 有「一圈约二十分钟」的检查。
 - 插件：`lib/wake.js` 作息表纯函数；每天投一次开始时间存在 `plugin-state.json` 的 `plans`；已结束的时段记在 `doneSlots`；
@@ -130,7 +136,10 @@
 
 ## 5. 用户做过的决定（备查）
 
-- 工具名：`house_render`（看画面）、`end_free_time`（结束自由活动）；`house_surroundings` 工具已删，看看四周用脚本里的 `surroundings()`。
+- 工具名：`house_render`（看画面）、`end_free_time`（结束自由活动）；`house_surroundings` 工具已删，看看四周用脚本里的 `surroundings()`
+  （`look()` 完全去掉，写了会提示用 `surroundings()`）。
+- 写错动作名：整段不执行，提示正确写法，不自动替换。
+- 不设精力，只有饥饿；目录里可以订即食食品。
 - 作息：早上 7:30–8:30 随机开始，40 分钟；中午、傍晚同样；深夜一半日子有。开始和结束直接告诉她，不做世界观包装。
 - 动作时长：做饭要分「必须守着」和「下锅后能走开」；一圈想做的事约 20 分钟；`tidy` 每处 5–15 秒；其他简单动作现在的时长可以。
 - 菜谱：十多道地道中餐（必须有白米饭、荷包蛋、红烧肉），原料自己种或买；物价对齐人民币。
