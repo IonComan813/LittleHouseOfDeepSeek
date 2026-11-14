@@ -258,14 +258,29 @@ def _wardrobe(surf, r):
 
 
 def _tree(surf, r, season):
-    pygame.draw.rect(surf, PAL["d"], (r.centerx - 3, r.centery, 6, r.height // 2))
-    leaves = {"spring": PAL["G"], "summer": PAL["g"], "autumn": PAL["o"], "winter": PAL["E"]}[season]
-    for dx, dy, rr in ((-8, -2, 10), (8, -2, 10), (0, -10, 12), (0, 2, 10)):
-        pygame.draw.circle(surf, leaves, (r.centerx + dx, r.centery + dy), rr)
-    pygame.draw.circle(surf, PAL["h"] if season != "winter" else PAL["e"], (r.centerx, r.centery - 10), 12, 1)
+    """Round crown in the season's colour, darker underneath, lighter on top (no outline ring)."""
+    trunk_x = r.centerx - 3
+    pygame.draw.rect(surf, PAL["T"], (trunk_x, r.centery, 6, r.height // 2))
+    pygame.draw.line(surf, PAL["d"], (trunk_x + 4, r.centery + 2), (trunk_x + 4, r.bottom - 2))
+    mid, dark, light = {
+        "spring": (PAL["G"], PAL["g"], (196, 226, 150)),
+        "summer": (PAL["g"], PAL["h"], PAL["G"]),
+        "autumn": (PAL["o"], (196, 108, 52), PAL["y"]),
+        "winter": (PAL["E"], PAL["e"], PAL["x"]),
+    }[season]
+    blobs = ((-8, -2, 10), (8, -2, 10), (0, -10, 12), (0, 2, 10))
+    for dx, dy, rr in blobs:  # shadow layer, a little lower
+        pygame.draw.circle(surf, dark, (r.centerx + dx, r.centery + dy + 2), rr)
+    for dx, dy, rr in blobs:
+        pygame.draw.circle(surf, mid, (r.centerx + dx, r.centery + dy), rr - 1)
+    for dx, dy in ((-6, -12), (4, -15), (-10, -4)):  # sunlit leaves
+        pygame.draw.circle(surf, light, (r.centerx + dx, r.centery + dy), 3)
+    if season == "winter":  # bare branches showing through
+        for dx in (-7, 0, 7):
+            pygame.draw.line(surf, PAL["d"], (r.centerx, r.centery + 2), (r.centerx + dx, r.centery - 10), 1)
     if season == "spring":
         rng = _rng("blossom")
-        for _ in range(8):
+        for _ in range(10):
             surf.set_at((r.centerx + rng.randint(-14, 14), r.centery + rng.randint(-18, 6)), PAL["p"])
 
 
@@ -419,21 +434,34 @@ def _parcel(surf, r):
 
 
 def _rock(surf, r):
-    pygame.draw.ellipse(surf, PAL["e"], r.inflate(-2, -6).move(0, 3))
-    pygame.draw.ellipse(surf, PAL["E"], (r.left + 6, r.top + 8, 10, 5))
+    """A big grey reef rock with a flat top (where she sits to fish) and wet foam at its foot."""
+    base = [(r.left + 1, r.bottom - 4), (r.left + 3, r.top + 9), (r.left + 9, r.top + 4),
+            (r.right - 8, r.top + 3), (r.right - 2, r.top + 10), (r.right - 1, r.bottom - 4)]
+    pygame.draw.ellipse(surf, (196, 176, 130), (r.left - 2, r.bottom - 7, r.width + 4, 7))  # wet sand
+    pygame.draw.polygon(surf, (110, 108, 106), base)
+    pygame.draw.polygon(surf, PAL["e"], [(r.left + 4, r.top + 10), (r.left + 9, r.top + 5), (r.right - 8, r.top + 4),
+                                         (r.right - 4, r.top + 10), (r.centerx, r.top + 13)])
+    pygame.draw.line(surf, PAL["E"], (r.left + 9, r.top + 6), (r.right - 9, r.top + 5))  # flat sunlit top
+    pygame.draw.line(surf, (86, 84, 84), (r.centerx - 2, r.top + 14), (r.centerx + 3, r.bottom - 6))  # crack
+    for dx in (2, 9, 17, 25):  # foam
+        surf.set_at((r.left + dx, r.bottom - 3), PAL["x"])
 
 
 def _find(surf, tx, ty, item):
     shape, color = FIND_LOOKS.get(item, ("pebble", "E"))
     cx, cy = tx * T + 8, ty * T + 9
     c = PAL[color]
-    if shape == "fan":
-        pygame.draw.polygon(surf, c, [(cx - 4, cy), (cx, cy - 4), (cx + 4, cy), (cx, cy + 2)])
-        for dx in (-2, 0, 2):
-            pygame.draw.line(surf, PAL["S"], (cx, cy + 1), (cx + dx, cy - 3))
+    if shape == "fan":  # a scallop: fan with ridges, outlined so it reads on white sand
+        fan = [(cx - 6, cy - 1), (cx - 3, cy - 5), (cx + 3, cy - 5), (cx + 6, cy - 1), (cx + 1, cy + 3), (cx - 1, cy + 3)]
+        pygame.draw.polygon(surf, c, fan)
+        pygame.draw.polygon(surf, PAL["t"], fan, 1)
+        for dx in (-4, -2, 0, 2, 4):
+            pygame.draw.line(surf, PAL["S"], (cx, cy + 2), (cx + dx, cy - 4))
+        pygame.draw.rect(surf, c, (cx - 2, cy + 2, 4, 2))
     elif shape == "conch":
-        pygame.draw.ellipse(surf, c, (cx - 3, cy - 3, 7, 5))
-        surf.set_at((cx + 3, cy - 3), PAL["R"])
+        pygame.draw.ellipse(surf, c, (cx - 5, cy - 3, 10, 7))
+        pygame.draw.ellipse(surf, PAL["R"], (cx - 5, cy - 3, 10, 7), 1)
+        pygame.draw.line(surf, PAL["R"], (cx - 2, cy), (cx + 3, cy - 2))
     elif shape == "bottle":
         pygame.draw.rect(surf, c, (cx - 4, cy - 2, 7, 4))
         pygame.draw.rect(surf, PAL["c"], (cx - 2, cy - 1, 3, 2))

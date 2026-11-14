@@ -141,6 +141,7 @@ def _pet_here(w: World) -> dict:
     p = w.pet
     if p["room"] != w.location:
         raise ActionError(f"{p['name']}在{C.ROOMS[p['room']].name}，不在这里。可以 goto({p['name']}) 走过去，或者在屋里 call() 叫它过来。")
+    p["last_with"] = w.clock.timestamp()
     return p
 
 
@@ -576,7 +577,11 @@ def _open(w: World, ref: str) -> str:
             w.add_item(name, n)
         w.parcels.clear()
         w.log("mail", f"拆开门口的包裹，拿到了{w.format_items(got)}")
-        return f"你拆开包裹：{w.format_items(got)}。"
+        box = ""
+        if w.inventory.get("纸箱", 0) < 1:
+            w.add_item("纸箱")
+            box = "空纸箱留下了，团子大概会喜欢。"
+        return f"你拆开包裹：{w.format_items(got)}。{box}"
     raise ActionError(f"{o.name}打不开。")
 
 
@@ -800,6 +805,7 @@ def _call(w: World) -> str:
         return f"你叫了{p['name']}，它在{C.ROOMS[p['room']].name}懒洋洋地甩了甩尾巴，没过来。"
     came_from = C.ROOMS[p["room"]].name
     p["room"] = w.location
+    p["last_with"] = w.clock.timestamp()
     return f"{p['name']}从{came_from}小跑着过来了。"
 
 
@@ -867,7 +873,7 @@ def actions_here(w: World) -> list[str]:
     room = C.ROOMS[w.location]
     names = [h.split("(")[0] for h in room.hints]
     if not room.outdoor:
-        names += ["call"] if w.pet["room"] != w.location else ["feed", "pet"]
+        names += ["call"] if w.pet["room"] != w.location else ["feed", "pet", "play"]
         if w.items_with_tag("furniture"):
             names.append("place")
         if any(o.kind == "decor" for o in w.here()):
@@ -923,3 +929,100 @@ def options(w: World, name: str) -> str:
     if name == "read":
         return head + (f"能读的：{_bag(w, w.items_with_tag('readable'))}" if w.items_with_tag("readable") else "背包里没有能读的东西。")
     return head.rstrip()
+
+
+
+# ---------------------------------------------------------------- playing with the cat
+
+
+@action("play(玩具)", "陪猫玩；玩具可选（逗猫棒、小铃铛球、猫薄荷玩偶、毛线球、纸箱），不写就用手逗它", 0, 1, effort=1, proc=True)
+def _play(w: World, ref: str = "") -> Proc:
+    p = _pet_here(w)
+    toy = ""
+    if ref and str(ref).strip() not in (p["name"],) + PET_WORDS:
+        toy = w.item_name(ref)
+        if "toy" not in C.ITEMS.get(toy, C.Item(toy)).tags:
+            raise ActionError(f"{toy}不是猫玩具。可以用：{'、'.join(n for n in C.PLAY_WITH if n) }。")
+    start = w.tile()
+    ax, ay = S.ANCHORS[p["room"]]
+    w.stand_near((ax + 1, ay))
+    yield from walk_from(w, start, "play")
+    try:
+        yield work(w.rng.uniform(*C.PLAY_SECONDS), "play", None, f"陪{p['name']}玩")
+    except Interrupted:
+        return f"你刚逗了{p['name']}两下就停下了。"
+    mood, interest = _play_mood(w, toy)
+    name = p["name"]
+    lines = [f"你{C.PLAY_WITH.get(toy, '拿着' + toy + '逗它')}。"]
+    if mood != "meh" and toy in C.PLAY_TOY_LINES and w.rng.random() < 0.6:
+        lines.append(C.PLAY_TOY_LINES[toy].format(pet=name))
+    else:
+        lines.append(w.rng.choice(C.PLAY_MOODS[mood]).format(pet=name))
+    event = _play_event(w, mood) if mood != "meh" else ""
+    if event:
+        lines.append(event)
+    gain = {"happy": 10, "ok": 5, "meh": 1}[mood]
+    p["affection"] = min(100.0, p["affection"] + gain)
+    p["hunger"] = min(100.0, p["hunger"] + (6 if mood == "happy" else 2))
+    p["last_play"] = w.clock.timestamp()
+    w.log("pet", f"陪{name}玩{'了' + toy if toy else ''}：" + {"happy": "它玩得很开心", "ok": "它玩了一会儿", "meh": "它不太感兴趣"}[mood]
+          + (f"；{event}" if event else ""))
+    return "".join(lines)
+
+
+def _play_mood(w: World, toy: str) -> tuple[str, float]:
+    """How keen the cat is: today's temper, hunger, the toy, and whether it just played."""
+    p = w.pet
+    interest = {"黏人": 0.7, "平常": 0.5, "傲娇": 0.35, "烦躁": 0.2}.get(w.pet_temper(), 0.5)
+    if toy:
+        interest += 0.15
+    favourite = p.setdefault("favourite", w.rng.choice([n for n in C.PLAY_WITH if n]))
+    if toy == favourite:
+        interest += 0.25
+    if p["hunger"] >= 70:
+        interest -= 0.3  # too hungry to play
+    if _minutes_since(w, p.get("last_play", 0.0)) < 30:
+        interest -= 0.25  # just played
+    interest += w.rng.uniform(-0.25, 0.25)
+    return ("happy" if interest >= 0.65 else "ok" if interest >= 0.35 else "meh"), interest
+
+
+def _play_event(w: World, mood: str) -> str:
+    """Maybe something happens in the room while they play (more likely when the cat is excited)."""
+    if w.rng.random() > (0.55 if mood == "happy" else 0.3):
+        return ""
+    pots = [o for o in w.here() if o.kind == "plant"]
+    vases = [o for o in w.here() if o.kind == "decor" and o.name == "花瓶"]
+    options = [(t, eff) for t, eff, wt in C.PLAY_EVENTS.get(w.location, []) for _ in range(wt)
+               if (eff != "pot" or pots) and (eff != "vase" or vases)]
+    if not options:
+        return ""
+    text, effect = w.rng.choice(options)
+    pot = w.rng.choice(pots) if pots else None
+    if effect == "pot" and pot:
+        pot.state["water"] = max(0.0, pot.state.get("water", 50) - 30)
+        w.dirt[w.location] = min(100.0, w.dirt[w.location] + 25)
+    elif effect == "vase":
+        w.dirt[w.location] = min(100.0, w.dirt[w.location] + 15)
+    elif effect == "dirt":
+        w.dirt[w.location] = min(100.0, w.dirt[w.location] + 10)
+    return text.format(pet=w.pet["name"], pot=pot.name if pot else "")
+
+
+
+# A few words on each action, for the menu after every script.
+SHORT = {
+    "look": "看看四周", "help": "全部动作", "goto": "走到某处", "examine": "仔细看", "inventory": "看背包", "say": "自言自语",
+    "rest": "躺一会儿", "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
+    "place": "摆家具", "stow": "收家具", "water": "浇水", "open": "看信 / 拆包裹", "catalog": "看订货目录", "order": "订货",
+    "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick": "捡东西", "fish": "钓鱼", "read": "读纸条",
+    "display": "摆上收藏架", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩",
+}
+
+
+def menu_line(w: World) -> str:
+    """'在厨房可以：recipes 看菜谱、cook 做菜……；可去：客厅' — shown after every script."""
+    room = C.ROOMS[w.location]
+    here = "、".join(f"{n} {SHORT.get(n, '')}".strip() for n in actions_here(w))
+    exits = "、".join(C.ROOMS[e].name for e in room.exits)
+    return f"在{room.name}可以：{here}；可去：{exits}（只写动作名会列出能填什么）"

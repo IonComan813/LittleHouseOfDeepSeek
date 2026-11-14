@@ -391,6 +391,41 @@ class CatTest(unittest.TestCase):
         self.assertTrue(ok(run(w, "goto(灶台)")))
         self.assertEqual(w.location, "kitchen")
 
+    def test_play_with_the_cat(self):
+        w = new_world()
+        w.pet["room"] = "living_room"
+        w.add_item("逗猫棒")
+        moods = set()
+        for i in range(12):
+            w.clock.advance(3600)
+            w.pet["room"] = w.location
+            w.pet["hunger"] = 20
+            res = run(w, "play(逗猫棒)" if i % 2 else "play()")
+            self.assertTrue(ok(res), res)
+            moods.add(res[0].text)
+        self.assertGreater(len(moods), 3)  # the outcome varies
+        self.assertFalse(ok(run(w, "play(鸡蛋)")))
+        self.assertIn("play", w.actions_here())
+
+    def test_play_can_knock_things_over(self):
+        hits = 0
+        for seed in range(40):
+            w = new_world()
+            w.rng.seed(seed)
+            w.pet["affection"] = 90
+            w.pet["hunger"] = 0
+            before = w.dirt["living_room"]
+            run(w, "play(逗猫棒)" if w.add_item("逗猫棒") is None else "")
+            if w.dirt["living_room"] > before + 5:
+                hits += 1
+        self.assertGreater(hits, 0)
+
+    def test_parcel_leaves_a_box(self):
+        w = new_world()
+        w.parcels["鸡蛋"] = 2
+        run(w, "goto(庭院); open(包裹)")
+        self.assertIn("纸箱", w.inventory)
+
     def test_cat_gets_hungry_and_news(self):
         w = new_world()
         advance(w, 24)

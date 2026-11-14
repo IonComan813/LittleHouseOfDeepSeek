@@ -223,7 +223,8 @@ class World:
         p = self.pet
         p["hunger"] = min(100.0, p["hunger"] + PET_HUNGER_PER_HOUR * hours)
         p["affection"] = max(0.0, p["affection"] - PET_AFFECTION_DECAY_PER_DAY * days)
-        if self.rng.random() < min(1.0, hours):
+        busy_with_her = at.timestamp() - p.get("last_with", 0.0) < 600  # fed, petted, played: it stays a while
+        if not busy_with_her and self.rng.random() < min(1.0, hours):
             p["room"] = self.rng.choice(C.INDOOR_ROOMS)
         self.dirt[p["room"]] = min(100.0, self.dirt[p["room"]] + 2.0 * days)
         if p["hunger"] >= 80 and not p["hungry_noted"]:

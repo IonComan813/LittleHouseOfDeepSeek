@@ -169,6 +169,10 @@ def format_report(world: World, report: Report) -> str:
         lines.append(f"（还在进行：{world.runner.doing()}{more}。可以先做别的打算，用 look() 看看进度。）")
     elif report.stopped:
         lines.append(f"（{report.stopped}，后面的步骤没有执行。）")
+    if report.done:
+        from .actions import menu_line
+
+        lines.append(menu_line(world))
     tail = world.free_time_text() or f"现在 {world.now():%H:%M}"
     if not (report.results and report.results[-1].text.endswith(tail)):  # look() already says it
         lines.append(tail)
