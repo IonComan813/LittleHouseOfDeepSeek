@@ -14,7 +14,7 @@
 
 </details>
 
-> 当前进度：**M0 → M3、M5 完成**（世界、经济、日记、会动的只读像素画面、动作花真实时间、每日作息、手机 QQ）。下一步是记忆（M4）。
+> 当前进度：**M0 → M5 完成**（世界、经济、日记、会动的只读像素画面、动作花真实时间、每日作息、记忆、手机 QQ）。下一步是上网（M6）。
 > 路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)；接手开发请先读 [docs/HANDOFF.md](docs/HANDOFF.md)。
 
 ## 安装（Windows）
@@ -38,20 +38,21 @@ python scripts\install.py
 │                                                                            │
 │  index.js — 宿主级服务 `littleHouse`                                         │
 │   · 拉起 / 连接小屋进程（发现文件 + 令牌），挂了自动重启，DSH 退出时让它存档退出 │
+│   · 每天一个「小屋生活 · 日期」会话（凌晨 4 点换天）：几段自由活动 + 手机 QQ   │
+│     都在里面；第一条消息开头是日期和她的记忆                                   │
 │   · 作息表：每天几段自由活动（时段内随机开始，各 40 分钟），到点结束；          │
-│     每天一个「小屋生活 · 日期」会话                                            │
-│     （sessionController.create + resolveAgent + agent.followup，同 dsh-schedule）│
-│   · 开始消息 = 时段 + 「刚才在…」+「上次自由活动的时候你…」+ 最近一段日记        │
-│              + 「这段时间里…」+ look；她提前停下但还有时间时，过一会儿再叫她     │
+│     开始消息 = 时段 +「刚才在…」+「这段时间里…」+ look（agent.steer 送进去） │
+│   · QQ（qq.js）：直连 NapCat（OneBot 11 正向 WebSocket）；私聊消息作为        │
+│     「手机响了」送进当天的会话；图片能看，语音 / 文件在桥这里挡掉；夜里按概率叫醒 │
+│   · 记忆：换天后开「记忆整理」会话（不带人设、没有工具），日记 + QQ → JSON →   │
+│     memory.json（会淡忘，lib/memory.js）                                     │
 │   · plugin.log                                                              │
 │                                                                            │
 │  preset `little-house`（cordis.patch.yml）— 生活会话只挂这些行：             │
-│   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、                         │
-│     house_do / end_free_time / house_render；全局工具 deny + tools.guard 白名单   │
-│   · diary-scope.js：diary_write / diary_read（独立行，QQ preset 也挂）         │
-│  QQ（qq.js）：直连 NapCat（OneBot 11 正向 WebSocket），每个聊天每天一个会话    │
-│   · preset `little-house-qq`：qq-scope.js（人设 + QQ 规则、house_status /     │
-│     house_photo）+ 日记；图片能看，QQ 表情双向；夜里按概率叫醒             │
+│   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、house_do（自由活动  │
+│     以外只能看）/ end_free_time / house_render / phone_message；               │
+│     全局工具 deny + tools.guard 白名单                                        │
+│   · diary-scope.js：diary_write / diary_read                                 │
 │   · compaction                                                              │
 └───────────────┬────────────────────────────────────────────────────────────┘
                 │ HTTP 127.0.0.1 + X-House-Token
@@ -81,9 +82,11 @@ python scripts\install.py
 - **画面是只读的，渲染只有一个进程。** 画的就是此刻的真实状态（走到半路、在灶台边、窝在沙发上看书）。
   `house_render` 只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
-- **每段自由活动结束前写日记。** 写什么由她决定（重要的事、心情、想做的事）；每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。日记是以后记忆（M4）的原料。
-- **手机和 QQ。** 她背包里一直有一部手机：你可以用 QQ 私聊她、拉她进群；她看得懂图片，会用 QQ 表情，能拍小屋的照片发给你。
-  每个聊天每天一个会话；夜里多半睡着了。自由活动写完日记后，遇到有趣的事她可能主动给你发条消息（每天最多 3 条）。
+- **每段自由活动结束前写日记。** 写什么由她决定（重要的事、心情、想做的事）；每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。
+- **记忆。** 每天换天后，一个不带人设的会话把前一天的日记和 QQ 聊天整理成「最近的日子 / 想做的事 / 记得的事 / 认识的人」，
+  第二天的会话开头给她看；越久越模糊，想做的事忘得更快，很重要的事不会忘。
+- **手机和 QQ。** 她背包里一直有一部手机：你随时可以用 QQ 私聊她，她用手机回你（同一天的聊天和小屋生活在一个会话里）；
+  她看得懂图片，会用 QQ 表情，能拍小屋的照片发给你；夜里多半睡着了。自由活动写完日记后，遇到有趣的事她可能主动给你发消息。
 - **成本。** DeepSeek-V4.1-Flash 实测一次唤醒约 1.2～2 万 token，约八成是缓存命中。
 
 更多：[伪代码与接口](docs/PROTOCOL.md) · [路线图与实测记录](docs/ROADMAP.md) · [交接文档](docs/HANDOFF.md)

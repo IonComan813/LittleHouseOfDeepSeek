@@ -10,15 +10,15 @@
     ".": "./index.js",
     "./agent-scope": "./agent-scope.js",
     "./diary": "./diary-scope.js",
-    "./qq": "./qq-scope.js",
+    "./memory": "./memory-scope.js",
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "agent-scope.js",
     "diary-scope.js",
+    "memory-scope.js",
     "qq.js",
-    "qq-scope.js",
     "lib",
     "persona",
     "cordis.patch.yml"

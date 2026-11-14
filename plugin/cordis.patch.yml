@@ -4,7 +4,8 @@
 # 2. `preset-little-house`: the agent preset the life session runs. It has no
 #    shell, file or web tools on purpose — the resident can only act through
 #    the house_* and diary_* tools.
-# 3. `preset-little-house-qq`: her QQ chats (only with `qq.enabled: true`).
+# 3. `preset-little-house-memory`: the daily memory summariser (no persona, no tools).
+#    QQ messages (with `qq.enabled: true`) go into the life session itself.
 #
 # To change settings, override the `little-house` row by id in your profile's
 # cordis.patch.yml (a patch replaces the whole `config`, so restate every key
@@ -53,34 +54,15 @@
                   headChars: 16000
                   tailChars: 2000
 
-    # The QQ chats on her phone (one session per chat per day). Used only when
-    # the `little-house` row has `qq.enabled: true`.
-    - id: preset-little-house-qq
+
+    # The once-a-day memory summariser: no persona, no tools.
+    - id: preset-little-house-memory
       name: '@deepseek-ai/dsh-agent-preset'
       config:
-        id: little-house-qq
-        name: 小屋 QQ
-        description: 小屋居民手机上的 QQ 聊天：同一份人设，只能看看小屋、拍照、写日记。
-        order: 91
+        id: little-house-memory
+        name: 小屋记忆整理
+        description: 每天把她前一天的日记和 QQ 聊天整理进记忆（不带人设，不用工具）。
+        order: 92
         plugins:
-          - id: little-house-qq-scope
-            name: dsh-little-house/qq
-          - id: little-house-qq-diary
-            name: dsh-little-house/diary
-            config:
-              source: QQ
-          - id: compaction
-            name: cordis:group
-            group: true
-            isolate:
-              compaction: true
-              toolResultPruner: true
-            config:
-              - id: compaction-basic
-                name: '@deepseek-ai/dsh-compaction-basic'
-              - id: tool-result-pruner
-                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
-                config:
-                  thresholdChars: 20000
-                  headChars: 16000
-                  tailChars: 2000
+          - id: little-house-memory-scope
+            name: dsh-little-house/memory

@@ -28,6 +28,8 @@ from .world import Event, World
 
 MAX_BODY = 16 * 1024
 DEFAULT_WAIT = 15 * 60  # longest a /do request waits for its script (seconds); the script itself carries on
+# What she may do outside her free time (in reply to a message, say): look, nothing else.
+LOOK_ONLY = ("surroundings", "inventory", "help")
 
 
 class RenderUnavailable(Exception):
@@ -90,13 +92,18 @@ class House:
         with self.lock:
             self.world.update()
 
-    def do(self, src: str, wait: float = DEFAULT_WAIT) -> dict[str, Any]:
+    def do(self, src: str, wait: float = DEFAULT_WAIT, look_only: bool = False) -> dict[str, Any]:
         """Start a script in real time and wait (at most ``wait`` real seconds)
         for it to finish; the script keeps going after that and ``report(id)``
-        picks it up again. Raises ScriptError."""
+        picks it up again. Raises ScriptError.
+
+        ``look_only`` (outside her free time): only looking (``LOOK_ONLY``) is
+        allowed; it is answered at once and does not disturb her everyday routine."""
         calls = parse(src)
         if not calls:
             raise ScriptError("脚本是空的。试试 surroundings()。")
+        if look_only:
+            return self.look_only(calls)
         w = self.world
         with self.lock:
             w.update()
@@ -105,6 +112,19 @@ class House:
             deadline = free_until if free_until > w.clock.timestamp() else None
             rid = w.runner.submit(calls, deadline)
         return self.report(rid, wait)
+
+    def look_only(self, calls) -> dict[str, Any]:
+        from .actions import ACTIONS
+
+        bad = [c.name for c in calls if c.name not in LOOK_ONLY]
+        if bad:
+            raise ScriptError("现在不是自由活动时间，你在过自己的日常：只能看看（" + "、".join(f"{n}()" for n in LOOK_ONLY)
+                              + "），不能做「" + "、".join(dict.fromkeys(bad)) + "」。想做的事等下次自由活动。")
+        with self.lock:
+            w = self.world
+            w.update()
+            lines = [f"✓ {c.shown()}\n  " + str(ACTIONS[c.name].fn(w)).replace("\n", "\n  ") for c in calls]
+        return {"ok": True, "done": True, "id": 0, "text": "\n".join(lines), "results": []}
 
     def report(self, rid: int, wait: float = 0.0) -> dict[str, Any]:
         """What became of script ``rid``, waiting up to ``wait`` real seconds for it to finish."""
@@ -320,7 +340,7 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
             except (TypeError, ValueError):
                 wait = DEFAULT_WAIT
             try:
-                out = house.do(script, max(0.0, min(wait, 3600.0)))
+                out = house.do(script, max(0.0, min(wait, 3600.0)), look_only=bool(body.get("look_only")))
             except ScriptError as e:
                 self._send(200, {"ok": False, "done": True, "text": f"✗ 脚本错误：{e}", "results": []})
                 return

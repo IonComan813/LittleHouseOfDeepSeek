@@ -98,8 +98,8 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 
 ## 6. 接上 QQ（NapCat）
 
-她背包里有一部手机：你可以用 QQ 私聊她，她也可以在群里聊天；自由活动写完日记后，遇到有趣或重要的事，她可能会主动给你发条消息（每天最多 3 条）。
-插件**直接连 NapCat**，不需要再装别的 QQ 插件（如果之前装过 dsh-onebot，别让它和这里连同一个 NapCat 账号）。
+她背包里有一部手机：你随时可以用 QQ 私聊她，她用手机回你；自由活动写完日记后，遇到有趣或重要的事，她可能主动给你发消息。
+插件**直接连 NapCat**，不需要再装别的 QQ 插件（如果之前装过 dsh-onebot，别让它和这里连同一个 NapCat 账号，不然会两边都回）。
 
 **NapCat 这边**：网页控制台 → 网络配置 → 新建 **「WebSocket 服务端」**：
 - 主机 `127.0.0.1`，端口 `3001`（或别的，下面对应改）；
@@ -116,16 +116,15 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
       ownerQQ: '你的 QQ 号'
       ownerName: '主人'          # 她怎么称呼你
       friends: []               # 除了你，还接受谁的私聊（QQ 号）
-      groups: ['123456789']     # 她在哪些群里（群号）；群里被 @、叫到名字或回复她时才回答
-      names: ['小栖']            # 群里提到这些名字也算叫她
       night: { from: '00:00', to: '08:00', chance: 0.3, reply: '（睡着了……zzZ）' }
-      dailyShares: 3            # 她每天最多主动给你发几条
 ```
 
-- 每个聊天每天一个会话：「QQ · 主人 · 日期」「QQ · 群「群名」 · 日期」，凌晨 4 点换新的一天（开头会告诉她日期、她在小屋里做什么、最近的日记）。
-- 她能看懂你发的图片和 QQ 表情，也会用 QQ 表情；可以按你的要求拍一张小屋的照片发过来。语音、文件她打不开。
+- 你的消息会进她当天的「小屋生活 · 日期」会话（和自由活动是同一个会话，凌晨 4 点换新的一天），她用手机（`phone_message`）回复。
+  不在自由活动时间时，她只能看看四周和用手机，不会去做饭种菜。
+- 她能看懂你发的图片和 QQ 表情，也会用 QQ 表情；可以拍一张小屋的照片发给你。**语音、视频、文件不会转给她**。
 - 夜里（默认 0–8 点）一条消息只有 30% 的概率把她叫醒；没叫醒就自动回一句「睡着了」（同一个聊天半小时最多一次）。
-- 群里没叫她的消息不会让她回复，但会在下次有人叫她时作为「群里刚才的消息」给她看，也会记进 `little-house\qq\日期.jsonl`（以后整理记忆用）。
+- 群聊暂时没有开放。
+- 所有消息记在 `little-house\qq\日期.jsonl`，第二天整理进她的记忆（`little-house\memory\memory.md` 可以看）。
 - 连接状态看 `plugin.log` 里的 `QQ: connected`。
 
 ## 卸载
@@ -146,5 +145,5 @@ python scripts\install.py --uninstall
 | 端口 8770 被占用 | 配置里把 `house.port` 改成别的 |
 | 她的工具里没有 house_render | 小屋进程的 Python 里没装 pygame-ce，或 `house.python` 指向了另一个 Python |
 | 想立刻看到一次自由活动 | 临时把 `wake.firstWakeDelaySeconds` 改成 `10`（`wake.testMinutes` 是这段多长）再重启 DSH |
-| QQ 没反应 | `plugin.log` 里没有 `QQ: connected`：检查 NapCat 的 WebSocket 服务端是否启用、端口和 token 是否一致；有 connected 但不回：私聊要在 `ownerQQ` / `friends` 里，群要在 `groups` 里 |
+| QQ 没反应 | `plugin.log` 里没有 `QQ: connected`：检查 NapCat 的 WebSocket 服务端是否启用、端口和 token 是否一致；有 connected 但不回：私聊要在 `ownerQQ` / `friends` 里 |
 | DSH 关了但 python 还在跑 | 正常：DSH 被强制关闭时来不及通知小屋退出。下次 DSH 启动会直接连上它；想关掉就在任务管理器结束那个 python 进程（存档每次行动后都会写盘） |

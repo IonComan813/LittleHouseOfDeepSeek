@@ -7,7 +7,8 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { DIARY_TOOLS } from './diary-scope.js'
-import { DIARY_FIRST_TEXT, OVER_DIARY_TEXT, OVER_TEXT, REST_TEXT } from './lib/wake.js'
+import { COMMON_FACES } from './lib/onebot.js'
+import { DIARY_FIRST_TEXT, REST_TEXT } from './lib/wake.js'
 
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
@@ -28,14 +29,21 @@ const IMAGE_SCHEMA = {
 }
 
 const PHONE_TOOL = `
-- phone_message：用手机给主人发 QQ 消息（写完日记之后才能用，下面「手机」一节）。`
+- phone_message：用手机发 QQ 消息（见下面「手机」）。`
 
-const PHONE_RULES = `## 手机
-你的背包里一直有一部手机，主人会用 QQ 找你聊天（那是另外的对话，不在自由活动里）。
-写完这次的日记以后，如果有你觉得有趣、重要、想让主人知道的事，可以用 phone_message 给主人发条消息（也可以附一张小屋的照片）。
-平常的流水账不用发，大多数时候不发也很正常；一天最多发几条。
+function phoneRules(ownerName) {
+  return `## 手机
+你的背包里一直有一部手机。${ownerName}随时可能用 QQ 给你发消息：自由活动的时候，过日常的时候，甚至睡着的时候。
+消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」；附带的图片你看得到，[表情:名称] 是 QQ 表情。
+- 回消息、发消息都用 phone_message：text 就是发出去的话。**你在这里直接写的文字，对方看不到。**
+  像平时用手机聊天一样：口语、简短，不用 Markdown；想分几条发就用空行隔开；
+  可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，一两个就好。photo=true 会附一张小屋现在的照片。
+- 想发几条就发几条，不想回也可以不回。
+- 不是自由活动时间的时候，你在过自己的日常：只能用手机，和用 house_do 看看四周（surroundings()、inventory()），不能做别的事；聊完就好，不用 end_free_time。
+- 自由活动里写完日记以后，如果有你觉得有趣、重要、想让${ownerName}知道的事，可以主动发条消息；平常的流水账不用发。
 
 `
+}
 
 const HOUSE_RULES = `## 你的生活
 你住在潮汐湾的一间海边小屋里：客厅、厨房、卧室，屋前的庭院有三块菜地、一个邮箱和寄售箱，再往前是沙滩。
@@ -47,6 +55,7 @@ const HOUSE_RULES = `## 你的生活
 ## 自由活动时间
 每天有几段自由活动时间（早上、中午、傍晚，有时还有深夜），每段四十分钟左右，开始时会告诉你。
 这段时间由你自己安排。其余时间你的角色会自己过平淡的日常（看书、发呆、晒太阳、睡觉、随便吃点东西），不需要你操心。
+一天里的几段自由活动（还有手机上的聊天）都在同一个对话里；第二天换一个新的对话，开头会附上你的记忆——越久的事越模糊，所以重要的事要写进日记。
 
 生活里的事情会自己发生：你会饿；植物和菜地会变干；房间会落灰；团子会饿，脾气也每天不一样；
 海浪会把贝壳冲上沙滩；偶尔会有信，或者一些意想不到的小事。
@@ -111,7 +120,7 @@ export async function apply(ctx) {
     interpolate: false,
     text: `${persona}\n\n${HOUSE_RULES
       .replace('{{PHONE_TOOL}}', house.qq ? PHONE_TOOL : '')
-      .replace('{{PHONE_RULES}}', house.qq ? PHONE_RULES : '')}`,
+      .replace('{{PHONE_RULES}}', house.qq ? phoneRules(house.config.qq.ownerName) : '')}`,
   })
 
   const textOutput = {
@@ -129,7 +138,11 @@ export async function apply(ctx) {
     timeoutMs: 60 * 60_000,
     async execute(args, exec) {
       const sessionId = exec.agent?.id
-      if (house.windowOver(sessionId)) return house.diaryWritten(sessionId) ? OVER_TEXT : OVER_DIARY_TEXT
+      if (!house.window(sessionId)) {
+        // Outside free time (answering the phone, say): she may only look around.
+        const r = await house.doScript(args.script, exec.signal, true)
+        return r.text + (house.needsDiary(sessionId) ? `\n${DIARY_FIRST_TEXT}` : '')
+      }
       const budget = house.takeAction(sessionId)
       if (!budget.ok) return '这次已经做了很多事了，就先到这里吧。请调用 end_free_time 结束这次自由活动。'
       const signal = exec.signal
@@ -138,7 +151,7 @@ export async function apply(ctx) {
       try {
         const r = await house.doScript(args.script, signal)
         const lowBudget = Number.isFinite(budget.left) && budget.left <= 5 ? `\n（这次还能行动 ${budget.left} 次）` : ''
-        const over = !house.windowOver(sessionId) ? ''
+        const over = house.window(sessionId) ? ''
           : house.diaryWritten(sessionId) ? '\n（自由活动时间到了。请调用 end_free_time。）'
           : '\n（自由活动时间到了。用 diary_write 写下这次的日记，然后调用 end_free_time。）'
         return r.text + lowBudget + over
@@ -161,19 +174,17 @@ export async function apply(ctx) {
   if (house.qq) {
     ctx.tools.register(defineTool({
       name: 'phone_message',
-      description: '用手机给主人发一条 QQ 消息（写完这次的日记以后才能用）。只发你觉得有趣、重要、想让主人知道的事；流水账不用发。text 是消息内容（口语、简短；空行隔开可以分几条；可以用 [表情:微笑] 这样的 QQ 表情），photo=true 时附一张小屋现在的照片。',
+      description: '用手机发 QQ 消息（回复收到的消息，或者主动发）。text 就是发出去的话：口语、简短，空行隔开可以分几条，可以用 [表情:微笑] 这样的 QQ 表情。photo=true 时附一张小屋现在的照片。to 是发给谁，不写就是发给主人。你直接写的文字对方看不到，要说的话都用这个发。',
       parameters: {
-        text: { type: 'string', required: true, description: '要发给主人的话' },
-        photo: { type: 'boolean', description: '是否附一张小屋的照片' },
+        text: { type: 'string', required: true, description: '发出去的话' },
+        photo: { type: 'boolean', description: '是否附一张小屋现在的照片' },
+        to: { type: 'string', description: '发给谁（不写 = 主人）' },
       },
       output: textOutput,
-      async execute(args, exec) {
-        const sessionId = exec.agent?.id
-        if (!house.hasWindow(sessionId)) return '手机消息只在自由活动的时候发。'
-        if (!house.diaryWritten(sessionId)) return '先用 diary_write 写下这次的日记，再决定要不要给主人发消息。'
+      async execute(args) {
         try {
-          await house.qq.sendToOwner(String(args.text ?? ''), Boolean(args.photo))
-          return '（消息发出去了。可以 end_free_time 了。）'
+          const n = await house.qq.phoneMessage(String(args.text ?? ''), { photo: Boolean(args.photo), to: args.to })
+          return n > 1 ? `（发出去了，${n} 条。）` : '（发出去了。）'
         } catch (e) {
           return `消息没发出去：${e?.message ?? e}`
         }
@@ -188,7 +199,10 @@ export async function apply(ctx) {
     output: textOutput,
     async execute(_args, exec) {
       const sessionId = exec.agent?.id
-      if (house.hasWindow(sessionId) && !house.diaryWritten(sessionId)) return DIARY_FIRST_TEXT
+      if (!house.window(sessionId) && !house.needsDiary(sessionId) && !house.windowOver(sessionId, true)) {
+        return '现在不是自由活动时间，不用结束。'
+      }
+      if (!house.diaryWritten(sessionId)) return DIARY_FIRST_TEXT
       await house.endFreeTime(sessionId)
       exec.concludeTurn()
       return REST_TEXT

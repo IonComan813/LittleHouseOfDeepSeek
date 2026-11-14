@@ -2,11 +2,11 @@
 //
 // Inbound: a message (segment array, or a CQ-code string as a fallback) becomes
 // text the model reads — QQ faces as [表情:名称], pictures as [图片] plus the
-// image URLs, @-mentions of her noted. Outbound: her text becomes segments,
+// image URLs, @-mentions of her noted; voice, video and files are dropped. Outbound: her text becomes segments,
 // [表情:名称] turning back into real QQ faces, blank lines into separate bubbles.
 
 import { FACE_IDS, QQ_FACES } from './qq-faces.js'
-import { localDay } from './wake.js'
+import { dayOf } from './wake.js'
 
 /** What she writes when she chooses not to answer (group chats). */
 export const SILENCE = '[不回复]'
@@ -57,7 +57,8 @@ export function cqToSegments(raw) {
  * Read one inbound message.
  * @param {unknown} message segment array or CQ string
  * @param {string} selfId her QQ number ('' if unknown)
- * @returns {{ text: string, images: string[], mentioned: boolean, replyTo?: string }}
+ * @returns {{ text: string, images: string[], mentioned: boolean, dropped: string[], replyTo?: string }}
+ *   dropped: voice / video / file / forwarded / card segments, which are not passed on
  */
 export function readMessage(message, selfId = '') {
   const segs = Array.isArray(message) ? message : cqToSegments(String(message ?? ''))
@@ -65,6 +66,7 @@ export function readMessage(message, selfId = '') {
   const images = []
   let mentioned = false
   let replyTo
+  const dropped = []
   for (const seg of segs) {
     const d = seg?.data ?? {}
     switch (seg?.type) {
@@ -90,26 +92,18 @@ export function readMessage(message, selfId = '') {
         replyTo = String(d.id ?? '')
         break
       case 'record':
-        text += '[语音]'
-        break
       case 'video':
-        text += '[视频]'
-        break
       case 'file':
-        text += `[文件${d.name ? '：' + d.name : ''}]`
-        break
       case 'forward':
-        text += '[聊天记录]'
-        break
       case 'json':
       case 'xml':
-        text += '[卡片消息]'
+        dropped.push(seg.type) // stopped here: they never reach the model
         break
       default:
         if (seg?.type) text += `[${seg.type}]`
     }
   }
-  return { text: text.trim(), images, mentioned, ...(replyTo ? { replyTo } : {}) }
+  return { text: text.trim(), images, mentioned, dropped, ...(replyTo ? { replyTo } : {}) }
 }
 
 /**
@@ -163,10 +157,8 @@ export function splitReply(text) {
   return [...parts.slice(0, MAX_BUBBLES - 1), parts.slice(MAX_BUBBLES - 1).join('\n')]
 }
 
-/** The "QQ day" a moment belongs to: days change at `rolloverHour` (late-night chats stay on the evening's day). */
-export function qqDay(at, rolloverHour = 4) {
-  return localDay(new Date(at.getTime() - rolloverHour * 3600_000))
-}
+/** The day a QQ message belongs to (see wake.dayOf). */
+export const qqDay = dayOf
 
 /** @param {string} hhmm */
 function minutesOf(hhmm) {

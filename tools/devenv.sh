@@ -8,7 +8,7 @@
 # by the proxy, so DEEPSEEK_API_KEY is only a placeholder. With minutes > 0 the
 # plugin opens a temporary free time 5 s after DSH starts; 0 = the real schedule.
 # With "qq" the plugin dials tools/fake-napcat.mjs on ws://127.0.0.1:3001
-# (owner QQ 123, group 456).
+# (owner QQ 123).
 set -e
 W=$(mkdir -p "${1:?work dir}" && cd "$1" && pwd)
 MIN=${2:-10}
@@ -36,7 +36,6 @@ if [ "$QQ" = qq ]; then cat >> "$W/overlay.yml" <<YML
       enabled: true
       url: ws://127.0.0.1:3001
       ownerQQ: '123'
-      groups: ['456']
 YML
 fi
 echo "cd $LH/dsh && DSH_HOME=$DSH_HOME DEEPSEEK_API_KEY=proxy-injected npx dsh --profile lhtest --patch $W/overlay.yml --no-open --port 3099"

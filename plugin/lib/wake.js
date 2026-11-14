@@ -82,6 +82,15 @@ export function localDay(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+/**
+ * The day a moment belongs to for her sessions, diary and memory: days change at
+ * `rolloverHour` (04:00), so a late-night chat stays on the evening's day.
+ * @param {Date} at @param {number} [rolloverHour]
+ */
+export function dayOf(at, rolloverHour = 4) {
+  return localDay(new Date(at.getTime() - rolloverHour * 3600_000))
+}
+
 /** Local "HH:MM". @param {Date | number} d */
 export function hhmm(d) {
   const t = new Date(d)
@@ -159,8 +168,6 @@ export function buildNudge({ left, look }) {
 }
 
 export const REST_TEXT = '（这次自由活动结束了。接下来你的角色会自己去做一些日常事务，直到下一次自由活动时间。）'
-export const OVER_TEXT = '自由活动时间已经结束了，现在不能再行动。请调用 end_free_time。'
-export const OVER_DIARY_TEXT = '自由活动时间已经结束了，现在不能再行动。用 diary_write 写下这次的日记，然后调用 end_free_time。'
 export const DIARY_FIRST_TEXT = '结束之前，先用 diary_write 写下这次自由活动的日记，写完再调用 end_free_time。'
 /** The message sent when free time runs out while she is idle and has not written her diary. */
 export const TIME_UP_TEXT = '（自由活动时间到了。用 diary_write 写下这次的日记，然后调用 end_free_time。）'

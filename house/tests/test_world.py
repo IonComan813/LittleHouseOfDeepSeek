@@ -519,6 +519,21 @@ class TimeTest(unittest.TestCase):
         self.assertLessEqual(w.resident["hunger"], 100)
 
 
+class LookOnlyTest(unittest.TestCase):
+    def test_outside_free_time_she_can_only_look(self):
+        with tempfile.TemporaryDirectory() as d:
+            house = House(Path(d))
+            out = house.do("surroundings(); inventory()", look_only=True)
+            self.assertTrue(out["done"])
+            self.assertIn("位置：", out["text"])
+            self.assertIn("手机", out["text"])
+            with self.assertRaises(ScriptError) as e:
+                house.do("surroundings(); goto(厨房)", look_only=True)
+            self.assertIn("不是自由活动时间", str(e.exception))
+            self.assertIn("goto", str(e.exception))
+            self.assertEqual(house.world.location, "living_room")
+
+
 class PhoneTest(unittest.TestCase):
     def test_the_phone_is_always_in_the_bag(self):
         w = new_world()

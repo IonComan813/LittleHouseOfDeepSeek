@@ -4,7 +4,7 @@
 //   node tools/fake-napcat.mjs [--port 3001] [--control 3002] [--token T] [--log out.jsonl]
 //
 // The plugin dials ws://127.0.0.1:3001. Drive it over HTTP on the control port:
-//   POST /private {"user_id": "123", "text": "在吗", "image": true, "nickname": "主人"}
+//   POST /private {"user_id": "123", "text": "在吗", "image": true, "voice": true, "nickname": "主人"}
 //   POST /group   {"group_id": "456", "user_id": "789", "text": "...", "at": true, "card": "阿陆"}
 //   GET  /outbox  -> everything the plugin sent (send_private_msg / send_group_msg)
 //   GET  /img.png -> a test picture (what "image": true points at)
@@ -96,6 +96,7 @@ createServer((req, res) => {
       if (p.text) message.push({ type: 'text', data: { text: p.text } })
       if (p.face) message.push({ type: 'face', data: { id: String(p.face) } })
       if (p.image) message.push({ type: 'image', data: { file: 'img.png', url: `http://127.0.0.1:${CONTROL}/img.png` } })
+      if (p.voice) message.push({ type: 'record', data: { file: 'voice.amr' } })
       const base = { post_type: 'message', time: Math.floor(Date.now() / 1000), self_id: SELF, message_id: ++msgId, message, raw_message: p.text ?? '', font: 0 }
       if (req.url === '/private') {
         push({ ...base, message_type: 'private', sub_type: 'friend', user_id: Number(p.user_id), sender: { user_id: Number(p.user_id), nickname: p.nickname ?? '主人' } })

@@ -9,7 +9,7 @@
 // Outside free time the house itself keeps her living her everyday life.
 
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,11 +20,12 @@ import Schema from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 import { lastEntryNote } from './lib/diary.js'
+import { buildSummaryPrompt, emptyMemory, forget, formatChats, mergeDay, parseReply, render as renderMemory } from './lib/memory.js'
 import { HouseProcess } from './lib/house-process.js'
 import { DEFAULT_SLOTS } from './lib/slots.js'
 import { QQ } from './qq.js'
 import {
-  TIME_UP_TEXT, buildNudge, buildWakeMessage, checkSlots, findSlot, formatDuration, hhmm, localDay, localIso, planDay, recapEvents,
+  TIME_UP_TEXT, buildNudge, buildWakeMessage, checkSlots, dayOf, findSlot, formatDuration, hhmm, localDay, localIso, planDay, recapEvents,
 } from './lib/wake.js'
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
@@ -37,6 +38,9 @@ const MAX_LOG_BYTES = 1024 * 1024
 const DO_CHUNK_SECONDS = 240 // one /do or /report request waits at most this long (Node's fetch gives up after 5 min)
 const NUDGE_DELAY_MS = 2 * 60_000
 const MIN_SLOT_MINUTES = 5
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const MEMORY_DELAY_MINUTES = 10 // after the day changes, before the day is summarised
+const MEMORY_TIMEOUT_MS = 10 * 60_000
 
 /** Identifies one slot on one day, e.g. "2026-11-14 早上". */
 function slotKey(plan) {
@@ -73,6 +77,11 @@ export default class LittleHouse extends Service {
     session: Schema.object({
       agentPreset: Schema.string().default('little-house'),
       title: Schema.string().default('小屋生活'),
+      rolloverHour: Schema.natural().max(23).default(4).description('几点换成新的一天：每天一个会话（小屋生活和手机 QQ 在同一个会话里），日记和记忆也按这个换天'),
+    }).default({}),
+    memory: Schema.object({
+      enabled: Schema.boolean().default(true).description('每天换天后，用一个单独的会话（不带人设）把前一天的日记和 QQ 聊天整理进记忆'),
+      preset: Schema.string().default('little-house-memory'),
     }).default({}),
     qq: Schema.object({
       enabled: Schema.boolean().default(false).description('接入 QQ（NapCat 的 OneBot 11 WebSocket 服务端）'),
@@ -81,17 +90,15 @@ export default class LittleHouse extends Service {
       ownerQQ: Schema.string().default('').description('主人的 QQ 号'),
       ownerName: Schema.string().default('主人').description('她怎么称呼主人'),
       friends: Schema.array(Schema.string()).default([]).description('除了主人，还接受谁的私聊（QQ 号）'),
-      groups: Schema.array(Schema.string()).default([]).description('她在哪些群里（群号）；群里被 @、叫名字或回复她时才回答'),
-      names: Schema.array(Schema.string()).default(['小栖']).description('群里提到这些名字也算在叫她'),
+      // Group chats are off for now (see qq.js):
+      // groups: Schema.array(Schema.string()).default([]).description('她在哪些群里（群号）'),
+      // names: Schema.array(Schema.string()).default(['小栖']).description('群里提到这些名字也算在叫她'),
       night: Schema.object({
         from: Schema.string().default('00:00'),
         to: Schema.string().default('08:00'),
         chance: Schema.number().min(0).max(1).default(0.3).description('夜里一条消息叫醒她的概率'),
         reply: Schema.string().default('（睡着了……zzZ）').description('没叫醒时自动回的话（同一个聊天半小时最多一次；留空 = 不回）'),
       }).default({}),
-      dailyShares: Schema.natural().default(3).description('自由活动后她主动给主人发消息，每天最多几次'),
-      rolloverHour: Schema.natural().max(23).default(4).description('几点换成新的一天的会话'),
-      preset: Schema.string().default('little-house-qq'),
     }).default({}),
   })
 
@@ -120,6 +127,10 @@ export default class LittleHouse extends Service {
     /** Per-session free-time window: sessionId -> { until, name, ended, rested, nudges, timer } */
     this.windows = new Map()
     this.qq = config.qq.enabled ? new QQ(this, config.qq) : undefined
+    /** sessionId -> { texts, resolve, reject } for one-shot sessions (the memory summariser) */
+    this.waiters = new Map()
+    this.stateLock = Promise.resolve()
+    this.memoryTimer = undefined
 
     ctx.effect(() => {
       const boot = setTimeout(() => {
@@ -128,6 +139,7 @@ export default class LittleHouse extends Service {
       return () => {
         clearTimeout(boot)
         clearTimeout(this.wakeTimer)
+        clearTimeout(this.memoryTimer)
         for (const w of this.windows.values()) {
           clearTimeout(w.timer)
           clearTimeout(w.nudgeTimer)
@@ -173,11 +185,13 @@ export default class LittleHouse extends Service {
     } catch (e) {
       this.log('warn', `house not available yet: ${e.message}`)
     }
+    this.ctx.on('session/event', (session, event) => this.onSessionEvent(session, event))
     try {
       this.qq?.start()
     } catch (e) {
       this.log('warn', `QQ failed to start: ${e?.stack ?? e}`)
     }
+    if (this.config.memory.enabled) this.scheduleMemory(30_000)
     if (!this.config.wake.enabled) return
     if (this.config.wake.firstWakeDelaySeconds > 0) {
       const delay = this.config.wake.firstWakeDelaySeconds * 1000
@@ -217,6 +231,13 @@ export default class LittleHouse extends Service {
     }
   }
 
+  /** Read-modify-write the plugin state, one writer at a time. @param {(s: object) => object} fn */
+  updateState(fn) {
+    const run = this.stateLock.then(async () => this.writeState(await fn(await this.readState())))
+    this.stateLock = run.catch(() => {})
+    return run
+  }
+
   async writeState(state) {
     await mkdir(this.stateDir, { recursive: true })
     const tmp = this.statePath + '.tmp'
@@ -239,7 +260,7 @@ export default class LittleHouse extends Service {
       }
     }
     if (changed || Object.keys(state.plans ?? {}).length !== days.length) {
-      await this.writeState({ ...state, plans: kept })
+      await this.updateState((s) => ({ ...s, plans: kept }))
       const today = kept[days[0]].map((p) => `${p.name} ${hhmm(p.start)}`).join('、') || '（无）'
       this.log('info', `free time today: ${today}`)
     }
@@ -284,12 +305,8 @@ export default class LittleHouse extends Service {
     try {
       const now = new Date()
       const state = await this.readState()
-      const today = localDay(now)
-      const agent = await this.lifeAgent(state, today)
-      if (agent.status !== 'idle') {
-        this.log('info', `life session ${agent.id} is busy (${agent.status}); skipping ${plan.name}`)
-        return 'skipped: agent busy'
-      }
+      const agent = await this.dayAgent()
+      const fresh = (await this.readState()).introducedSession !== agent.id
 
       // All times she is told come from the house's game clock (the same one the
       // picture and house_do results use), not from this process's clock.
@@ -318,14 +335,13 @@ export default class LittleHouse extends Service {
         start: now.getTime() + skew,
         until: until + skew,
         before: session.before,
-        recap,
+        recap: fresh && !(await this.memoryText()) ? recap : [], // in an ongoing session she has it already
         news: news.map((n) => n.text),
-        lastNote: await this.lastDiaryNote(),
         look: look.text,
         resumed,
       })
       await this.send(agent, text)
-      await this.writeState({ ...(await this.readState()), lastWakeAt: now.toISOString() })
+      await this.updateState((s) => ({ ...s, lastWakeAt: now.toISOString() }))
       this.log('info', `free time (${plan.name}, until ${hhmm(until)}) in session ${agent.id}`)
       return `woke: ${agent.id}`
     } finally {
@@ -344,12 +360,51 @@ export default class LittleHouse extends Service {
   }
 
   async send(agent, text) {
-    agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'little-house' } }))
+    await this.deliver(agent, [{ type: 'text', text }], 'little-house')
+  }
+
+  /**
+   * Hand her a message in the day session. The first message of a session opens
+   * with the date and her memory. `steer`: an idle session starts a turn; a busy
+   * one (free time in progress, or answering the phone) reads it at its next step.
+   */
+  async deliver(agent, content, kind) {
+    const intro = await this.intro(agent)
+    const parts = intro ? [{ type: 'text', text: intro }, ...content] : content
+    agent.steer(createUserMessage({ content: parts, source: { kind } }))
     await this.ctx.sessions.flush(agent.session)
     void agent.whenIdle().then(
       () => this.onIdle(agent),
       (e) => this.log('warn', `life turn ended with error: ${e}`),
     )
+  }
+
+  /** The opening of a day session (once per session): the date, then her memory. */
+  async intro(agent) {
+    let first = false
+    await this.updateState((s) => {
+      first = s.introducedSession !== agent.id
+      return first ? { ...s, introducedSession: agent.id } : s
+    })
+    if (!first) return ''
+    const day = this.dayKey()
+    const lines = [`（${day} ${WEEKDAYS[new Date(day + 'T12:00').getDay()]}，新的一天。）`]
+    const memory = await this.memoryText()
+    if (memory) lines.push('', '## 你的记忆', '（你记得的事。越久的越模糊。）', memory)
+    else {
+      const note = await this.lastDiaryNote()
+      if (note) lines.push(`日记里最近的一段${note}`)
+    }
+    return lines.join('\n') + '\n\n'
+  }
+
+  /** A QQ message arrived: the phone buzzes in her day session, whatever she is doing. */
+  async phoneBuzz({ line, images = [], night = false }) {
+    const agent = await this.dayAgent()
+    const head = night
+      ? `（深夜 ${hhmm(Date.now())}，你本来在睡觉，手机响了，把你吵醒了。是 QQ 消息：）`
+      : this.window(agent.id) ? '（手机响了，是 QQ 消息：）' : `（${hhmm(Date.now())}，手机响了，是 QQ 消息：）`
+    await this.deliver(agent, [{ type: 'text', text: `${head}\n${line}` }, ...images], 'little-house-qq')
   }
 
   // ------------------------------------------------------------------ the free-time window
@@ -388,23 +443,18 @@ export default class LittleHouse extends Service {
    */
   markDiary(sessionId) {
     const w = this.windows.get(sessionId)
-    if (!w) return undefined
+    if (!w || (w.ended && (w.rested || w.diary))) return undefined // written outside free time
     w.diary = true
     return w.name
   }
 
   /**
    * After her free-time diary entry: offer to message the owner, once per free
-   * time, when QQ is connected and today's shares are not used up.
+   * time, when QQ is connected.
    */
   async shareOffer(sessionId) {
     const w = this.windows.get(sessionId)
-    if (!w || w.offered || !this.qq) return ''
-    try {
-      if (!(await this.qq.canShare())) return ''
-    } catch {
-      return ''
-    }
+    if (!w || w.offered || !this.qq?.connected || !this.config.qq.ownerQQ) return ''
     w.offered = true
     return '\n要不要用手机给主人发条消息？只有你觉得有趣、重要、想让主人知道的事才发（phone_message）；平常的流水账不用发。不发的话直接 end_free_time。'
   }
@@ -422,10 +472,16 @@ export default class LittleHouse extends Service {
     }
   }
 
-  /** Whether this session had free time that is now over. */
-  windowOver(sessionId) {
+  /** Whether this session had free time that is now over (`unrested`: and she has not ended it herself). */
+  windowOver(sessionId, unrested = false) {
     const w = this.windows.get(sessionId)
-    return Boolean(w && w.ended)
+    return Boolean(w && w.ended && !(unrested && w.rested))
+  }
+
+  /** Free time ran out a little while ago and she has not written its diary yet. */
+  needsDiary(sessionId) {
+    const w = this.windows.get(sessionId)
+    return Boolean(w && w.ended && !w.rested && !w.diary && Date.now() - w.until < 15 * 60_000)
   }
 
   minutesLeft(sessionId) {
@@ -444,9 +500,7 @@ export default class LittleHouse extends Service {
     } catch (e) {
       this.log('warn', `could not end free time in the house: ${e.message}`)
     }
-    const state = await this.readState()
-    const doneSlots = [...(state.doneSlots ?? []), w.key].slice(-20)
-    await this.writeState({ ...state, lastRestAt: new Date().toISOString(), doneSlots })
+    await this.updateState((s) => ({ ...s, lastRestAt: new Date().toISOString(), doneSlots: [...(s.doneSlots ?? []), w.key].slice(-20) }))
     this.log('info', `free time (${w.name}) over in session ${sessionId}: ${reason}`)
   }
 
@@ -482,11 +536,27 @@ export default class LittleHouse extends Service {
 
   /** The newest diary entry from any session, if any. */
   async lastDiaryNote() {
-    return lastEntryNote(join(this.stateDir, 'diary'))
+    return lastEntryNote(join(this.stateDir, 'diary'), new Date(), this.dayKey())
   }
 
-  /** The live Agent of today's life session, creating the session when needed. */
-  async lifeAgent(state, today) {
+  /** The day (YYYY-MM-DD) a moment belongs to: days change at session.rolloverHour. */
+  dayKey(at = new Date()) {
+    return dayOf(at, this.config.session.rolloverHour)
+  }
+
+  /**
+   * The live Agent of today's session (free time in the house and the phone
+   * share it), creating it when the day has changed.
+   */
+  async dayAgent() {
+    // one at a time: a wake and a QQ message at the same moment must not open two sessions
+    this.dayAgentPending ??= this.openDayAgent().finally(() => { this.dayAgentPending = undefined })
+    return this.dayAgentPending
+  }
+
+  async openDayAgent() {
+    const today = this.dayKey()
+    const state = await this.readState()
     const controller = this.ctx.get('sessionController')
     if (controller === undefined) throw new Error('sessionController is unavailable (is this the Web/Desktop profile?)')
     const resolveAgent = async (sessionId) => {
@@ -511,9 +581,145 @@ export default class LittleHouse extends Service {
     } catch (e) {
       this.log('warn', `could not title the life session: ${e?.message ?? e}`)
     }
-    await this.writeState({ ...(await this.readState()), lifeSessionId: agent.id, lifeSessionDay: today })
+    await this.updateState((s) => ({ ...s, lifeSessionId: agent.id, lifeSessionDay: today }))
     this.log('info', `created life session ${agent.id}`)
     return agent
+  }
+
+  // ------------------------------------------------------------------ memory (M4)
+
+  get memoryPath() {
+    return join(this.stateDir, 'memory', 'memory.json')
+  }
+
+  async readMemory() {
+    try {
+      return JSON.parse(await readFile(this.memoryPath, 'utf8'))
+    } catch {
+      return emptyMemory()
+    }
+  }
+
+  /** Her memory as she reads it at the start of the day ('' when there is none yet). */
+  async memoryText() {
+    const mem = await this.readMemory()
+    return mem.items.length || Object.keys(mem.people).length ? renderMemory(mem, this.dayKey()) : ''
+  }
+
+  /** Summarise every finished day not yet in memory, then again after the next day change. */
+  scheduleMemory(delayMs) {
+    clearTimeout(this.memoryTimer)
+    this.memoryTimer = setTimeout(async () => {
+      try {
+        await this.catchUpMemory()
+      } catch (e) {
+        this.log('warn', `memory: ${e?.stack ?? e}`)
+      }
+      const now = new Date()
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), this.config.session.rolloverHour, MEMORY_DELAY_MINUTES)
+      if (next <= now) next.setDate(next.getDate() + 1)
+      this.scheduleMemory(next - now)
+    }, delayMs)
+  }
+
+  /** Days (before today) with a diary or QQ chats that memory has not taken in. At most the last 7. */
+  async pendingMemoryDays() {
+    const mem = await this.readMemory()
+    const today = this.dayKey()
+    const days = new Set()
+    for (const [sub, ext] of [['diary', '.md'], ['qq', '.jsonl']]) {
+      try {
+        for (const f of await readdir(join(this.stateDir, sub))) {
+          if (f.endsWith(ext)) days.add(f.slice(0, -ext.length))
+        }
+      } catch {
+        // nothing there yet
+      }
+    }
+    return [...days].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d < today && !mem.doneDays.includes(d)).sort().slice(-7)
+  }
+
+  async catchUpMemory() {
+    for (const day of await this.pendingMemoryDays()) await this.summariseDay(day)
+  }
+
+  /** One day into memory: a fresh summarising session reads the day and answers in JSON. */
+  async summariseDay(day) {
+    const read = async (path) => readFile(path, 'utf8').catch(() => '')
+    const diary = (await read(join(this.stateDir, 'diary', `${day}.md`))).trim()
+    const chats = formatChats((await read(join(this.stateDir, 'qq', `${day}.jsonl`)))
+      .split('\n').filter(Boolean).map((l) => {
+        try {
+          return JSON.parse(l)
+        } catch {
+          return undefined
+        }
+      }), this.config.qq.ownerName)
+    let mem = await this.readMemory()
+    if (diary || chats) {
+      const prompt = buildSummaryPrompt({
+        name: '她', day, diary, chats, memoryText: renderMemory(mem, day, { ids: true }),
+      })
+      const reply = parseReply(await this.runOnce(this.config.memory.preset, `记忆整理 · ${day}`, prompt))
+      const merged = mergeDay(mem, day, reply)
+      mem = merged.mem
+      await mkdir(join(this.stateDir, 'memory'), { recursive: true })
+      if (merged.added.length) {
+        await appendFile(join(this.stateDir, 'memory', 'archive.jsonl'), merged.added.map((i) => JSON.stringify(i)).join('\n') + '\n', 'utf8')
+      }
+      this.log('info', `memory: ${day} summarised (${merged.added.length} new)`)
+    } else {
+      mem = { ...mem, doneDays: [...mem.doneDays, day] }
+    }
+    mem = forget(mem, this.dayKey())
+    await mkdir(join(this.stateDir, 'memory'), { recursive: true })
+    const tmp = this.memoryPath + '.tmp'
+    await writeFile(tmp, JSON.stringify(mem, null, 1), 'utf8')
+    await rename(tmp, this.memoryPath)
+    await writeFile(join(this.stateDir, 'memory', 'memory.md'), `# 她的记忆（${this.dayKey()}）\n\n${renderMemory(mem, this.dayKey())}\n`, 'utf8')
+  }
+
+  /**
+   * Run one prompt in a new session of `preset` and return the text it answers
+   * (the session stays in DSH's list, so it can be read afterwards).
+   */
+  async runOnce(preset, title, text) {
+    const controller = this.ctx.get('sessionController')
+    if (controller === undefined) throw new Error('sessionController is unavailable')
+    const sessionId = `session-${randomUUID()}`
+    const cwd = join(this.stateDir, 'workspace')
+    await mkdir(cwd, { recursive: true })
+    await controller.create({ sessionId, cwd, agentPreset: preset })
+    const resolved = await controller.resolveAgent(sessionId)
+    if ('error' in resolved) throw resolved.error
+    const agent = resolved.agent
+    try {
+      this.ctx.get('sessionTitle')?.rename(agent.session, title)
+    } catch {
+      // a title is nice to have
+    }
+    const done = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiters.delete(agent.id)
+        reject(new Error(`${title}: no answer in time`))
+      }, MEMORY_TIMEOUT_MS)
+      this.waiters.set(agent.id, { texts: [], resolve: (t) => { clearTimeout(timer); resolve(t) }, reject })
+    })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'little-house-memory' } }))
+    await this.ctx.sessions.flush(agent.session)
+    return done
+  }
+
+  onSessionEvent(session, event) {
+    const w = this.waiters.get(session?.id)
+    if (!w) return
+    if (event.type === 'assistant/message') {
+      const t = (event.data?.message?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('')
+      if (t) w.texts.push(t)
+    } else if (event.type === 'turn/end') {
+      this.waiters.delete(session.id)
+      w.resolve(w.texts.join('\n'))
+    }
   }
 
   // ------------------------------------------------------------------ tool support
@@ -534,9 +740,9 @@ export default class LittleHouse extends Service {
    * @param {string} script
    * @param {AbortSignal} [signal]
    */
-  async doScript(script, signal) {
+  async doScript(script, signal, lookOnly = false) {
     const timeoutMs = (DO_CHUNK_SECONDS + 30) * 1000
-    let r = await this.house.request('POST', '/do', { script, wait: DO_CHUNK_SECONDS }, { timeoutMs, signal })
+    let r = await this.house.request('POST', '/do', { script, wait: DO_CHUNK_SECONDS, look_only: lookOnly }, { timeoutMs, signal })
     while (!r.done && !signal?.aborted) {
       r = await this.house.request('POST', '/report', { id: r.id, wait: DO_CHUNK_SECONDS }, { timeoutMs, signal })
     }

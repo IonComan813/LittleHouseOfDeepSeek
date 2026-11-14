@@ -57,3 +57,11 @@ test('formatLine', () => {
   assert.equal(formatLine({ group: '潮汐湾', name: '阿陆', text: '在吗' }), '[潮汐湾] 阿陆：在吗')
   assert.equal(formatLine({ group: '潮汐湾', name: '老板', isOwner: true, text: '在吗' }), '[潮汐湾] 老板（主人）：在吗')
 })
+
+test('voice, video and files are stopped, not passed on', () => {
+  const m = readMessage([{ type: 'record', data: { file: 'a.amr' } }, { type: 'file', data: { name: 'x.pdf' } }])
+  assert.equal(m.text, '')
+  assert.deepEqual(m.images, [])
+  assert.deepEqual(m.dropped, ['record', 'file'])
+  assert.equal(readMessage([{ type: 'text', data: { text: '听' } }, { type: 'record', data: {} }]).text, '听')
+})
