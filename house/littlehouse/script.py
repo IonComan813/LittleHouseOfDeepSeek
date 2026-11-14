@@ -150,7 +150,7 @@ def run(world: World, src: str, deadline: float | None = None) -> list[StepResul
 def format_results(results: list[StepResult]) -> str:
     lines = []
     for r in results:
-        mark = "✓" if r.ok else "✗"
+        mark = "？" if r.hint else "✓" if r.ok else "✗"
         when = f"  [{r.start}]" if r.start and r.start == r.end else f"  [{r.start}–{r.end}]" if r.start else ""
         lines.append(f"{mark} {r.call}{when}\n  {r.text.replace(chr(10), chr(10) + '  ')}")
     return "\n".join(lines)

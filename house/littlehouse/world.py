@@ -576,7 +576,7 @@ class World:
         if self.jobs:
             lines.append("灶台上：" + self.stove_text())
         lines += [
-            "这里能做：" + "、".join(room.hints),
+            "这里能做：" + "、".join(self.actions_here()) + "；随时能做：goto、look、examine、inventory、wait、say、help",
             "可去：" + "、".join(C.ROOMS[e].name for e in room.exits),
             f"你：{self.status_line()}",
             "背包：" + self.format_items(self.inventory),
@@ -585,6 +585,11 @@ class World:
         if free_line:
             lines.append(free_line)
         return "\n".join(lines)
+
+    def actions_here(self) -> list[str]:
+        from .actions import actions_here
+
+        return actions_here(self)
 
     def stove_text(self) -> str:
         now = self.clock.timestamp()

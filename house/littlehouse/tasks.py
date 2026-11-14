@@ -58,6 +58,7 @@ class StepResult:
     text: str
     start: str = ""  # HH:MM when the step began
     end: str = ""  # HH:MM when it finished
+    hint: bool = False  # written without its arguments: the text lists what can go in them
 
 
 @dataclass
@@ -218,7 +219,7 @@ class Runner:
     # ------------------------------------------------------------------ internals
 
     def _start(self, call: Call) -> None:
-        from .actions import ACTIONS, INTERNAL, process
+        from .actions import ACTIONS, INTERNAL, options, process
 
         w = self.w
         if self.deadline is not None and self.cursor >= self.deadline:
@@ -235,7 +236,10 @@ class Runner:
             if spec is None:
                 self._finish(False, f"没有「{call.name}」这个动作。用 help() 查看可用动作。")
                 return
-            if not (spec.min_args <= len(call.args) <= spec.max_args):
+            if len(call.args) < spec.min_args:  # "cook" alone: say what it can be used with
+                self._finish(True, options(w, call.name), hint=True)  # no side effects: go on
+                return
+            if len(call.args) > spec.max_args:
                 self._finish(False, f"用法：{spec.signature}")
                 return
             self.gen = process(w, call.name, call.args)
@@ -270,14 +274,14 @@ class Runner:
             _, _, facing = along(phase.points, length(phase.points))
             self.w.resident["facing"] = facing
 
-    def _finish(self, ok: bool, text: str) -> None:
+    def _finish(self, ok: bool, text: str, hint: bool = False) -> None:
         call = self.call
         self.gen = None
         self.phase = None
         self.call = None
         if call is not None and self.report is not None and not self.routine:
             text += self.w.take_kitchen_note()
-            self.report.results.append(StepResult(call.shown(), ok, text, _hm(self.call_start), _hm(self.cursor)))
+            self.report.results.append(StepResult(call.shown(), ok, text, _hm(self.call_start), _hm(self.cursor), hint))
         if not ok:
             self.queue.clear()
             if self.report is not None:

@@ -843,3 +843,72 @@ def _pet(w: World, ref: str = "") -> str:
     if p["affection"] >= 60:
         return f"{p['name']}翻过肚皮，发出呼噜呼噜的声音。"
     return f"{p['name']}眯起眼睛，蹭了蹭你的手。"
+
+
+# ---------------------------------------------------------------- what can I do here / with what
+
+
+ALWAYS = ("goto", "look", "examine", "inventory", "wait", "say", "help")
+
+
+def actions_here(w: World) -> list[str]:
+    """Action names that make sense where she is (beyond the ALWAYS ones)."""
+    room = C.ROOMS[w.location]
+    names = [h.split("(")[0] for h in room.hints]
+    if not room.outdoor:
+        names += ["call"] if w.pet["room"] != w.location else ["feed", "pet"]
+        if w.items_with_tag("furniture"):
+            names.append("place")
+        if any(o.kind == "decor" for o in w.here()):
+            names.append("stow")
+    if w.items_with_tag("food") or w.items_with_tag("dish"):
+        names.append("eat")
+    if w.items_with_tag("readable"):
+        names.append("read")
+    return list(dict.fromkeys(n for n in names if n in ACTIONS))
+
+
+def _bag(w: World, names: list[str], price: dict[str, int] | None = None) -> str:
+    return "、".join(f"{n}×{w.inventory[n]}" + (f"（{price[n]}{C.CURRENCY}）" if price else "") for n in names)
+
+
+def options(w: World, name: str) -> str:
+    """What to put in the brackets of ``name`` right now (shown when she writes it without arguments)."""
+    spec = ACTIONS[name]
+    head = f"{spec.signature}：{spec.help}\n"
+    here = C.ROOMS[w.location]
+    if name == "goto":
+        return head + f"可以去：{'、'.join(r.name for r in C.ROOMS.values() if r.id != w.location)}（你在{here.name}）"
+    if name == "examine":
+        things = [o.name for o in w.here()]
+        return head + f"这里有：{'、'.join(things) or '没什么特别的'}；也可以看背包里的东西：{w.format_items(w.inventory)}"
+    if name == "say":
+        return head + '例如 say("今天的海很安静")'
+    if name == "eat":
+        food = [n for n in w.inventory if C.ITEMS.get(n, C.Item(n)).fill > 0]
+        return head + (f"背包里能吃的：{_bag(w, food)}" if food else "背包里没有能直接吃的。去厨房 cook 一道菜吧。")
+    if name == "cook":
+        can = [d for d, r in C.RECIPES.items() if _recipe_status(w, r.ingredients)[0]]
+        lack = [f"{d}（缺{'、'.join(_recipe_status(w, r.ingredients)[2])}）" for d, r in C.RECIPES.items() if d not in can]
+        where = "" if w.location == "kitchen" else "（做饭要先 goto(厨房)）\n"
+        return (head + where + f"现在就能做：{'、'.join(f'{d}（{method_note(d)}）' for d in can) or '没有，原料不够'}\n"
+                f"还缺原料的：{'、'.join(lack)}\n例如 cook({can[0] if can else '白米饭'})。recipes() 有完整菜谱。")
+    if name == "place":
+        return head + (f"背包里的家具：{_bag(w, w.items_with_tag('furniture'))}" if w.items_with_tag("furniture") else "背包里没有家具，可以在客厅的订货目录上买。")
+    if name == "stow":
+        decor = [o.name for o in w.here() if o.kind == "decor"]
+        return head + (f"这里摆着：{'、'.join(decor)}" if decor else "这里没有摆你自己的家具。")
+    if name == "open":
+        return head + "在庭院里：open(邮箱) 看信，open(包裹) 拆门口的快递。"
+    if name == "order":
+        return head + "目录：" + "、".join(f"{n} {p}" for n, p in C.CATALOG.items()) + f"\n钱包：{w.money} {C.CURRENCY}。例如 order(五花肉, 1)"
+    if name == "sell":
+        goods = [n for n in w.inventory if n in C.SELL_PRICES]
+        return head + (f"背包里能卖的（收购价）：{_bag(w, goods, C.SELL_PRICES)}" if goods else "背包里暂时没有开拓署收的东西（作物、鱼、海边捡的东西）。")
+    if name == "plant":
+        seeds = w.items_with_tag("seed")
+        plots = [o.name for o in w.objects.values() if o.kind == "plot" and not o.state.get("seed")]
+        return head + (f"背包里的种子：{_bag(w, seeds)}；空着的菜地：{'、'.join(plots) or '没有'}" if seeds else "背包里没有种子，可以订购。")
+    if name == "read":
+        return head + (f"能读的：{_bag(w, w.items_with_tag('readable'))}" if w.items_with_tag("readable") else "背包里没有能读的东西。")
+    return head.rstrip()
