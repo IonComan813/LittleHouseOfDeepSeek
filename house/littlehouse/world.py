@@ -20,13 +20,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-import time
-
 from . import content as C
 from . import scene as S
 from .clock import SEASON_ZH, Clock, is_dark, period_of, season_of
 
-SAVE_VERSION = 3
+SAVE_VERSION = 4
 MAX_CATCHUP_HOURS = 24 * 14  # beyond two weeks away, older time is skipped
 
 # Rates are per game hour unless noted.
@@ -36,7 +34,6 @@ DIRT_PER_DAY = 6.0
 HUNGER_PER_HOUR = 5.0
 ENERGY_DRAIN_PER_HOUR = 3.0
 ENERGY_SLEEP_PER_HOUR = 12.0
-SLEEP_HOURS = range(0, 8)  # she is assumed asleep at night between wakes
 PET_HUNGER_PER_HOUR = 4.0
 PET_AFFECTION_DECAY_PER_DAY = 2.0
 BEACH_FINDS_PER_DAY = 2.0
@@ -101,6 +98,12 @@ def _days_due(last_day: str, now: datetime, hour: int, cap: int = 7) -> list[dat
     return out[-cap:]
 
 
+def night(hour: int) -> bool:
+    """Her night outside free time (asleep in bed)."""
+    start, end = C.NIGHT_HOURS
+    return hour >= start or hour < end
+
+
 def _weighted(rng: random.Random, table: list[tuple[Any, int]]) -> Any:
     total = sum(w for _, w in table)
     r = rng.uniform(0, total)
@@ -136,11 +139,13 @@ class World:
         self.last_evening_day = _day(now if now.hour >= C.PICKUP_HOUR else now - timedelta(days=1))
         self.events: list[Event] = []
         self.event_sink: Callable[[Event], None] | None = None
-        # Animation beats (in memory only): one per successful action, with the
-        # waypoints she walked and what she did, for the picture to show.
-        self.beats: list[dict[str, Any]] = []
-        self._beat_seq = 0
-        self.last_path: list[str] = []
+        # Pots on the stove that cook by themselves: {"dish", "method", "done", "outcome", "use", "ready"}.
+        self.jobs: list[dict[str, Any]] = []
+        self._kitchen_note = ""  # dishes taken off the stove while she was in the kitchen
+        from .tasks import Runner  # tasks imports this module
+
+        # Plays her actions in real time (in memory only: a restart drops a half-run script).
+        self.runner = Runner(self)
 
     # ================================================================== time
 
@@ -175,6 +180,14 @@ class World:
             t += step
         self.last_tick = now_ts
         self._daily(self.now())
+        self.update_jobs()
+
+    def update(self) -> None:
+        """Bring everything to the current game time: the world, the pots, her current action."""
+        self.tick()
+        self.runner.advance()
+        self.update_jobs()
+        self._routine()
 
     def _step(self, at: datetime, hours: float) -> None:
         days = hours / 24.0
@@ -196,11 +209,16 @@ class World:
             self.dirt[room] = min(100.0, self.dirt[room] + DIRT_PER_DAY * days)
 
         r = self.resident
+        free = self.free(at.timestamp())
         r["hunger"] = min(100.0, r["hunger"] + HUNGER_PER_HOUR * hours)
-        if at.hour in SLEEP_HOURS:
+        if not free:  # living her everyday life: she grabs a bite when hungry
+            r["hunger"] = min(r["hunger"], C.OFF_HOURS_HUNGER_CAP)
+        if not free and night(at.hour):
             r["energy"] = min(100.0, r["energy"] + ENERGY_SLEEP_PER_HOUR * hours)
         else:
             r["energy"] = max(0.0, r["energy"] - ENERGY_DRAIN_PER_HOUR * hours)
+            if not free:
+                r["energy"] = max(r["energy"], min(C.OFF_HOURS_ENERGY_FLOOR, r["energy"] + ENERGY_DRAIN_PER_HOUR * hours))
 
         p = self.pet
         p["hunger"] = min(100.0, p["hunger"] + PET_HUNGER_PER_HOUR * hours)
@@ -337,18 +355,6 @@ class World:
         self.resident["tile"] = [point[0], point[1]]
         self.resident["tile_room"] = self.location
 
-    def record_beat(self, action: str, rooms: list[str], start: tuple[float, float]) -> None:
-        self._beat_seq += 1
-        self.beats.append({
-            "seq": self._beat_seq,
-            "t": time.time(),
-            "action": action,
-            "room": self.location,
-            "focus": self.resident.get("focus"),
-            "waypoints": S.route(rooms, start, self.tile()),
-        })
-        del self.beats[:-100]
-
     def resolve_room(self, ref: str) -> C.Room:
         ref = str(ref).strip()
         for r in C.ROOMS.values():
@@ -374,6 +380,97 @@ class World:
             path.append(node)
             node = prev[node]
         return list(reversed(path))
+
+    # ================================================================== free time and the everyday routine
+
+    def free(self, ts: float | None = None) -> bool:
+        """Whether this is her free time (the agent is awake and choosing what to do)."""
+        ts = self.clock.timestamp() if ts is None else ts
+        return self.resident.get("free_until", 0.0) > ts
+
+    def set_free(self, until: float) -> str:
+        """Start (until > now) or end (until <= now) free time. Returns what she was doing before."""
+        before = self.resident.get("idle", "")
+        now = self.clock.timestamp()
+        self.resident["free_until"] = float(until) if until > now else 0.0
+        if self.runner.routine:
+            self.runner.interrupt("自由活动开始了")
+        if until > now:
+            self.resident["idle"] = ""
+        return before
+
+    def idle_activity(self, dt: datetime | None = None) -> C.Idle:
+        """What she does outside free time this hour (stable within the hour)."""
+        dt = dt or self.now()
+        if night(dt.hour):
+            return next(a for a in C.IDLE_ACTIVITIES if a.when == "night")
+        ok = [a for a in C.IDLE_ACTIVITIES if a.when == "day" or (a.when == "dry" and not self.raining(dt) and not is_dark(dt))]
+        rng = random.Random(dt.strftime("%Y-%m-%d %H") + "idle")
+        return _weighted(rng, [(a, a.weight) for a in ok])
+
+    def _routine(self) -> None:
+        if self.free() or self.runner.busy():
+            return
+        act = self.idle_activity()
+        if self.resident.get("idle") == act.text and self.location == act.room:
+            return
+        from .tasks import Call
+
+        self.runner.submit([Call("_settle", [act.room, act.focus, act.text])], routine=True)
+
+    def current_idle(self) -> C.Idle | None:
+        """The everyday thing she is settled into right now (None during free time or on her way)."""
+        if self.free() or self.runner.busy():
+            return None
+        text = self.resident.get("idle")
+        return next((a for a in C.IDLE_ACTIVITIES if a.text == text), None)
+
+    # ================================================================== the stove
+
+    def burners_free(self) -> int:
+        return C.STOVE_BURNERS - sum(1 for j in self.jobs if not j["ready"])
+
+    def start_job(self, dish: str, method: str, seconds: float, outcome: str, use: dict[str, int]) -> None:
+        self.jobs.append({"dish": dish, "method": method, "done": self.clock.timestamp() + seconds,
+                          "outcome": outcome, "use": dict(use), "ready": False})
+
+    def update_jobs(self) -> None:
+        now = self.clock.timestamp()
+        for j in self.jobs:
+            if not j["ready"] and j["done"] <= now:
+                j["ready"] = True
+                at = datetime.fromtimestamp(j["done"])
+                if j["outcome"] == "burnt":
+                    self.log("cook", f"灶台上的{j['dish']}{j['method']}过头，有点糊了", actor="world", at=at)
+                else:
+                    self.log("cook", f"灶台上的{j['dish']}{j['method']}好了", actor="world", at=at)
+        if self.location == "kitchen" and any(j["ready"] for j in self.jobs) and not self.runner.routine:
+            self._kitchen_note = self.collect_dishes()
+
+    def collect_dishes(self) -> str:
+        """In the kitchen, take finished dishes off the stove. Returns a note ('' if none)."""
+        if self.location != "kitchen":
+            return ""
+        ready = [j for j in self.jobs if j["ready"]]
+        if not ready:
+            return ""
+        self.jobs = [j for j in self.jobs if not j["ready"]]
+        got = []
+        for j in ready:
+            if j["outcome"] == "burnt":
+                self.add_item("焦掉的菜")
+                self.log("cook", f"{j['dish']}{j['method']}糊了，只盛出一份焦掉的菜")
+                got.append(f"{j['dish']}（糊了，成了一份焦掉的菜）")
+                continue
+            self.add_item(j["dish"])
+            extra = "，火候刚刚好，格外好吃" if j["outcome"] == "great" else ""
+            self.log("cook", f"用{self.format_items(j['use'])}{j['method']}了{j['dish']}{extra}")
+            got.append(j["dish"] + ("（火候刚刚好，香极了）" if extra else ""))
+        return f"（你把灶台上{'、'.join(got)}盛了出来。）"
+
+    def take_kitchen_note(self) -> str:
+        note, self._kitchen_note = getattr(self, "_kitchen_note", ""), ""
+        return note
 
     # ================================================================== inventory
 
@@ -476,13 +573,36 @@ class World:
         ]
         if not room.outdoor and self.dirt[self.location] >= 40:
             lines.append("地上：" + ("很脏了，该打扫了" if self.dirt[self.location] >= 70 else "有点灰"))
+        if self.jobs:
+            lines.append("灶台上：" + self.stove_text())
         lines += [
             "这里能做：" + "、".join(room.hints),
             "可去：" + "、".join(C.ROOMS[e].name for e in room.exits),
             f"你：{self.status_line()}",
             "背包：" + self.format_items(self.inventory),
         ]
+        free_line = self.free_time_text()
+        if free_line:
+            lines.append(free_line)
         return "\n".join(lines)
+
+    def stove_text(self) -> str:
+        now = self.clock.timestamp()
+        parts = []
+        for j in self.jobs:
+            if j["ready"]:
+                parts.append(f"{j['dish']}（{j['method']}好了，回厨房就能盛出来）")
+            else:
+                parts.append(f"{j['dish']}（正在{j['method']}，还要大约 {max(1, round((j['done'] - now) / 60))} 分钟）")
+        return "、".join(parts)
+
+    def free_time_text(self) -> str:
+        """'现在 08:12，自由活动还剩 28 分钟（到 08:40）' while free; '' otherwise."""
+        if not self.free():
+            return ""
+        until = self.resident["free_until"]
+        left = max(0, round((until - self.clock.timestamp()) / 60))
+        return f"现在 {self.now():%H:%M}，自由活动还剩 {left} 分钟（到 {datetime.fromtimestamp(until):%H:%M}）"
 
     # ================================================================== persistence
 
@@ -505,6 +625,7 @@ class World:
             "last_morning_day": self.last_morning_day,
             "last_evening_day": self.last_evening_day,
             "next_id": self._next_id,
+            "jobs": self.jobs,
         }
 
     def load_json(self, data: dict[str, Any]) -> None:
@@ -533,6 +654,7 @@ class World:
             if last:
                 self.last_morning_day = self.last_evening_day = last
             return
+        self.jobs = [dict(j) for j in data.get("jobs", [])]  # v4
         self.money = int(data.get("money", self.money))
         self.mailbox = list(data.get("mailbox", []))
         self.parcels = {k: int(v) for k, v in data.get("parcels", {}).items()}

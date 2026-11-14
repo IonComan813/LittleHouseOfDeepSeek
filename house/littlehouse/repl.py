@@ -3,6 +3,7 @@
 If a house server is already running on this state directory (for example the
 one DSH started), the REPL talks to it over HTTP so there is only ever one
 writer of the save file. Otherwise it loads the world itself and saves on exit.
+Actions take real time either way (a soup simmers for minutes).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from .script import ScriptError, format_results, run
+from .script import ScriptError
 from .server import House
 
 
@@ -35,7 +36,7 @@ def _remote(port: int, token: str) -> tuple[Callable[[], str], Callable[[str], s
         req.add_header("X-House-Token", token)
         if data is not None:
             req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=3700) as r:
             return json.loads(r.read())
 
     return (lambda: call("GET", "/look")["text"]), (lambda src: call("POST", "/do", {"script": src})["text"])
@@ -52,13 +53,12 @@ def repl(state_dir: Path) -> None:
 
         def look() -> str:
             with house.lock:
-                house.world.tick()
+                house.world.update()
                 return house.world.look()
 
         def do(src: str) -> str:
             try:
-                with house.lock:
-                    return format_results(run(house.world, src))
+                return house.do(src)["text"]
             except ScriptError as e:
                 return f"✗ 脚本错误：{e}"
 

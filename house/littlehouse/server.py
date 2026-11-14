@@ -22,10 +22,11 @@ from urllib.parse import parse_qs
 from . import __version__
 from .actions import help_text
 from .display import Display, pygame_available
-from .script import ScriptError, format_results, run
+from .script import ScriptError, format_report, parse
 from .world import Event, World
 
 MAX_BODY = 16 * 1024
+DEFAULT_WAIT = 15 * 60  # longest a /do request waits for its script (seconds); the script itself carries on
 
 
 class RenderUnavailable(Exception):
@@ -47,7 +48,7 @@ class House:
             self.world.load(self.save_path)
             self.world.events = self._recent_events()
             self.world.event_sink = self._append_event
-            self.world.tick()
+            self.world.update()
 
     def _recent_events(self, limit: int = 300) -> list[Event]:
         """Reload the tail of the event log so news survives a restart."""
@@ -76,7 +77,7 @@ class House:
         except ImportError as e:
             raise RenderUnavailable("画面需要 pygame-ce：pip install pygame-ce") from e
         with self.lock:
-            self.world.tick()
+            self.world.update()
             png = render.render_png(self.world, scale)
         try:
             (self.state_dir / "latest.png").write_bytes(png)
@@ -86,7 +87,59 @@ class House:
 
     def tick(self) -> None:
         with self.lock:
-            self.world.tick()
+            self.world.update()
+
+    def do(self, src: str, wait: float = DEFAULT_WAIT) -> dict[str, Any]:
+        """Start a script in real time and wait (at most ``wait`` real seconds)
+        for it to finish; the script keeps going after that and ``report(id)``
+        picks it up again. Raises ScriptError."""
+        calls = parse(src)
+        if not calls:
+            raise ScriptError("脚本是空的。试试 look()。")
+        w = self.world
+        with self.lock:
+            w.update()
+            free_until = w.resident.get("free_until", 0.0)
+            deadline = free_until if free_until > w.clock.timestamp() else None
+            rid = w.runner.submit(calls, deadline)
+        return self.report(rid, wait)
+
+    def report(self, rid: int, wait: float = 0.0) -> dict[str, Any]:
+        """What became of script ``rid``, waiting up to ``wait`` real seconds for it to finish."""
+        w = self.world
+        with self.lock:
+            report = w.runner.reports.get(rid)
+        if report is None:
+            return {"ok": False, "done": True, "id": rid, "text": "（找不到这段安排了。）", "results": []}
+        limit = time.monotonic() + max(0.0, wait)
+        while not report.done and time.monotonic() < limit:
+            time.sleep(0.2)
+            with self.lock:
+                w.update()
+        with self.lock:
+            w.update()
+            w.save(self.save_path)
+            return {
+                "ok": all(r.ok for r in report.results) and not report.stopped,
+                "done": report.done,
+                "id": rid,
+                "text": format_report(w, report),
+                "results": [asdict(r) for r in report.results],
+            }
+
+    def status(self) -> dict[str, Any]:
+        with self.lock:
+            w = self.world
+            w.update()
+            idle = w.current_idle()
+            return {
+                "free": w.free(),
+                "free_until": w.resident.get("free_until", 0.0),
+                "busy": w.runner.busy() and not w.runner.routine,
+                "doing": w.runner.doing() if not w.runner.routine else "",
+                "idle": idle.text if idle else w.resident.get("idle", ""),
+                "location": w.location,
+            }
 
 
 def make_handler(house: House, token: str, on_shutdown=None, display: Display | None = None):
@@ -148,16 +201,18 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
                 return
             if path == "/look":
                 with house.lock:
-                    house.world.tick()
+                    house.world.update()
                     text = house.world.look()
                 self._send(200, {"ok": True, "text": text})
+            elif path == "/status":
+                self._send(200, {"ok": True, **house.status()})
             elif path == "/help":
                 self._send(200, {"ok": True, "text": help_text()})
             elif path == "/window":
                 self._send(200, {"ok": True, "open": bool(display and display.is_open)})
             elif path == "/state":
                 with house.lock:
-                    house.world.tick()
+                    house.world.update()
                     state = house.world.to_json()
                 self._send(200, {"ok": True, "state": state})
             elif path == "/screenshot":
@@ -178,7 +233,7 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
                 query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
                 since = (query.get("since") or [""])[0]
                 with house.lock:
-                    house.world.tick()
+                    house.world.update()
                     news = [asdict(e) for e in house.world.news_since(since)][-20:]
                 self._send(200, {"ok": True, "news": news})
             elif path == "/events":
@@ -206,6 +261,40 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
                 display.request(bool(body.get("open", True)), body.get("scale"))
                 self._send(200, {"ok": True, "open": display.want_open})
                 return
+            if path == "/session":
+                body = self._body()
+                if body is None:
+                    return
+                try:
+                    until = float(body.get("free_until") or 0)
+                except (TypeError, ValueError):
+                    self._send(400, {"ok": False, "error": "free_until must be a number"})
+                    return
+                with house.lock:
+                    house.world.update()
+                    before = house.world.set_free(until)
+                    house.world.update()
+                    house.world.save(house.save_path)
+                self._send(200, {"ok": True, "before": before, **house.status()})
+                return
+            if path == "/report":
+                body = self._body()
+                if body is None:
+                    return
+                try:
+                    rid, wait = int(body.get("id", 0)), float(body.get("wait", 0))
+                except (TypeError, ValueError):
+                    self._send(400, {"ok": False, "error": "id and wait must be numbers"})
+                    return
+                self._send(200, house.report(rid, max(0.0, min(wait, 3600.0))))
+                return
+            if path == "/interrupt":
+                with house.lock:
+                    if house.world.runner.busy() and not house.world.runner.routine:
+                        house.world.runner.interrupt("停下了")
+                    house.world.update()
+                self._send(200, {"ok": True, **house.status()})
+                return
             if path == "/shutdown":
                 house.save()
                 self._send(200, {"ok": True})
@@ -223,17 +312,15 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
                 self._send(400, {"ok": False, "error": "script must be a string"})
                 return
             try:
-                with house.lock:
-                    results = run(house.world, script)
-                    house.world.save(house.save_path)
+                wait = float(body.get("wait", DEFAULT_WAIT))
+            except (TypeError, ValueError):
+                wait = DEFAULT_WAIT
+            try:
+                out = house.do(script, max(0.0, min(wait, 3600.0)))
             except ScriptError as e:
-                self._send(200, {"ok": False, "text": f"✗ 脚本错误：{e}", "results": []})
+                self._send(200, {"ok": False, "done": True, "text": f"✗ 脚本错误：{e}", "results": []})
                 return
-            self._send(200, {
-                "ok": all(r.ok for r in results),
-                "text": format_results(results),
-                "results": [asdict(r) for r in results],
-            })
+            self._send(200, out)
 
     return Handler
 
@@ -256,8 +343,15 @@ def serve(state_dir: Path, port: int = 8770, tick_seconds: float = 30.0, window:
     tmp.replace(discovery)
 
     def ticker() -> None:
+        # Keeps the world moving when nobody is asking: her current action, the
+        # pots on the stove, the everyday routine. Fast while she is doing
+        # something (so the picture and results are on time), slow otherwise.
         last_save = time.monotonic()
-        while not stop.wait(tick_seconds):
+        while True:
+            with house.lock:
+                busy = house.world.runner.busy() or bool(house.world.jobs)
+            if stop.wait(0.25 if busy else min(5.0, tick_seconds)):
+                break
             house.tick()
             if time.monotonic() - last_save >= 60:
                 house.save()

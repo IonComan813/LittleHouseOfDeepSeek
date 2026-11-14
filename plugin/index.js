@@ -1,9 +1,12 @@
 // dsh-little-house — host-level plugin.
 //
 // Provides the `littleHouse` service: it keeps the Python house process alive,
-// wakes the resident at random times into a dedicated "life" session (which
-// runs the `little-house` agent preset), and hands the agent-scoped tools in
-// ./agent-scope.js their house client and per-wake budget.
+// opens the resident's free-time slots on a daily schedule (breakfast, lunch,
+// dinner, maybe late evening) in a dedicated "life" session (which runs the
+// `little-house` agent preset), and hands the agent-scoped tools in
+// ./agent-scope.js their house client, budget and free-time window.
+//
+// Outside free time the house itself keeps her living her everyday life.
 
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
@@ -18,8 +21,9 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 import { lastEntry } from './lib/diary.js'
 import { HouseProcess } from './lib/house-process.js'
+import { DEFAULT_SLOTS } from './lib/slots.js'
 import {
-  buildWakeMessage, formatDuration, recapEvents, inQuietHours, localDay, localIso, msUntilQuietEnds, parseQuietHours, randomDelayMs,
+  buildNudge, buildWakeMessage, checkSlots, findSlot, formatDuration, hhmm, localDay, localIso, planDay, recapEvents,
 } from './lib/wake.js'
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
@@ -29,6 +33,14 @@ const DEFAULT_STATE_DIR = join(homedir(), '.dsh', 'little-house')
 export const name = 'little-house'
 
 const MAX_LOG_BYTES = 1024 * 1024
+const DO_CHUNK_SECONDS = 240 // one /do or /report request waits at most this long (Node's fetch gives up after 5 min)
+const NUDGE_DELAY_MS = 2 * 60_000
+const MIN_SLOT_MINUTES = 5
+
+/** Identifies one slot on one day, e.g. "2026-11-14 早上". */
+function slotKey(plan) {
+  return `${localDay(new Date(plan.start))} ${plan.name}`
+}
 
 export default class LittleHouse extends Service {
   static inject = ['agents', 'sessions']
@@ -45,12 +57,17 @@ export default class LittleHouse extends Service {
     }).default({}),
     wake: Schema.object({
       enabled: Schema.boolean().default(true),
-      minIntervalMinutes: Schema.number().min(1).default(90),
-      maxIntervalMinutes: Schema.number().min(1).default(240),
-      quietHours: Schema.string().default('00:30-08:00').description('这段时间不随机唤醒，格式 HH:MM-HH:MM'),
-      maxPerDay: Schema.natural().default(8),
-      firstWakeDelaySeconds: Schema.natural().default(120).description('DSH 启动后第一次唤醒前等待的秒数'),
-      maxActionsPerWake: Schema.natural().default(12).description('每次醒来最多调用多少次 house_do'),
+      slots: Schema.array(Schema.object({
+        name: Schema.string().required().description('时段名，会告诉她，例如「早上」'),
+        from: Schema.string().required().description('最早开始时间 HH:MM'),
+        to: Schema.string().required().description('最晚开始时间 HH:MM（和 from 相同 = 固定时间）'),
+        minutes: Schema.number().min(1).default(40).description('自由活动多少分钟'),
+        chance: Schema.number().min(0).max(1).default(1).description('这个时段当天出现的概率'),
+      })).default(DEFAULT_SLOTS).description('每天的自由活动时段：在 from–to 之间随机挑一个开始时间（每天投一次）'),
+      firstWakeDelaySeconds: Schema.natural().default(0).description('测试用：DSH 启动后过多少秒先来一次临时的自由活动（0 = 只按作息表）'),
+      testMinutes: Schema.number().min(1).default(40).description('测试用的临时自由活动有多少分钟'),
+      maxActionsPerWake: Schema.natural().default(40).description('每次自由活动最多调用多少次 house_do（安全上限；平时由时间约束）'),
+      maxNudges: Schema.natural().default(2).description('她提前停下但时间还没到时，最多再叫她几次'),
     }).default({}),
     session: Schema.object({
       agentPreset: Schema.string().default('little-house'),
@@ -75,11 +92,13 @@ export default class LittleHouse extends Service {
       autoStart: config.house.autoStart,
       log: (level, msg) => this.log(level, msg),
     })
-    this.quiet = parseQuietHours(config.wake.quietHours)
+    this.slots = checkSlots(config.wake.slots ?? DEFAULT_SLOTS)
     this.wakeTimer = undefined
     this.waking = false
-    /** Per-session budget for the current wake: sessionId -> { actions, max } */
+    /** Per-session budget for the current free time: sessionId -> { actions, max } */
     this.budgets = new Map()
+    /** Per-session free-time window: sessionId -> { until, name, ended, rested, nudges, timer } */
+    this.windows = new Map()
 
     ctx.effect(() => {
       const boot = setTimeout(() => {
@@ -88,6 +107,10 @@ export default class LittleHouse extends Service {
       return () => {
         clearTimeout(boot)
         clearTimeout(this.wakeTimer)
+        for (const w of this.windows.values()) {
+          clearTimeout(w.timer)
+          clearTimeout(w.nudgeTimer)
+        }
         void this.house.dispose()
       }
     })
@@ -115,6 +138,9 @@ export default class LittleHouse extends Service {
     try {
       await this.house.ensure()
       this.log('info', 'house is up')
+      // A free time left open by a previous run (DSH quit mid-slot) is over:
+      // nobody is driving her. If the slot is still running it reopens below.
+      await this.house.request('POST', '/session', { free_until: 0 })
       if (this.config.house.window) {
         try {
           await this.house.request('POST', '/window', { open: true })
@@ -125,7 +151,17 @@ export default class LittleHouse extends Service {
     } catch (e) {
       this.log('warn', `house not available yet: ${e.message}`)
     }
-    if (this.config.wake.enabled) this.schedule(this.config.wake.firstWakeDelaySeconds * 1000)
+    if (!this.config.wake.enabled) return
+    if (this.config.wake.firstWakeDelaySeconds > 0) {
+      const delay = this.config.wake.firstWakeDelaySeconds * 1000
+      this.log('info', `test free time in ${formatDuration(delay)}`)
+      setTimeout(() => {
+        const start = Date.now()
+        this.wake({ name: '临时', start, minutes: this.config.wake.testMinutes }, start + this.config.wake.testMinutes * 60_000)
+          .catch((e) => this.log('warn', `wake failed: ${e?.stack ?? e}`))
+      }, delay)
+    }
+    await this.schedule()
   }
 
   // ------------------------------------------------------------------ persona
@@ -161,82 +197,197 @@ export default class LittleHouse extends Service {
     await rename(tmp, this.statePath)
   }
 
-  // ------------------------------------------------------------------ wake loop
+  /** Today's and tomorrow's plans, rolled once per day and remembered across restarts. */
+  async plans(now = new Date()) {
+    const state = await this.readState()
+    const days = [now, new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)].map(localDay)
+    const kept = {}
+    let changed = false
+    for (const [i, day] of days.entries()) {
+      const old = state.plans?.[day]
+      if (old) kept[day] = old
+      else {
+        kept[day] = planDay(i === 0 ? now : new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), this.slots)
+        changed = true
+      }
+    }
+    if (changed || Object.keys(state.plans ?? {}).length !== days.length) {
+      await this.writeState({ ...state, plans: kept })
+      const today = kept[days[0]].map((p) => `${p.name} ${hhmm(p.start)}`).join('、') || '（无）'
+      this.log('info', `free time today: ${today}`)
+    }
+    return [...kept[days[0]], ...kept[days[1]]]
+  }
 
-  schedule(delayMs) {
+  // ------------------------------------------------------------------ schedule
+
+  async schedule() {
     clearTimeout(this.wakeTimer)
-    const next = new Date(Date.now() + delayMs)
-    this.log('info', `next wake at ${next.toLocaleString()}`)
+    const now = Date.now()
+    const done = new Set((await this.readState()).doneSlots ?? [])
+    const plans = (await this.plans(new Date(now))).filter((p) => !done.has(slotKey(p)))
+    const found = findSlot(now, plans, MIN_SLOT_MINUTES)
+    if (!found) {
+      // nothing left today or tomorrow (every slot rolled "no"): look again in a few hours
+      this.wakeTimer = setTimeout(() => void this.schedule(), 6 * 3600_000)
+      return
+    }
+    const delay = found.active ? 0 : found.plan.start - now
+    this.log('info', `next free time: ${found.plan.name} at ${new Date(now + delay).toLocaleString()} until ${hhmm(found.until)}`)
     this.wakeTimer = setTimeout(() => {
-      this.wake('random')
+      this.wake(found.plan, found.until, found.active)
         .catch((e) => this.log('warn', `wake failed: ${e?.stack ?? e}`))
-        .finally(() => this.schedule(randomDelayMs(this.config.wake.minIntervalMinutes, this.config.wake.maxIntervalMinutes)))
-    }, delayMs)
+        .finally(() => {
+          // the next slot is computed after this one is over
+          const wait = Math.max(1_000, found.until - Date.now() + 1_000)
+          this.wakeTimer = setTimeout(() => void this.schedule(), wait)
+        })
+    }, delay)
   }
 
   /**
-   * Wake the resident once. Returns a short status string.
-   * @param {'random' | 'manual'} reason
+   * Open one free-time slot. Returns a short status string.
+   * @param {{ name: string, start: number, minutes: number }} plan
+   * @param {number} until epoch ms when the slot ends
+   * @param {boolean} [resumed] the slot had already started (e.g. DSH started mid-slot)
    */
-  async wake(reason) {
+  async wake(plan, until, resumed = false) {
     if (this.waking) return 'busy: a wake is already being delivered'
     this.waking = true
     try {
       const now = new Date()
-      if (reason === 'random' && inQuietHours(now, this.quiet)) {
-        const wait = msUntilQuietEnds(now, this.quiet)
-        this.log('info', `quiet hours, skipping (ends in ${formatDuration(wait)})`)
-        return 'skipped: quiet hours'
-      }
       const state = await this.readState()
       const today = localDay(now)
-      const count = state.wakeDay === today ? (state.wakeCount ?? 0) : 0
-      if (reason === 'random' && count >= this.config.wake.maxPerDay) {
-        this.log('info', `daily wake limit reached (${count})`)
-        return 'skipped: daily limit'
-      }
-
-      const look = await this.house.request('GET', '/look')
       const agent = await this.lifeAgent(state, today)
       if (agent.status !== 'idle') {
-        this.log('info', `life session ${agent.id} is busy (${agent.status}); not waking`)
+        this.log('info', `life session ${agent.id} is busy (${agent.status}); skipping ${plan.name}`)
         return 'skipped: agent busy'
       }
 
-      const last = state.lastWakeAt ? new Date(state.lastWakeAt) : undefined
+      const session = await this.house.request('POST', '/session', { free_until: until / 1000 })
+      const look = await this.house.request('GET', '/look')
+      const lastWake = state.lastWakeAt ? new Date(state.lastWakeAt) : undefined
+      const lastRest = state.lastRestAt ? new Date(state.lastRestAt) : lastWake
       let news = []
       let recap = []
-      if (last) {
-        const since = encodeURIComponent(localIso(last))
-        try {
-          news = (await this.house.request('GET', `/news?since=${since}`)).news ?? []
-          recap = recapEvents((await this.house.request('GET', `/events?since=${since}&actor=resident`)).events ?? [])
-        } catch (e) {
-          this.log('warn', `could not read house news: ${e.message}`)
+      try {
+        if (lastRest) {
+          news = (await this.house.request('GET', `/news?since=${encodeURIComponent(localIso(lastRest))}`)).news ?? []
         }
+        if (lastWake) {
+          const since = encodeURIComponent(localIso(lastWake))
+          recap = recapEvents((await this.house.request('GET', `/events?since=${since}&actor=resident`)).events ?? [])
+        }
+      } catch (e) {
+        this.log('warn', `could not read house news: ${e.message}`)
       }
-      this.budgets.set(agent.id, { actions: 0, max: this.config.wake.maxActionsPerWake })
+
+      this.openWindow(agent, plan, until)
       const text = buildWakeMessage({
-        sinceText: last ? formatDuration(now.getTime() - last.getTime()) : undefined,
+        slotName: plan.name,
+        start: now.getTime(),
+        until,
+        before: session.before,
         recap,
         news: news.map((n) => n.text),
         lastNote: await this.lastDiaryNote(),
         look: look.text,
-        maxActions: this.config.wake.maxActionsPerWake,
+        resumed,
       })
-      agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'little-house' } }))
-      await this.ctx.sessions.flush(agent.session)
-
-      await this.writeState({ ...state, wakeDay: today, wakeCount: count + 1, lastWakeAt: now.toISOString() })
-      this.log('info', `woke the resident (${reason}) in session ${agent.id}`)
-      void agent.whenIdle().then(
-        () => this.log('info', `resident went back to rest (session ${agent.id})`),
-        (e) => this.log('warn', `life turn ended with error: ${e}`),
-      )
+      await this.send(agent, text)
+      await this.writeState({ ...(await this.readState()), lastWakeAt: now.toISOString() })
+      this.log('info', `free time (${plan.name}, until ${hhmm(until)}) in session ${agent.id}`)
       return `woke: ${agent.id}`
     } finally {
       this.waking = false
     }
+  }
+
+  async send(agent, text) {
+    agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'little-house' } }))
+    await this.ctx.sessions.flush(agent.session)
+    void agent.whenIdle().then(
+      () => this.onIdle(agent),
+      (e) => this.log('warn', `life turn ended with error: ${e}`),
+    )
+  }
+
+  // ------------------------------------------------------------------ the free-time window
+
+  openWindow(agent, plan, until) {
+    const old = this.windows.get(agent.id)
+    if (old) {
+      clearTimeout(old.timer)
+      clearTimeout(old.nudgeTimer)
+    }
+    const win = { name: plan.name, key: slotKey(plan), until, ended: false, rested: false, nudges: 0, timer: undefined, nudgeTimer: undefined }
+    win.timer = setTimeout(() => void this.endWindow(agent.id, 'time is up'), Math.max(0, until - Date.now()))
+    this.windows.set(agent.id, win)
+    this.budgets.set(agent.id, { actions: 0, max: this.config.wake.maxActionsPerWake })
+  }
+
+  /** The free-time window of a session, if one is open. */
+  window(sessionId) {
+    const w = this.windows.get(sessionId)
+    return w && !w.ended ? w : undefined
+  }
+
+  /** Whether this session had free time that is now over. */
+  windowOver(sessionId) {
+    const w = this.windows.get(sessionId)
+    return Boolean(w && w.ended)
+  }
+
+  minutesLeft(sessionId) {
+    const w = this.window(sessionId)
+    return w ? Math.max(0, Math.round((w.until - Date.now()) / 60_000)) : 0
+  }
+
+  async endWindow(sessionId, reason) {
+    const w = this.windows.get(sessionId)
+    if (!w || w.ended) return
+    w.ended = true
+    clearTimeout(w.timer)
+    clearTimeout(w.nudgeTimer)
+    try {
+      await this.house.request('POST', '/session', { free_until: 0 })
+    } catch (e) {
+      this.log('warn', `could not end free time in the house: ${e.message}`)
+    }
+    const state = await this.readState()
+    const doneSlots = [...(state.doneSlots ?? []), w.key].slice(-20)
+    await this.writeState({ ...state, lastRestAt: new Date().toISOString(), doneSlots })
+    this.log('info', `free time (${w.name}) over in session ${sessionId}: ${reason}`)
+  }
+
+  /** house_rest: she ends her free time herself. */
+  async rest(sessionId) {
+    const w = this.windows.get(sessionId)
+    if (w) w.rested = true
+    await this.endWindow(sessionId, 'she went to rest')
+  }
+
+  /** Her turn ended. If she stopped early without house_rest, look in on her a bit later. */
+  onIdle(agent) {
+    const w = this.window(agent.id)
+    if (!w || w.rested) return
+    if (w.nudges >= this.config.wake.maxNudges) {
+      this.log('info', `she stopped early; no more nudges (session ${agent.id})`)
+      return
+    }
+    clearTimeout(w.nudgeTimer)
+    w.nudgeTimer = setTimeout(async () => {
+      try {
+        const left = this.minutesLeft(agent.id)
+        if (!this.window(agent.id) || left < MIN_SLOT_MINUTES || agent.status !== 'idle') return
+        w.nudges += 1
+        const look = await this.house.request('GET', '/look')
+        await this.send(agent, buildNudge({ left, look: look.text }))
+        this.log('info', `nudged (${w.nudges}) with ${left} min left in session ${agent.id}`)
+      } catch (e) {
+        this.log('warn', `nudge failed: ${e?.message ?? e}`)
+      }
+    }, NUDGE_DELAY_MS)
   }
 
   /** The newest diary entry from any session, if any. */
@@ -270,21 +421,43 @@ export default class LittleHouse extends Service {
     } catch (e) {
       this.log('warn', `could not title the life session: ${e?.message ?? e}`)
     }
-    state.lifeSessionId = agent.id
-    state.lifeSessionDay = today
-    await this.writeState(state)
+    await this.writeState({ ...(await this.readState()), lifeSessionId: agent.id, lifeSessionDay: today })
     this.log('info', `created life session ${agent.id}`)
     return agent
   }
 
   // ------------------------------------------------------------------ tool support
 
-  /** Count one house_do call against the current wake's budget. */
+  /** Count one house_do call against the current free time's budget. */
   takeAction(sessionId) {
     const b = this.budgets.get(sessionId)
     if (!b) return { ok: true, left: Infinity }
     if (b.actions >= b.max) return { ok: false, left: 0 }
     b.actions += 1
     return { ok: true, left: b.max - b.actions }
+  }
+
+  /**
+   * Run a script in the house in real time, waiting for it in chunks (each
+   * HTTP request stays well under Node's five-minute limit). Stops the script
+   * if `signal` aborts (the turn was cancelled).
+   * @param {string} script
+   * @param {AbortSignal} [signal]
+   */
+  async doScript(script, signal) {
+    const timeoutMs = (DO_CHUNK_SECONDS + 30) * 1000
+    let r = await this.house.request('POST', '/do', { script, wait: DO_CHUNK_SECONDS }, { timeoutMs, signal })
+    while (!r.done && !signal?.aborted) {
+      r = await this.house.request('POST', '/report', { id: r.id, wait: DO_CHUNK_SECONDS }, { timeoutMs, signal })
+    }
+    return r
+  }
+
+  async interrupt() {
+    try {
+      await this.house.request('POST', '/interrupt', {})
+    } catch (e) {
+      this.log('warn', `could not interrupt: ${e.message}`)
+    }
   }
 }

@@ -5,6 +5,7 @@ Nothing is drawn while the window is closed: the still picture for
 DSH via config, from ``view.bat``, or ``POST /window``) starts an animated
 loop on the main thread; closing it stops all drawing while the house keeps
 running and she keeps living. The window is read-only: input is ignored.
+Each frame draws her as she is at that moment (``anim.current_pose``).
 """
 
 from __future__ import annotations
@@ -42,11 +43,10 @@ class Display:
     def run(self, stop: threading.Event) -> None:
         """Main-thread loop. Returns when ``stop`` is set."""
         screen = None
-        animator = None
         clock = None
         while not stop.is_set():
             if self.want_open and screen is None:
-                screen, animator, clock = self._open()
+                screen, clock = self._open()
             elif not self.want_open and screen is not None:
                 screen = self._close()
             if screen is None:
@@ -56,14 +56,14 @@ class Display:
             import pygame
 
             from . import render
+            from .anim import current_pose
 
             for event in pygame.event.get():  # read-only: only closing is honoured
                 if event.type == pygame.QUIT:
                     self.want_open = False
             now = time.time()
             with self.house.lock:
-                animator.feed(self.house.world.beats)
-                pose = animator.pose(self.house.world, now)
+                pose = current_pose(self.house.world)
                 frame = render.render(self.house.world, now, pose)
             pygame.transform.scale(frame, screen.get_size(), screen)
             pygame.display.flip()
@@ -77,16 +77,13 @@ class Display:
         import pygame
 
         from . import scene as S
-        from .anim import Animator
 
         pygame.display.init()  # video only: no audio device needed
         size = (S.COLS * S.TILE * self.scale, (S.ROWS * S.TILE + S.HUD_H) * self.scale)
         screen = pygame.display.set_mode(size)
         pygame.display.set_caption("潮汐湾小屋（只读）")
         self.is_open = True
-        with self.house.lock:
-            animator = Animator(self.house.world)
-        return screen, animator, pygame.time.Clock()
+        return screen, pygame.time.Clock()
 
     def _close(self):
         import pygame

@@ -11,15 +11,18 @@ Arguments are bare words (``厨房``, ``pot#1``), numbers, or quoted strings
 with no arguments. ``//`` starts a comment. Nothing is ever ``eval``'d.
 
 Execution stops at the first failing statement so the agent can re-plan.
+Since M3 the steps take real time: ``World.runner`` (tasks.py) plays them
+against the game clock. ``run()`` here fast-forwards the clock instead — for
+tests and for trying things out offline.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from datetime import datetime
 
-from .actions import ACTIONS, perform
-from .world import ActionError, World
+from .tasks import Call, Report, StepResult
+from .world import World
 
 MAX_STATEMENTS = 20
 MAX_SCRIPT_CHARS = 2000
@@ -29,13 +32,6 @@ _NUMBER = re.compile(r"-?\d+(\.\d+)?")
 
 class ScriptError(Exception):
     pass
-
-
-@dataclass
-class Call:
-    name: str
-    args: list[str | float]
-    line: int
 
 
 def _is_word_char(c: str) -> bool:
@@ -127,41 +123,53 @@ def parse(src: str) -> list[Call]:
     return calls
 
 
-@dataclass
-class StepResult:
-    call: str
-    ok: bool
-    text: str
+def run(world: World, src: str, deadline: float | None = None) -> list[StepResult]:
+    """Parse a script and play it to the end by fast-forwarding the game clock.
 
-
-def run(world: World, src: str) -> list[StepResult]:
-    """Parse and execute a script. Raises ScriptError for syntax problems."""
+    Raises ScriptError for syntax problems. (The house server plays scripts in
+    real time instead: see ``server.House.do``.)
+    """
     calls = parse(src)
     if not calls:
         raise ScriptError("脚本是空的。试试 look()。")
-    results: list[StepResult] = []
-    world.tick()
-    for c in calls:
-        shown = f"{c.name}({', '.join(str(a) for a in c.args)})"
-        spec = ACTIONS.get(c.name)
-        if spec is None:
-            results.append(StepResult(shown, False, f"没有「{c.name}」这个动作。用 help() 查看可用动作。"))
-            break
-        if not (spec.min_args <= len(c.args) <= spec.max_args):
-            results.append(StepResult(shown, False, f"用法：{spec.signature}"))
-            break
-        try:
-            text = perform(world, c.name, c.args)
-        except ActionError as e:
-            results.append(StepResult(shown, False, str(e)))
-            break
-        results.append(StepResult(shown, True, text))
-    return results
+    world.update()
+    rid = world.runner.submit(calls, deadline)
+    report = world.runner.reports[rid]
+    while not report.done:
+        nxt = world.runner.next_change()
+        if nxt is None:
+            world.runner.advance()
+            if not world.runner.busy():
+                break
+            continue
+        world.clock.advance(max(0.0, nxt - world.clock.timestamp()) + 0.001)
+        world.update()
+    return report.results
 
 
 def format_results(results: list[StepResult]) -> str:
     lines = []
     for r in results:
         mark = "✓" if r.ok else "✗"
-        lines.append(f"{mark} {r.call}\n  {r.text.replace(chr(10), chr(10) + '  ')}")
+        when = f"  [{r.start}]" if r.start and r.start == r.end else f"  [{r.start}–{r.end}]" if r.start else ""
+        lines.append(f"{mark} {r.call}{when}\n  {r.text.replace(chr(10), chr(10) + '  ')}")
+    return "\n".join(lines)
+
+
+def format_report(world: World, report: Report) -> str:
+    """The text the agent gets back for a script: steps, what happened meanwhile, the time."""
+    lines = [format_results(report.results)] if report.results else []
+    started = datetime.fromtimestamp(report.started).isoformat(timespec="seconds")
+    news = [e.text for e in world.events if e.actor == "world" and e.t >= started]
+    if news:
+        lines.append("期间：" + "；".join(dict.fromkeys(news)) + "。")
+    if not report.done:
+        left = report.total - len(report.results) - 1
+        more = f"，后面还有 {left} 步会接着做" if left > 0 else ""
+        lines.append(f"（还在进行：{world.runner.doing()}{more}。可以先做别的打算，用 look() 看看进度。）")
+    elif report.stopped:
+        lines.append(f"（{report.stopped}，后面的步骤没有执行。）")
+    tail = world.free_time_text() or f"现在 {world.now():%H:%M}"
+    if not (report.results and report.results[-1].text.endswith(tail)):  # look() already says it
+        lines.append(tail)
     return "\n".join(lines)

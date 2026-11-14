@@ -21,7 +21,7 @@ import pygame  # noqa: E402
 
 from . import content as C  # noqa: E402
 from . import scene as S  # noqa: E402
-from .anim import Pose, snapshot_pose  # noqa: E402
+from .anim import Pose, current_pose  # noqa: E402
 from .clock import season_of  # noqa: E402
 
 T = S.TILE
@@ -709,12 +709,12 @@ def _base(season: str) -> pygame.Surface:
 def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Surface:
     """Draw the whole world at 1x.
 
-    ``pose`` places the resident (the live window passes the animated one);
-    without it the still picture freezes her latest action. ``t`` animates
-    waves, rain and effects (seconds).
+    ``pose`` places the resident; by default it is what she is doing at this
+    very moment (``anim.current_pose``). ``t`` animates waves, rain and effects
+    (seconds).
     """
     t = time.time() if t is None else t
-    pose = pose or snapshot_pose(world, t)
+    pose = pose or current_pose(world)
     now = world.now()
     hour = now.hour
     weather = world.weather()
@@ -734,7 +734,7 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
                 surf.set_at((rng.randrange(fr.left, fr.right), rng.randrange(fr.top, fr.bottom)), (120, 100, 80))
 
     _, _, lamps = _darkness(hour)
-    recently_cooked = pose.effect == "steam"
+    recently_cooked = pose.effect == "steam" or any(not j["ready"] for j in getattr(world, "jobs", []))
 
     # placed furniture (rugs first so they lie under everything)
     decor = [o for o in world.objects.values() if o.kind == "decor"]
@@ -776,7 +776,7 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
         _find(surf, tx, ty, finds[fid].state.get("item", finds[fid].name))
 
     # the cat and the resident
-    asleep = hour < 6 and not pose.active  # in bed at night, unless she is up doing something
+    asleep = pose.asleep  # in bed: asleep at night, or resting
     pet = world.pet
     cx, cy = S.ANCHORS[pet["room"]]
     if pet["room"] == world.location and abs(cx - pose.x) < 1.5 and abs(cy - pose.y) < 1:

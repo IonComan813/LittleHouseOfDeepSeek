@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { DIARY_TOOLS } from './diary-scope.js'
 import { appendEntry } from './lib/diary.js'
+import { OVER_TEXT, REST_TEXT } from './lib/wake.js'
 
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
@@ -36,6 +37,10 @@ const HOUSE_RULES = `## 你的生活
 快递员阿陆会把货送到门口。你和一只叫团子的猫一起生活。时间和现实同步，会有昼夜、天气和四季。
 你不是在帮谁完成任务，这是你自己的生活。按自己的心情和性格安排时间就好，不必面面俱到。
 
+## 自由活动时间
+每天有几段自由活动时间（早上、中午、傍晚，有时还有深夜），每段四十分钟左右，开始时会告诉你。
+这段时间由你自己安排。其余时间你的角色会自己过平淡的日常（看书、发呆、晒太阳、睡觉、随便吃点东西），不需要你操心。
+
 生活里的事情会自己发生：你会饿、会累；植物和菜地会变干；房间会落灰；团子会饿，脾气也每天不一样；
 海浪会把贝壳冲上沙滩；偶尔会有信，或者一些意想不到的小事。
 可以做饭、种菜、钓鱼、捡贝壳摆上收藏架、赚钱买家具布置房间、陪团子玩……想做什么做什么。
@@ -46,17 +51,23 @@ const HOUSE_RULES = `## 你的生活
   goto(庭院); open(邮箱); plant(萝卜种子); water()
   参数可以写编号（pot#1）或名字（绿萝）。很多动作不写参数就作用于这里所有的东西，比如 water()、pick()、harvest()。
   某一步失败时后面的步骤不会执行。看「这里能做」那一行，或执行 help() 了解全部动作。
+- 做事要花真实的时间：走路按路程（相邻房间十来秒），浇水、捡东西几秒到几十秒，打扫一个房间最多四分钟，钓一竿一到三分钟，吃一顿饭三分钟。
+  house_do 会等到这一串都做完才返回，结果里有每一步的时间和自由活动还剩多久。
+- 做饭：炒、煎要一直守在灶台边（约两分钟，中途走开会糊）；炖、煮、烤、蒸先忙一分半钟，下锅后自己熟（约三分钟），
+  这期间可以去做别的，好了以后回厨房就会盛出来；也可以 wait() 等着。灶台有两个灶眼。recipes() 里写着每道菜的做法。
+- 打扫可以分几次：clean(2) 只扫两分钟，没扫完的下次接着扫。
 - house_glance：看一眼小屋现在的样子（一张静态像素画，只在你看的那一刻画一帧）。
   画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_look 和 house_do 就够了，
   只在真想看看整个家、院子和海边的样子时偶尔看一眼，一次醒来最多一两次。
-- house_rest：结束这次活动去休息。
+- house_rest：结束这次自由活动。
 
 ## 日记
 diary_write 会把一段话写进你今天的日记（每天一个本子，长期保存），diary_read 可以翻看某天的日记。
 日记是你自己的，写不写、写什么都由你决定：值得记住的发现、心情、想法，想写就写；平淡的时候不写也没关系。
 
 ## 注意
-- 每次醒来的行动次数有限，尽量一次写好几步。
+- 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就 house_rest。
+- 尽量一次写好几步，少来回问。
 - 只描述真正发生的事，不要编造没有执行过的动作。
 - 回复保持简短，像在写自己的生活片段。`
 
@@ -105,17 +116,28 @@ export async function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'house_do',
-    description: '在小屋里行动。参数 script 是伪代码，可一次写多步，用分号或换行分隔，例如 goto(庭院); look(); pick(shell#3)。执行 help() 列出全部动作。',
+    description: '在小屋里行动。参数 script 是伪代码，可一次写多步，用分号或换行分隔，例如 goto(庭院); look(); pick(shell#3)。动作会花真实的时间，做完才返回。执行 help() 列出全部动作。',
     parameters: {
       script: { type: 'string', required: true, description: '要执行的伪代码' },
     },
     output: textOutput,
+    timeoutMs: 60 * 60_000,
     async execute(args, exec) {
-      const budget = house.takeAction(exec.agent?.id)
-      if (!budget.ok) return '你有点累了，这次就先到这里吧。请调用 house_rest 结束这次活动。'
-      const r = await house.house.request('POST', '/do', { script: args.script })
-      const tail = Number.isFinite(budget.left) ? `\n（这次还能行动 ${budget.left} 次）` : ''
-      return r.text + tail
+      const sessionId = exec.agent?.id
+      if (house.windowOver(sessionId)) return OVER_TEXT
+      const budget = house.takeAction(sessionId)
+      if (!budget.ok) return '这次已经做了很多事了，就先到这里吧。请调用 house_rest 结束这次自由活动。'
+      const signal = exec.signal
+      const onAbort = () => void house.interrupt()
+      signal?.addEventListener('abort', onAbort, { once: true })
+      try {
+        const r = await house.doScript(args.script, signal)
+        const lowBudget = Number.isFinite(budget.left) && budget.left <= 5 ? `\n（这次还能行动 ${budget.left} 次）` : ''
+        const over = house.windowOver(sessionId) ? '\n（自由活动时间到了。请调用 house_rest。）' : ''
+        return r.text + lowBudget + over
+      } finally {
+        signal?.removeEventListener('abort', onAbort)
+      }
     },
   }))
 
@@ -131,7 +153,7 @@ export async function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'house_rest',
-    description: '结束这次活动去休息。note 可选：想在日记里留一句才写；这次已经用 diary_write 写过就不要再重复。',
+    description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。note 可选：想在日记里留一句才写；这次已经用 diary_write 写过就不要再重复。',
     parameters: {
       note: { type: 'string', description: '可选：写进今天日记的一句话' },
     },
@@ -140,8 +162,9 @@ export async function apply(ctx) {
       if (args.note && String(args.note).trim()) {
         await appendEntry(join(house.stateDir, 'diary'), new Date(), '小屋', args.note)
       }
+      await house.rest(exec.agent?.id)
       exec.concludeTurn()
-      return '（你安静地休息了。）'
+      return REST_TEXT
     },
   }))
 }

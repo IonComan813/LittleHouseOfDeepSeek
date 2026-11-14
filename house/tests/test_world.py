@@ -15,15 +15,22 @@ from littlehouse.server import House, make_handler
 from littlehouse.world import World
 
 
-def clock_at(y, m, d, h=10, mi=0) -> Clock:
-    c = Clock()
+def clock_at(y, m, d, h=10, mi=0, scale=1.0) -> Clock:
+    c = Clock(scale=scale)
     c.advance(datetime(y, m, d, h, mi).timestamp() - c.timestamp())
     return c
 
 
-def new_world(when=(2026, 10, 15, 10)) -> World:
-    """A world pinned to a known autumn morning (season-dependent rules)."""
-    return World(clock_at(*when), seed=1)
+def new_world(when=(2026, 10, 15, 10), free=True, scale=1.0) -> World:
+    """A world pinned to a known autumn morning (season-dependent rules).
+
+    ``free``: in her free time (the agent decides what she does) for the whole
+    test, so the off-hours routine does not walk her around between steps.
+    """
+    w = World(clock_at(*when, scale=scale), seed=1)
+    if free:
+        w.resident["free_until"] = w.clock.timestamp() + 365 * 86400
+    return w
 
 
 def ok(results):
@@ -31,8 +38,14 @@ def ok(results):
 
 
 def advance(w: World, hours: float) -> None:
+    """Skip time as if she had been living her everyday life meanwhile (outside
+    free time: she sleeps at night and grabs a bite), staying where she is."""
+    free_until = w.resident.get("free_until", 0.0)
+    w.resident["free_until"] = 0.0
     w.clock.advance(hours * 3600)
     w.tick()
+    if free_until:
+        w.resident["free_until"] = w.clock.timestamp() + 365 * 86400
 
 
 class ParseTest(unittest.TestCase):
@@ -104,7 +117,7 @@ class KitchenTest(unittest.TestCase):
     def test_cook_fish_by_tag(self):
         w = new_world()
         w.add_item("鲈鱼")
-        self.assertTrue(ok(run(w, "goto(厨房); cook(烤鱼)")))
+        self.assertTrue(ok(run(w, "goto(厨房); cook(烤鱼); wait()")))
         self.assertIn("烤鱼", w.inventory)
         self.assertNotIn("鲈鱼", w.inventory)
 
@@ -290,10 +303,11 @@ class HouseworkTest(unittest.TestCase):
     def test_rest_restores_energy_once_an_hour(self):
         w = new_world()
         w.resident["energy"] = 30
+        run(w, "rest()")  # ten minutes on the sofa (+15), minus a little everyday tiredness
+        self.assertAlmostEqual(w.resident["energy"], 45, delta=1)
+        e = w.resident["energy"]
         run(w, "rest()")
-        self.assertAlmostEqual(w.resident["energy"], 45, places=2)
-        run(w, "rest()")
-        self.assertAlmostEqual(w.resident["energy"], 45, places=2)
+        self.assertAlmostEqual(w.resident["energy"], e, delta=0.1)
 
 
 class CatTest(unittest.TestCase):
@@ -301,7 +315,7 @@ class CatTest(unittest.TestCase):
         w = new_world()
         w.pet["room"] = "bedroom"
         w.pet["hunger"] = 90
-        res = run(w, "call(); feed(); pet()")
+        res = run(w, "call(); feed(团子); pet(团子)")
         self.assertTrue(ok(res), res)
         self.assertEqual(w.pet["room"], "living_room")
         self.assertLess(w.pet["hunger"], 50)
@@ -372,7 +386,7 @@ class SaveTest(unittest.TestCase):
 class ServerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.house = House(Path(self.tmp.name), new_world())
+        self.house = House(Path(self.tmp.name), new_world(scale=200))
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.house, "secret"))
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()

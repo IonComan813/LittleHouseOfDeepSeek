@@ -1,60 +1,91 @@
-// Pure helpers for the random wake schedule. No host dependencies, so they can
-// be unit-tested with `node --test`.
+// Pure helpers for the daily free-time schedule and the messages around it.
+// No host dependencies, so they can be unit-tested with `node --test`.
+//
+// The day has a few free-time slots (by default breakfast, lunch, dinner and a
+// maybe-late-evening one). Each slot starts at a random minute inside its
+// window, rolled once per day and remembered, and lasts a fixed number of
+// minutes. Outside them the resident "just lives" (the house handles that).
+
+/** @typedef {{ name: string, from: string, to: string, minutes: number, chance?: number }} Slot */
+/** @typedef {{ name: string, start: number, minutes: number }} Plan  start = epoch ms */
 
 /**
- * Parse "HH:MM-HH:MM" into minutes-from-midnight. Empty string = no quiet hours.
- * @param {string} spec
- * @returns {{ start: number, end: number } | undefined}
+ * "HH:MM" -> minutes after midnight.
+ * @param {string} s
  */
-export function parseQuietHours(spec) {
-  if (!spec || !spec.trim()) return undefined
-  const m = /^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*$/.exec(spec)
-  if (!m) throw new Error(`quietHours must look like "23:30-07:30", got "${spec}"`)
-  const [h1, m1, h2, m2] = m.slice(1).map(Number)
-  if (h1 > 23 || h2 > 23 || m1 > 59 || m2 > 59) throw new Error(`quietHours out of range: "${spec}"`)
-  return { start: h1 * 60 + m1, end: h2 * 60 + m2 }
+export function parseClock(s) {
+  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(s))
+  if (!m) throw new Error(`time must look like "07:30", got "${s}"`)
+  const [h, mi] = [Number(m[1]), Number(m[2])]
+  if (h > 23 || mi > 59) throw new Error(`time out of range: "${s}"`)
+  return h * 60 + mi
 }
 
 /**
- * Whether `date` falls inside the quiet window (which may wrap midnight).
- * @param {Date} date
- * @param {{ start: number, end: number } | undefined} quiet
+ * Validate the slot list (throws on a bad entry).
+ * @param {Slot[]} slots
  */
-export function inQuietHours(date, quiet) {
-  if (!quiet || quiet.start === quiet.end) return false
-  const t = date.getHours() * 60 + date.getMinutes()
-  return quiet.start < quiet.end ? t >= quiet.start && t < quiet.end : t >= quiet.start || t < quiet.end
+export function checkSlots(slots) {
+  for (const s of slots) {
+    const from = parseClock(s.from)
+    const to = parseClock(s.to)
+    if (to < from) throw new Error(`slot "${s.name}": "to" (${s.to}) is before "from" (${s.from})`)
+    if (!(s.minutes > 0)) throw new Error(`slot "${s.name}": minutes must be positive`)
+  }
+  return slots
 }
 
 /**
- * Milliseconds until the quiet window ends (0 when not in it).
- * @param {Date} date
- * @param {{ start: number, end: number } | undefined} quiet
- */
-export function msUntilQuietEnds(date, quiet) {
-  if (!inQuietHours(date, quiet)) return 0
-  const t = date.getHours() * 60 + date.getMinutes()
-  let minutes = quiet.end - t
-  if (minutes <= 0) minutes += 24 * 60
-  return minutes * 60_000 - date.getSeconds() * 1000 - date.getMilliseconds()
-}
-
-/**
- * A random delay in [minMinutes, maxMinutes].
- * @param {number} minMinutes
- * @param {number} maxMinutes
+ * Roll one day's plan: a start time inside each slot's window, and whether a
+ * slot with `chance` < 1 happens at all.
+ * @param {Date} day any moment of that (local) day
+ * @param {Slot[]} slots
  * @param {() => number} [random]
+ * @returns {Plan[]} sorted by start
  */
-export function randomDelayMs(minMinutes, maxMinutes, random = Math.random) {
-  const lo = Math.max(0, Math.min(minMinutes, maxMinutes))
-  const hi = Math.max(minMinutes, maxMinutes)
-  return Math.round((lo + (hi - lo) * random()) * 60_000)
+export function planDay(day, slots, random = Math.random) {
+  const midnight = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+  const out = []
+  for (const s of slots) {
+    if (s.chance !== undefined && s.chance < 1 && random() >= s.chance) continue
+    const from = parseClock(s.from)
+    const to = parseClock(s.to)
+    const minute = from + Math.floor(random() * (to - from + 1))
+    const start = new Date(midnight)
+    start.setMinutes(minute)
+    out.push({ name: s.name, start: start.getTime(), minutes: s.minutes })
+  }
+  return out.sort((a, b) => a.start - b.start)
+}
+
+/**
+ * The slot to act on: one that is running now (with at least `minMinutes`
+ * left), else the next one to come.
+ * @param {number} now epoch ms
+ * @param {Plan[]} plans
+ * @param {number} [minMinutes]
+ * @returns {{ plan: Plan, until: number, active: boolean } | undefined}
+ */
+export function findSlot(now, plans, minMinutes = 5) {
+  const sorted = [...plans].sort((a, b) => a.start - b.start)
+  for (const p of sorted) {
+    const until = p.start + p.minutes * 60_000
+    if (p.start <= now && until - now >= minMinutes * 60_000) return { plan: p, until, active: true }
+    if (p.start > now) return { plan: p, until, active: false }
+  }
+  return undefined
 }
 
 /** Local calendar date "YYYY-MM-DD". @param {Date} d */
 export function localDay(d) {
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** Local "HH:MM". @param {Date | number} d */
+export function hhmm(d) {
+  const t = new Date(d)
+  return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
 }
 
 /** Human-friendly "3小时20分钟" for a duration. @param {number} ms */
@@ -90,17 +121,40 @@ export function recapEvents(events, max = 10) {
 }
 
 /**
- * The user message that wakes the resident.
- * @param {{ sinceText?: string, recap?: string[], news: string[], lastNote?: string, look: string, maxActions: number }} p
+ * The message that opens a free-time slot.
+ * @param {{ slotName: string, start: number, until: number, before?: string, recap?: string[],
+ *           news: string[], lastNote?: string, look: string, resumed?: boolean }} p
  */
-export function buildWakeMessage({ sinceText, recap = [], news, lastNote, look, maxActions }) {
-  const lines = [`（你醒了过来${sinceText ? `，距离上次活动过了${sinceText}` : ''}。）`]
-  if (recap.length) lines.push('上次醒着的时候，你' + recap.join('；') + '。')
+export function buildWakeMessage({ slotName, start, until, before, recap = [], news, lastNote, look, resumed = false }) {
+  const minutes = Math.round((until - start) / 60_000)
+  const lines = [resumed
+    ? `（自由活动时间继续：${slotName}，现在 ${hhmm(start)}，到 ${hhmm(until)} 结束，还有 ${minutes} 分钟。）`
+    : `（自由活动时间到了：${slotName}，${hhmm(start)}–${hhmm(until)}，共 ${minutes} 分钟。）`]
+  if (before) lines.push(`在这之前，你一直在过平淡的日常——刚才在${before.replace(/^在/, '')}。`)
+  if (recap.length) lines.push('上次自由活动的时候，你' + recap.join('；') + '。')
   if (lastNote) lines.push(`日记里最近的一段：${lastNote}`)
   const uniqueNews = [...new Set(news)].slice(-8)
-  if (uniqueNews.length) lines.push('你不在的时候：' + uniqueNews.join('；') + '。')
+  if (uniqueNews.length) lines.push('这段时间里：' + uniqueNews.join('；') + '。')
   lines.push('', look, '')
-  lines.push(`接下来是你的自由时间：想做什么都可以，用 house_do 行动（这次最多 ${maxActions} 次）。`)
-  lines.push('想结束的时候调用 house_rest 去休息。')
+  lines.push('这段时间由你自己安排，想做什么都可以，用 house_do 行动。动作会花真实的时间（走路、做饭、打扫……），'
+    + 'house_do 会等到做完才返回；炖、煮、烤、蒸的菜下锅以后可以先去做别的。')
+  lines.push('时间到了，或者你想结束的时候，调用 house_rest。之后你的角色会自己去做一些日常事务，直到下一次自由活动。')
   return lines.join('\n')
 }
+
+/**
+ * The nudge sent when she ended her turn early but free time is not over.
+ * @param {{ left: number, look: string }} p left = minutes
+ */
+export function buildNudge({ left, look }) {
+  return [
+    `（过了一会儿。自由活动还剩 ${left} 分钟。）`,
+    '',
+    look,
+    '',
+    '想继续做点什么就接着用 house_do；不想了就调用 house_rest。',
+  ].join('\n')
+}
+
+export const REST_TEXT = '（这次自由活动结束了。接下来你的角色会自己去做一些日常事务，直到下一次自由活动时间。）'
+export const OVER_TEXT = '自由活动时间已经结束了，现在不能再行动。请调用 house_rest。'

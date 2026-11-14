@@ -1,9 +1,22 @@
 import unittest
 
+from littlehouse import content as C
 from littlehouse import scene as S
-from littlehouse.anim import EFFECT_SECONDS, Animator, snapshot_pose
-from littlehouse.script import run
-from littlehouse.world import World
+from littlehouse.anim import current_pose
+from littlehouse.script import parse
+
+from test_world import new_world
+
+
+def start(w, src):
+    """Submit a script in real time (no fast-forward)."""
+    w.update()
+    return w.runner.submit(parse(src))
+
+
+def step(w, seconds):
+    w.clock.advance(seconds)
+    w.update()
 
 
 class RouteTest(unittest.TestCase):
@@ -14,75 +27,48 @@ class RouteTest(unittest.TestCase):
         self.assertIn((19.5, 13), pts)
         self.assertEqual(pts[-1], (20, 16))
 
-    def test_beats_record_walks(self):
-        w = World(seed=1)
-        run(w, "goto(沙滩); fish()")
-        goto, fish = w.beats[-2:]
-        self.assertEqual(goto["action"], "goto")
-        self.assertGreater(len(goto["waypoints"]), 3)
-        self.assertEqual(fish["focus"], "rock")
-        self.assertEqual(w.tile(), tuple(map(float, fish["waypoints"][-1])))
-
-    def test_failed_action_records_no_beat(self):
-        w = World(seed=1)
-        n = len(w.beats)
-        run(w, "water(沙发)")
-        self.assertEqual(len(w.beats), n)
-
 
 class PoseTest(unittest.TestCase):
-    def test_still_picture_freezes_latest_action(self):
-        w = World(seed=1)
-        run(w, "goto(庭院); water()")
-        pose = snapshot_pose(w)
-        self.assertEqual(pose.effect, "water")
-        self.assertTrue(pose.active)
-        self.assertEqual((pose.x, pose.y), w.tile())
+    def test_walking_is_drawn_where_she_really_is(self):
+        w = new_world()
+        start(w, "goto(沙滩)")
+        p0 = current_pose(w)
+        self.assertTrue(p0.walking)
+        step(w, 3)
+        p1 = current_pose(w)
+        self.assertTrue(p1.walking)
+        self.assertAlmostEqual(abs(p1.y - p0.y) + abs(p1.x - p0.x), 3 * C.WALK_TILES_PER_SEC, delta=0.6)
+        self.assertEqual(w.location, "living_room")  # still on her way
+        step(w, 60)
+        p2 = current_pose(w)
+        self.assertFalse(p2.walking)
+        self.assertEqual(w.location, "beach")
+        self.assertEqual((p2.x, p2.y), w.tile())
 
-    def test_old_actions_are_not_shown(self):
-        w = World(seed=1)
-        run(w, "goto(庭院); water()")
-        pose = snapshot_pose(w, now=w.beats[-1]["t"] + 3600)
-        self.assertIsNone(pose.effect)
+    def test_working_shows_the_effect_while_it_lasts(self):
+        w = new_world()
+        start(w, "goto(厨房); cook(煎蛋)")
+        step(w, 30)  # past the walk: frying at the stove
+        p = current_pose(w)
+        self.assertEqual(p.effect, "steam")
+        self.assertEqual(p.focus, "stove")
+        step(w, 200)
+        self.assertIsNone(current_pose(w).effect)
+        self.assertIn("煎蛋", w.inventory)
 
-    def test_animator_walks_then_acts_then_rests(self):
-        w = World(seed=1)
-        anim = Animator(w)
-        run(w, "goto(厨房); cook(煎蛋)")
-        anim.feed(w.beats)
-        t0 = 100.0
-        anim.pose(w, t0)
-        p = anim.pose(w, t0 + 0.3)
-        self.assertTrue(p.walking)
-        seen = set()
-        t = t0
-        while t < t0 + 30:
-            p = anim.pose(w, t)
-            seen.add(p.effect)
-            t += 0.2
-        self.assertIn("steam", seen)
-        self.assertFalse(p.walking)
-        self.assertEqual((p.x, p.y), w.tile())
+    def test_resting_in_bed_is_drawn_asleep(self):
+        w = new_world()
+        start(w, "goto(卧室); rest(床)")
+        step(w, 60)
+        self.assertTrue(current_pose(w).asleep)
 
-    def test_backlog_plays_faster(self):
-        w = World(seed=1)
-        anim = Animator(w)
-        for _ in range(5):
-            run(w, "goto(沙滩); goto(卧室)")
-        anim.feed(w.beats)
-        t, t0 = 0.0, 0.0
-        while anim.queue or anim.current is not None:
-            anim.pose(w, t0 + t)
-            t += 0.1
-            self.assertLess(t, 40)
-        self.assertLess(t, 15)
-
-    def test_animator_does_not_replay_history(self):
-        w = World(seed=1)
-        run(w, "goto(沙滩)")
-        anim = Animator(w)
-        anim.feed(w.beats)
-        self.assertFalse(anim.queue)
+    def test_outside_free_time_she_sleeps_at_night(self):
+        w = new_world(when=(2026, 10, 15, 2), free=False)
+        for _ in range(10):
+            step(w, 10)
+        self.assertEqual(w.location, "bedroom")
+        self.assertEqual(w.resident["idle"], "在床上睡觉")
+        self.assertTrue(current_pose(w).asleep)
 
 
 if __name__ == "__main__":

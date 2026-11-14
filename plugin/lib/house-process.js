@@ -111,14 +111,16 @@ export class HouseProcess {
    * @param {'GET' | 'POST'} method
    * @param {string} path
    * @param {unknown} [body]
+   * @param {{ timeoutMs?: number, signal?: AbortSignal }} [options]
    */
-  async request(method, path, body) {
+  async request(method, path, body, options = {}) {
     const ep = await this.ensure()
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS)
     const res = await fetch(`http://127.0.0.1:${ep.port}${path}`, {
       method,
       headers: { 'X-House-Token': ep.token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: options.signal ? AbortSignal.any([timeout, options.signal]) : timeout,
     })
     const data = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }))
     if (res.status === 401) this.endpoint = undefined // token rotated by a restart: rediscover next time

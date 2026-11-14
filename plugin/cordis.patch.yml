@@ -1,6 +1,6 @@
 # dsh-little-house bundle layer.
 #
-# 1. `little-house`: the host-level service (house process + random wake).
+# 1. `little-house`: the host-level service (house process + daily free-time slots).
 # 2. `preset-little-house`: the agent preset the life session runs. It has no
 #    shell, file or web tools on purpose — the resident can only act through
 #    the house_* and diary_* tools.
@@ -13,12 +13,14 @@
       name: dsh-little-house
       config:
         wake:
-          minIntervalMinutes: 90
-          maxIntervalMinutes: 240
-          quietHours: '00:30-08:00'
-          maxPerDay: 8
-          firstWakeDelaySeconds: 120
-          maxActionsPerWake: 12
+          # Free time each day: starts at a random minute between from and to
+          # (rolled once a day), lasts `minutes`. `chance` < 1 = only on some days.
+          slots:
+            - { name: 早上, from: '07:30', to: '08:30', minutes: 40 }
+            - { name: 中午, from: '11:30', to: '12:30', minutes: 40 }
+            - { name: 傍晚, from: '17:30', to: '18:30', minutes: 40 }
+            - { name: 深夜, from: '21:30', to: '22:30', minutes: 40, chance: 0.5 }
+          maxActionsPerWake: 40
 
     - id: preset-little-house
       name: '@deepseek-ai/dsh-agent-preset'

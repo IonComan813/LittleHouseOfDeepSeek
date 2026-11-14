@@ -296,3 +296,76 @@ PET_TEMPERS: list[tuple[str, int]] = [("黏人", 30), ("平常", 40), ("傲娇",
 START_INVENTORY = {"鱼竿": 1, "鸡蛋": 2, "大米": 2, "猫粮": 3, "萝卜种子": 2, "菠菜种子": 1}
 PET_NAME = "团子"
 INDOOR_ROOMS = ("living_room", "kitchen", "bedroom")
+
+# --------------------------------------------------------------------------- time (M3)
+#
+# Actions take real time (game time is 1:1 with reality). A round of "the usual"
+# — feed the cat, put a soup on, water and harvest, eat, sweep, a walk on the
+# beach with a couple of casts — is meant to fill about twenty minutes, which
+# leaves the rest of a 40-minute free-time slot for other things.
+
+WALK_TILES_PER_SEC = 1.0  # the picture walks at exactly this speed; ~10 s between neighbouring rooms
+
+# Seconds she is busy with a simple action (walking to the spot comes on top).
+# A tuple is (first target, each further target) for actions that work on several things at once.
+ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
+    "look": 0, "help": 0, "inventory": 0, "recipes": 0,
+    "examine": 5, "say": 5, "call": 10,
+    "catalog": 30, "order": 20, "sell": 20,
+    "open": 30, "read": 30, "display": 30,
+    "feed": 30, "pet": 30,
+    "water": (15, 10), "pick": (10, 8), "harvest": (40, 30),
+    "plant": 60, "place": 60, "stow": 40,
+}
+EAT_SECONDS = {"dish": 180, "other": 60}  # a proper meal takes a while; a snack is quick
+
+# How each dish is cooked. "busy" = she has to stay at the stove the whole time
+# (stir-frying); "prep" then "simmer" = a minute or two of work, after which the
+# pot looks after itself and she can go and do something else.
+COOK_METHODS: dict[str, dict[str, float]] = {
+    "炒": {"busy": 120}, "煎": {"busy": 120}, "拌": {"busy": 60}, "调": {"busy": 45},
+    "炖": {"prep": 90, "simmer": 180}, "煮": {"prep": 90, "simmer": 180},
+    "烤": {"prep": 90, "simmer": 180}, "蒸": {"prep": 90, "simmer": 180},
+}
+RECIPE_METHOD: dict[str, str] = {
+    "番茄炒蛋": "炒", "白米饭": "煮", "煎蛋": "煎", "烤鱼": "烤", "蔬菜沙拉": "拌",
+    "萝卜汤": "炖", "南瓜粥": "煮", "草莓牛奶": "调", "菠菜蛋饼": "煎", "鱼汤": "炖",
+}
+STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"])
+
+CLEAN_DIRT_PER_MINUTE = 25.0  # a filthy room (100) takes four minutes; progress is kept if she stops
+REST_SECONDS = 600
+FISH_SECONDS = (60, 180)  # each cast waits this long (random) for a bite
+MAX_WAIT_MINUTES = 30
+
+# --------------------------------------------------------------------------- outside free time
+#
+# Free time is when the agent is awake and choosing what to do. The rest of the
+# day she "just lives": the house picks one of these each hour (stable within
+# the hour), walks her there, and the picture shows it. ``when``: night (she is
+# asleep), day, dry (daytime and not raining).
+
+
+@dataclass(frozen=True)
+class Idle:
+    text: str
+    room: str
+    focus: str | None
+    effect: str | None
+    when: str
+    weight: int = 1
+
+
+IDLE_ACTIVITIES: tuple[Idle, ...] = (
+    Idle("在床上睡觉", "bedroom", "bed", None, "night"),
+    Idle("窝在沙发上看书", "living_room", "sofa", "paper", "day", 3),
+    Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 2),
+    Idle("在厨房的木桌边慢慢喝茶", "kitchen", "table", "eat", "day", 2),
+    Idle("在书架前翻书", "bedroom", "bookshelf", "paper", "day", 2),
+    Idle("在床上睡午觉", "bedroom", "bed", "zzz", "day", 1),
+    Idle("在院子里的树下晒太阳", "yard", "tree", None, "dry", 2),
+    Idle("在沙滩上散步", "beach", None, "look", "dry", 2),
+)
+NIGHT_HOURS = (23, 7)  # asleep from 23:00 to 07:00 outside free time
+OFF_HOURS_HUNGER_CAP = 60.0  # she grabs a bite on her own; still peckish when free time starts
+OFF_HOURS_ENERGY_FLOOR = 35.0
