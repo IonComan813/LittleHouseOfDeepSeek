@@ -46,8 +46,8 @@ python scripts\install.py
 │   · plugin.log                                                              │
 │                                                                            │
 │  preset `little-house`（cordis.patch.yml）— 生活会话只挂这些行：             │
-│   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、house_look /       │
-│     house_do / house_rest / house_glance；全局工具 deny + tools.guard 白名单   │
+│   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、house_surroundings /       │
+│     house_do / end_free_time / house_render；全局工具 deny + tools.guard 白名单   │
 │   · diary-scope.js：diary_write / diary_read（独立行，M5 直接挂进 QQ preset）  │
 │   · compaction                                                              │
 └───────────────┬────────────────────────────────────────────────────────────┘
@@ -76,7 +76,7 @@ python scripts\install.py
   开拓署每周一送补给，快递员阿陆每天送货、傍晚收走寄售箱。很多结果带随机性
   （打扫时的发现、做饭失手、收成浮动、每天的小事件）。
 - **画面是只读的，渲染只有一个进程。** 画的就是此刻的真实状态（走到半路、在灶台边、窝在沙发上看书）。
-  `house_glance` 只渲染一帧给她看（约 600 token）；
+  `house_render` 只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
 - **日记由她自己决定。** 每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），标注来源（小屋 / 以后的 QQ）。
 - **成本。** DeepSeek-V4.1-Flash 实测一次唤醒约 1.2～2 万 token，约八成是缓存命中。

@@ -101,12 +101,47 @@ class KitchenTest(unittest.TestCase):
     def test_cook_and_eat(self):
         w = new_world()
         w.resident["hunger"] = 80
-        res = run(w, "goto(厨房); recipes(); cook(煎蛋); eat(煎蛋)")
+        res = run(w, "goto(厨房); recipes(); cook(荷包蛋); eat(荷包蛋)")
         self.assertTrue(ok(res), res)
-        self.assertIn("✓ 煎蛋", res[1].text)
-        self.assertEqual(w.inventory["鸡蛋"], 1)
+        self.assertIn("✓ 荷包蛋", res[1].text)
+        self.assertEqual(w.inventory["鸡蛋"], C.START_INVENTORY["鸡蛋"] - 1)
         self.assertLess(w.resident["hunger"], 80)
-        self.assertNotIn("煎蛋", w.inventory)
+        self.assertNotIn("荷包蛋", w.inventory)
+
+    def test_menu(self):
+        for dish in ("白米饭", "荷包蛋", "红烧肉"):
+            self.assertIn(dish, C.RECIPES)
+        self.assertGreaterEqual(len(C.RECIPES), 12)
+        rice = C.RECIPES["白米饭"]
+        self.assertLessEqual(rice.work, 60)  # wash the rice, put it on, walk away
+        self.assertGreater(rice.wait, 0)
+
+    def test_every_ingredient_can_be_had(self):
+        fish = {n for n, it in C.ITEMS.items() if "fish" in it.tags}
+        grown = {c.name for c in C.CROPS.values()}
+        cooked = set(C.RECIPES)
+        for r in C.RECIPES.values():
+            for k in r.ingredients:
+                if k == "#fish":
+                    continue
+                self.assertTrue(k in C.CATALOG or k in grown or k in fish or k in cooked, f"{r.dish}: {k}")
+        for seed in C.CROPS:
+            self.assertIn(seed, C.CATALOG)
+
+    def test_prices_are_about_yuan(self):
+        self.assertEqual(C.CATALOG["鸡蛋"], 1)
+        self.assertLess(C.CATALOG["大米"], 10)
+        for name, price in C.SELL_PRICES.items():
+            if name in C.CATALOG:
+                self.assertLess(price, C.CATALOG[name], name)  # the bureau buys below retail
+
+    def test_fried_rice_needs_cooked_rice(self):
+        w = new_world()
+        w.add_item("葱")
+        res = run(w, "goto(厨房); cook(白米饭); wait(); cook(蛋炒饭)")
+        self.assertTrue(ok(res), res)
+        self.assertTrue("蛋炒饭" in w.inventory or "焦掉的菜" in w.inventory)  # a dish can burn now and then
+        self.assertNotIn("白米饭", w.inventory)
 
     def test_missing_ingredients(self):
         w = new_world()
@@ -117,12 +152,12 @@ class KitchenTest(unittest.TestCase):
     def test_cook_fish_by_tag(self):
         w = new_world()
         w.add_item("鲈鱼")
-        self.assertTrue(ok(run(w, "goto(厨房); cook(烤鱼); wait()")))
-        self.assertIn("烤鱼", w.inventory)
+        self.assertTrue(ok(run(w, "goto(厨房); cook(红烧鱼); wait()")))
+        self.assertIn("红烧鱼", w.inventory)
         self.assertNotIn("鲈鱼", w.inventory)
 
     def test_cook_only_in_kitchen(self):
-        self.assertFalse(run(new_world(), "cook(煎蛋)")[0].ok)
+        self.assertFalse(run(new_world(), "cook(荷包蛋)")[0].ok)
 
     def test_cannot_eat_raw_rice(self):
         self.assertFalse(run(new_world(), "eat(大米)")[0].ok)
@@ -319,7 +354,7 @@ class CatTest(unittest.TestCase):
         self.assertTrue(ok(res), res)
         self.assertEqual(w.pet["room"], "living_room")
         self.assertLess(w.pet["hunger"], 50)
-        self.assertEqual(w.inventory["猫粮"], 2)
+        self.assertEqual(w.inventory["猫粮"], C.START_INVENTORY["猫粮"] - 1)
 
     def test_cat_gets_hungry_and_news(self):
         w = new_world()

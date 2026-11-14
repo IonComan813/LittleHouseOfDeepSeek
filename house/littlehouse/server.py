@@ -133,6 +133,7 @@ class House:
             w.update()
             idle = w.current_idle()
             return {
+                "now": w.clock.timestamp(),  # the game clock: the one time everybody tells her
                 "free": w.free(),
                 "free_until": w.resident.get("free_until", 0.0),
                 "busy": w.runner.busy() and not w.runner.routine,

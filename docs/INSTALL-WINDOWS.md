@@ -14,7 +14,7 @@ python --version
 
 > Windows Server 上没有应用商店版 Python 的"假 python"问题；如果提示找不到命令，就是 PATH 没加上。
 
-然后装画面需要的 pygame-ce（不装也能运行，只是没有像素画面，她也不能 house_glance）：
+然后装画面需要的 pygame-ce（不装也能运行，只是没有像素画面，她也不能 house_render）：
 
 ```powershell
 python -m pip install pygame-ce
@@ -60,7 +60,7 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 - 小屋没在运行：直接启动小屋并打开窗口（之后 DSH 启动时会连上这个小屋）。
 
 窗口是**只读**的：能看她走来走去、浇水、钓鱼、摸猫，但不接受任何键鼠操作；**关掉窗口不影响小屋**，她照样生活。
-窗口太大可以用 `view.bat --scale 1`。只有窗口开着时才持续渲染；关着时不画任何东西（她 `house_glance` 时只渲染一帧）。
+窗口太大可以用 `view.bat --scale 1`。只有窗口开着时才持续渲染；关着时不画任何东西（她 `house_render` 时只渲染一帧）。
 
 想让 DSH 一启动就把窗口打开，在配置里把 `house.window` 设为 `true`。
 
@@ -110,6 +110,6 @@ python scripts\install.py --uninstall
 | 一直没有「小屋生活」会话 | 看 `%USERPROFILE%\.dsh\little-house\plugin-state.json` 是否生成；没有的话插件没加载，重新运行安装脚本并确认重启了 DSH |
 | 有会话但她什么都没做 | 在会话里看报错；多半是小屋进程没起来（检查 `python --version`，或在配置里写 python 的完整路径） |
 | 端口 8770 被占用 | 配置里把 `house.port` 改成别的 |
-| 她的工具里没有 house_glance | 小屋进程的 Python 里没装 pygame-ce，或 `house.python` 指向了另一个 Python |
+| 她的工具里没有 house_render | 小屋进程的 Python 里没装 pygame-ce，或 `house.python` 指向了另一个 Python |
 | 想立刻看到一次唤醒 | 临时把 `firstWakeDelaySeconds` 改成 `10` 再重启 DSH |
 | DSH 关了但 python 还在跑 | 正常：DSH 被强制关闭时来不及通知小屋退出。下次 DSH 启动会直接连上它；想关掉就在任务管理器结束那个 python 进程（存档每次行动后都会写盘） |

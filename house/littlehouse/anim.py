@@ -4,7 +4,7 @@ Since M3 every action takes real time (tasks.py), so the picture needs no
 replay: ``current_pose`` reads the phase the runner is playing at this moment —
 walking along the route at ``content.WALK_TILES_PER_SEC``, or working at the
 stove with steam rising — and the renderer draws it. The live window and the
-still ``house_glance`` frame use the same function, so both always show the
+still ``house_render`` frame use the same function, so both always show the
 true present. Outside free time she is settled into one of the everyday
 activities (``content.IDLE_ACTIVITIES``): reading on the sofa, asleep in bed...
 """

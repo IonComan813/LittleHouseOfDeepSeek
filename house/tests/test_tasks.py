@@ -46,50 +46,54 @@ class DurationTest(unittest.TestCase):
     def test_stir_fry_keeps_her_at_the_stove(self):
         w = new_world()
         run(w, "goto(厨房)")
-        secs = took(w, "cook(煎蛋)")
-        self.assertGreaterEqual(secs, C.COOK_METHODS["煎"]["busy"])
-        self.assertIn("煎蛋", w.inventory)
+        secs = took(w, "cook(荷包蛋)")
+        self.assertGreaterEqual(secs, C.RECIPES["荷包蛋"].work)
+        self.assertIn("荷包蛋", w.inventory)
 
     def test_simmering_lets_her_leave(self):
         w = new_world()
         w.add_item("萝卜")
+        w.add_item("排骨")
         run(w, "goto(厨房)")
-        secs = took(w, "cook(萝卜汤)")
-        self.assertLess(secs, C.COOK_METHODS["炖"]["prep"] + 15)  # only the prep keeps her busy
-        self.assertNotIn("萝卜汤", w.inventory)
-        self.assertIn("萝卜汤", w.look())  # "灶台上：萝卜汤（正在炖……）"
+        secs = took(w, "cook(萝卜炖排骨)")
+        self.assertLess(secs, C.RECIPES["萝卜炖排骨"].work + 15)  # only the prep keeps her busy
+        self.assertNotIn("萝卜炖排骨", w.inventory)
+        self.assertIn("萝卜炖排骨", w.look())  # "灶台上：萝卜炖排骨（正在炖……）"
         res = run(w, "goto(庭院); water(); goto(沙滩); pick()")
         self.assertTrue(ok(res), res)
-        step(w, C.COOK_METHODS["炖"]["simmer"])
-        self.assertTrue(any("萝卜汤炖好了" in e.text for e in w.news_since("")))
-        self.assertNotIn("萝卜汤", w.inventory)  # still on the stove: she is on the beach
+        step(w, C.RECIPES["萝卜炖排骨"].wait)
+        self.assertTrue(any("萝卜炖排骨炖好了" in e.text for e in w.news_since("")))
+        self.assertNotIn("萝卜炖排骨", w.inventory)  # still on the stove: she is on the beach
         res = run(w, "goto(厨房)")
         self.assertIn("盛了出来", res[0].text)
-        self.assertIn("萝卜汤", w.inventory)
+        self.assertIn("萝卜炖排骨", w.inventory)
 
     def test_wait_for_the_pot(self):
         w = new_world()
         w.add_item("萝卜")
-        res = run(w, "goto(厨房); cook(萝卜汤); wait(); eat(萝卜汤)")
+        w.add_item("排骨")
+        res = run(w, "goto(厨房); cook(萝卜炖排骨); wait(); eat(萝卜炖排骨)")
         self.assertTrue(ok(res), res)
         self.assertIn("盛了出来", res[2].text)
 
     def test_two_burners(self):
         w = new_world()
         w.add_item("萝卜", 3)
-        res = run(w, "goto(厨房); cook(萝卜汤); cook(萝卜汤); cook(萝卜汤)")
+        w.add_item("排骨", 3)
+        res = run(w, "goto(厨房); cook(萝卜炖排骨); cook(萝卜炖排骨); cook(萝卜炖排骨)")
         self.assertEqual([r.ok for r in res], [True, True, True, False])
         self.assertIn("灶眼", res[-1].text)
-        self.assertTrue(ok(run(w, "cook(煎蛋)")) is False)  # frying needs a free ring too
+        self.assertTrue(ok(run(w, "cook(荷包蛋)")) is False)  # frying needs a free ring too
 
     def test_a_round_of_the_usual_takes_about_twenty_minutes(self):
         w = new_world()
         w.add_item("萝卜")
+        w.add_item("排骨")
         w.dirt["kitchen"] = 50
         t0 = w.clock.timestamp()
-        res = run(w, "call(); feed(); goto(厨房); cook(萝卜汤); clean(); goto(庭院); water(); open(邮箱)")
+        res = run(w, "call(); feed(); goto(厨房); cook(萝卜炖排骨); clean(); goto(庭院); water(); open(邮箱)")
         self.assertTrue(ok(res), res)
-        res = run(w, "goto(沙滩); pick(); fish(); fish(); goto(厨房); eat(萝卜汤); goto(客厅); display()")
+        res = run(w, "goto(沙滩); pick(); fish(); fish(); goto(厨房); eat(萝卜炖排骨); goto(客厅); display()")
         self.assertTrue(ok(res), res)
         minutes = (w.clock.timestamp() - t0) / 60
         self.assertGreater(minutes, 12)
@@ -100,11 +104,11 @@ class InterruptTest(unittest.TestCase):
     def test_leaving_the_wok_burns_the_dish(self):
         w = new_world()
         run(w, "goto(厨房)")
-        start(w, "cook(煎蛋)")
+        start(w, "cook(荷包蛋)")
         step(w, 30)
         report = start(w, "goto(客厅)")
         self.assertIn("焦掉的菜", w.inventory)
-        self.assertNotIn("煎蛋", w.inventory)
+        self.assertNotIn("荷包蛋", w.inventory)
         step(w, 60)
         self.assertTrue(report.done)
 
@@ -163,10 +167,11 @@ class EverydayLifeTest(unittest.TestCase):
     def test_pots_survive_a_restart(self):
         w = new_world()
         w.add_item("萝卜")
-        run(w, "goto(厨房); cook(萝卜汤)")
+        w.add_item("排骨")
+        run(w, "goto(厨房); cook(萝卜炖排骨)")
         w2 = new_world()
         w2.load_json(json.loads(json.dumps(w.to_json())))
-        self.assertEqual([j["dish"] for j in w2.jobs], ["萝卜汤"])
+        self.assertEqual([j["dish"] for j in w2.jobs], ["萝卜炖排骨"])
 
 
 class ServerRealTimeTest(unittest.TestCase):
@@ -193,11 +198,11 @@ class ServerRealTimeTest(unittest.TestCase):
         now = self.house.world.clock.timestamp()
         body = self.post("/session", {"free_until": now + 40 * 60})
         self.assertTrue(body["free"])
-        body = self.post("/do", {"script": "goto(厨房); cook(煎蛋)"})
+        body = self.post("/do", {"script": "goto(厨房); cook(荷包蛋)"})
         self.assertTrue(body["ok"], body)
         self.assertTrue(body["done"])
         self.assertIn("自由活动还剩", body["text"])
-        self.assertIn("煎蛋", self.house.world.inventory)
+        self.assertIn("荷包蛋", self.house.world.inventory)
         body = self.post("/session", {"free_until": 0})
         self.assertFalse(body["free"])
 

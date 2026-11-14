@@ -15,7 +15,7 @@ import { OVER_TEXT, REST_TEXT } from './lib/wake.js'
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
 
-const OWN_TOOLS = new Set(['house_look', 'house_do', 'house_rest', 'house_glance', ...DIARY_TOOLS])
+const OWN_TOOLS = new Set(['house_surroundings', 'house_do', 'end_free_time', 'house_render', ...DIARY_TOOLS])
 
 const IMAGE_SCHEMA = {
   type: 'object',
@@ -46,7 +46,7 @@ const HOUSE_RULES = `## 你的生活
 可以做饭、种菜、钓鱼、捡贝壳摆上收藏架、赚钱买家具布置房间、陪团子玩……想做什么做什么。
 
 ## 怎么在小屋里行动
-- house_look：看看四周。
+- house_surroundings：看看四周。
 - house_do：用伪代码行动，一次可以写好几步，用分号或换行隔开，例如
   goto(庭院); open(邮箱); plant(萝卜种子); water()
   参数可以写编号（pot#1）或名字（绿萝）。很多动作不写参数就作用于这里所有的东西，比如 water()、pick()、harvest()。
@@ -56,17 +56,17 @@ const HOUSE_RULES = `## 你的生活
 - 做饭：炒、煎要一直守在灶台边（约两分钟，中途走开会糊）；炖、煮、烤、蒸先忙一分半钟，下锅后自己熟（约三分钟），
   这期间可以去做别的，好了以后回厨房就会盛出来；也可以 wait() 等着。灶台有两个灶眼。recipes() 里写着每道菜的做法。
 - 打扫可以分几次：clean(2) 只扫两分钟，没扫完的下次接着扫。
-- house_glance：看一眼小屋现在的样子（一张静态像素画，只在你看的那一刻画一帧）。
-  画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_look 和 house_do 就够了，
-  只在真想看看整个家、院子和海边的样子时偶尔看一眼，一次醒来最多一两次。
-- house_rest：结束这次自由活动。
+- house_render：看一眼小屋现在的样子（一张静态像素画，只在你看的那一刻画一帧）。
+  画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_surroundings 和 house_do 就够了，
+  只在真想看看整个家、院子和海边的样子时偶尔看一眼，一次自由活动最多一两次。
+- end_free_time：结束这次自由活动。
 
 ## 日记
 diary_write 会把一段话写进你今天的日记（每天一个本子，长期保存），diary_read 可以翻看某天的日记。
 日记是你自己的，写不写、写什么都由你决定：值得记住的发现、心情、想法，想写就写；平淡的时候不写也没关系。
 
 ## 注意
-- 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就 house_rest。
+- 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就 end_free_time。
 - 尽量一次写好几步，少来回问。
 - 只描述真正发生的事，不要编造没有执行过的动作。
 - 回复保持简短，像在写自己的生活片段。`
@@ -86,7 +86,7 @@ export async function apply(ctx) {
   if (globalNames.length > 0) ctx.tools.restrict({ deny: globalNames })
   ctx.tools.guard((exec) => OWN_TOOLS.has(exec.name)
     ? undefined
-    : `小屋里没有「${exec.name}」这个工具。你只能用 house_look、house_do、house_rest。`)
+    : `小屋里没有「${exec.name}」这个工具。你只能用 house_surroundings、house_do、house_render、end_free_time 和日记工具。`)
   // Drop the coding-oriented runtime context (file policy, GUI URL, ...).
   ctx.systemPrompt.suppressRuntimeContext()
 
@@ -104,7 +104,7 @@ export async function apply(ctx) {
   }
 
   ctx.tools.register(defineTool({
-    name: 'house_look',
+    name: 'house_surroundings',
     description: '看看四周：当前时间、天气、你所在的位置、能看到的东西和背包。',
     parameters: {},
     output: textOutput,
@@ -126,14 +126,14 @@ export async function apply(ctx) {
       const sessionId = exec.agent?.id
       if (house.windowOver(sessionId)) return OVER_TEXT
       const budget = house.takeAction(sessionId)
-      if (!budget.ok) return '这次已经做了很多事了，就先到这里吧。请调用 house_rest 结束这次自由活动。'
+      if (!budget.ok) return '这次已经做了很多事了，就先到这里吧。请调用 end_free_time 结束这次自由活动。'
       const signal = exec.signal
       const onAbort = () => void house.interrupt()
       signal?.addEventListener('abort', onAbort, { once: true })
       try {
         const r = await house.doScript(args.script, signal)
         const lowBudget = Number.isFinite(budget.left) && budget.left <= 5 ? `\n（这次还能行动 ${budget.left} 次）` : ''
-        const over = house.windowOver(sessionId) ? '\n（自由活动时间到了。请调用 house_rest。）' : ''
+        const over = house.windowOver(sessionId) ? '\n（自由活动时间到了。请调用 end_free_time。）' : ''
         return r.text + lowBudget + over
       } finally {
         signal?.removeEventListener('abort', onAbort)
@@ -141,18 +141,18 @@ export async function apply(ctx) {
     },
   }))
 
-  // house_glance needs somewhere to keep the picture: only offered when the
+  // house_render needs somewhere to keep the picture: only offered when the
   // deployment mounts an attachment store (the Web/Desktop profiles do).
   ctx.inject(['attachments'], (imageCtx) => {
     try {
       registerGlance(imageCtx, house)
     } catch (e) {
-      house.log('warn', `house_glance unavailable: ${e?.message ?? e}`)
+      house.log('warn', `house_render unavailable: ${e?.message ?? e}`)
     }
   })
 
   ctx.tools.register(defineTool({
-    name: 'house_rest',
+    name: 'end_free_time',
     description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。note 可选：想在日记里留一句才写；这次已经用 diary_write 写过就不要再重复。',
     parameters: {
       note: { type: 'string', description: '可选：写进今天日记的一句话' },
@@ -169,11 +169,11 @@ export async function apply(ctx) {
   }))
 }
 
-/** Register house_glance on a context that has the attachment store. */
+/** Register house_render on a context that has the attachment store. */
 function registerGlance(imageCtx, house) {
   imageCtx.tools.register(defineTool({
-    name: 'house_glance',
-    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的静态像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。每次都要在本机渲染一帧，本机算力有限，请只在需要时偶尔看一眼（一次醒来最多一两次）；了解情况优先用 house_look。',
+    name: 'house_render',
+    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的静态像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。每次都要在本机渲染一帧，本机算力有限，请只在需要时偶尔看一眼（一次自由活动最多一两次）；了解情况优先用 house_surroundings。',
     parameters: {},
     output: {
       schema: IMAGE_SCHEMA,

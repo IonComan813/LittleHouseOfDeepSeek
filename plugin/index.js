@@ -264,7 +264,10 @@ export default class LittleHouse extends Service {
         return 'skipped: agent busy'
       }
 
-      const session = await this.house.request('POST', '/session', { free_until: until / 1000 })
+      // All times she is told come from the house's game clock (the same one the
+      // picture and house_do results use), not from this process's clock.
+      const skew = await this.clockSkew()
+      const session = await this.house.request('POST', '/session', { free_until: (until + skew) / 1000 })
       const look = await this.house.request('GET', '/look')
       const lastWake = state.lastWakeAt ? new Date(state.lastWakeAt) : undefined
       const lastRest = state.lastRestAt ? new Date(state.lastRestAt) : lastWake
@@ -285,8 +288,8 @@ export default class LittleHouse extends Service {
       this.openWindow(agent, plan, until)
       const text = buildWakeMessage({
         slotName: plan.name,
-        start: now.getTime(),
-        until,
+        start: now.getTime() + skew,
+        until: until + skew,
         before: session.before,
         recap,
         news: news.map((n) => n.text),
@@ -300,6 +303,16 @@ export default class LittleHouse extends Service {
       return `woke: ${agent.id}`
     } finally {
       this.waking = false
+    }
+  }
+
+  /** Milliseconds the house's game clock is ahead of this process's clock (0 in normal use). */
+  async clockSkew() {
+    try {
+      const status = await this.house.request('GET', '/status')
+      return typeof status.now === 'number' ? Math.round(status.now * 1000 - Date.now()) : 0
+    } catch {
+      return 0
     }
   }
 
@@ -360,14 +373,14 @@ export default class LittleHouse extends Service {
     this.log('info', `free time (${w.name}) over in session ${sessionId}: ${reason}`)
   }
 
-  /** house_rest: she ends her free time herself. */
+  /** end_free_time: she ends her free time herself. */
   async rest(sessionId) {
     const w = this.windows.get(sessionId)
     if (w) w.rested = true
     await this.endWindow(sessionId, 'she went to rest')
   }
 
-  /** Her turn ended. If she stopped early without house_rest, look in on her a bit later. */
+  /** Her turn ended. If she stopped early without end_free_time, look in on her a bit later. */
   onIdle(agent) {
     const w = this.window(agent.id)
     if (!w || w.rested) return

@@ -47,14 +47,14 @@ class PoseTest(unittest.TestCase):
 
     def test_working_shows_the_effect_while_it_lasts(self):
         w = new_world()
-        start(w, "goto(厨房); cook(煎蛋)")
+        start(w, "goto(厨房); cook(荷包蛋)")
         step(w, 30)  # past the walk: frying at the stove
         p = current_pose(w)
         self.assertEqual(p.effect, "steam")
         self.assertEqual(p.focus, "stove")
         step(w, 200)
         self.assertIsNone(current_pose(w).effect)
-        self.assertIn("煎蛋", w.inventory)
+        self.assertIn("荷包蛋", w.inventory)
 
     def test_resting_in_bed_is_drawn_asleep(self):
         w = new_world()

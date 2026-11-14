@@ -1,7 +1,7 @@
 """The live window, inside the house process itself (one process, one renderer).
 
 Nothing is drawn while the window is closed: the still picture for
-``house_glance`` renders a single frame on demand. Opening the window (from
+``house_render`` renders a single frame on demand. Opening the window (from
 DSH via config, from ``view.bat``, or ``POST /window``) starts an animated
 loop on the main thread; closing it stops all drawing while the house keeps
 running and she keeps living. The window is read-only: input is ignored.

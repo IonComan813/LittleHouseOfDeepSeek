@@ -355,29 +355,29 @@ def _recipe_status(w: World, ingredients: dict[str, int]) -> tuple[bool, dict[st
 
 
 def method_note(dish: str) -> str:
-    """How a dish is cooked and how long it takes, e.g. '炖：先忙 1.5 分钟，再自己炖 3 分钟'."""
-    method = C.RECIPE_METHOD.get(dish, "炒")
-    m = C.COOK_METHODS[method]
-    if "busy" in m:
-        return f"{method}，要一直守着，约 {_duration(m['busy'])}"
-    return f"{method}，先忙 {_duration(m['prep'])}，再自己{method} {_duration(m['simmer'])}，期间可以走开"
-
-
-def _minutes(secs: float) -> str:
-    return f"{secs / 60:g}"
+    """How a dish is cooked and how long it takes, e.g. '炖：先忙 3 分钟，再自己炖 8 分钟'."""
+    r = C.RECIPES[dish]
+    if not r.wait:
+        return f"{r.method}，{'要一直守着，' if r.stove else ''}约 {_duration(r.work)}"
+    return f"{r.method}，先忙 {_duration(r.work)}，再自己{'煮' if r.method == '包' else r.method} {_duration(r.wait)}，期间可以走开"
 
 
 def _duration(secs: float) -> str:
     return f"{secs:g} 秒" if secs < 60 else f"{secs / 60:g} 分钟"
 
 
+def _minutes(secs: float) -> str:
+    return f"{secs / 60:g}"
+
+
 @action("recipes()", "看看会做哪些菜、怎么做、要多久，以及现在缺什么")
 def _recipes(w: World) -> str:
-    lines = []
-    for dish, ing in C.RECIPES.items():
-        ok, _, missing = _recipe_status(w, ing)
-        need = "、".join(f"{'任意一条鱼' if k == '#fish' else k}{'×' + str(n) if n > 1 else ''}" for k, n in ing.items())
-        lines.append(f"{'✓' if ok else '✗'} {dish}（{need}；{method_note(dish)}）" + ("" if ok else f" 缺：{'、'.join(missing)}"))
+    lines = ["（油盐酱醋糖、姜蒜、蚝油、香油这些调料厨房里都有；葱要自己种或者买。）"]
+    for dish, r in C.RECIPES.items():
+        ok, _, missing = _recipe_status(w, r.ingredients)
+        need = "、".join(f"{'任意一条鱼' if k == '#fish' else k}{'×' + str(n) if n > 1 else ''}" for k, n in r.ingredients.items())
+        how = f"，{r.how}" if r.how else ""
+        lines.append(f"{'✓' if ok else '✗'} {dish}（{need}；{method_note(dish)}{how}）" + ("" if ok else f" 缺：{'、'.join(missing)}"))
     return "\n".join(lines)
 
 
@@ -388,48 +388,48 @@ def _cook_outcome(w: World) -> str:
     return "burnt" if roll < burn_chance else "great" if roll > 0.93 else "ok"
 
 
-@action("cook(菜名)", "在厨房做菜，如 cook(番茄炒蛋)。炒、煎要一直守在灶台边；炖、煮、烤、蒸先忙一会儿，之后自己熟，期间可以去做别的", 1, 1, effort=3, proc=True)
+@action("cook(菜名)", "在厨房做菜，如 cook(番茄炒蛋)。炒、煎要一直守在灶台边；煮饭、炖、蒸先忙一会儿，之后自己熟，期间可以去做别的", 1, 1, effort=3, proc=True)
 def _cook(w: World, dish: str) -> Proc:
     _need_room(w, "kitchen")
     dish = str(dish).strip()
     if dish not in C.RECIPES:
         raise ActionError(f"不会做「{dish}」。用 recipes() 看看菜谱。")
-    ok, use, missing = _recipe_status(w, C.RECIPES[dish])
+    r = C.RECIPES[dish]
+    ok, use, missing = _recipe_status(w, r.ingredients)
     if not ok:
-        raise ActionError(f"做{dish}还缺：{'、'.join(missing)}。")
-    method = C.RECIPE_METHOD.get(dish, "炒")
-    m = C.COOK_METHODS[method]
-    on_stove = method not in ("拌", "调")
-    if on_stove and w.burners_free() < 1:
-        cooking = "、".join(j["dish"] for j in w.jobs)
+        raise ActionError(f"做{dish}还缺：{'、'.join(missing)}。可以在客厅的订货目录上买，有些也能自己种。")
+    if r.stove and w.burners_free() < 1:
+        cooking = "、".join(j["dish"] for j in w.jobs if not j["ready"])
         raise ActionError(f"灶台的两个灶眼都占着（{cooking}）。等一个好了再做，或者做不用火的。")
     for name, n in use.items():
         w.take_item(name, n)
-    yield from walk_to(w, "stove" if on_stove else "counter", "cook")
+    yield from walk_to(w, "stove" if r.stove else "counter", "cook")
     focus = w.resident.get("focus")
     w.dirt["kitchen"] = min(100.0, w.dirt["kitchen"] + 8.0)
     outcome = _cook_outcome(w)
-    if "busy" in m:
+    label = f"{r.method}{dish}" if r.method not in ("包",) else f"包{dish}"
+    if not r.wait:
         try:
-            yield work(m["busy"], "cook", focus, f"{method}{dish}")
+            yield work(r.work, "cook", focus, label)
         except Interrupted:
-            if on_stove:
+            if r.stove:
                 w.add_item("焦掉的菜")
-                w.log("cook", f"{method}{dish}的时候走开了，菜糊了")
+                w.log("cook", f"{r.method}{dish}的时候走开了，菜糊了")
                 return f"你离开了灶台，锅里的{dish}糊了……只剩一份焦掉的菜。"
             for name, n in use.items():
                 w.add_item(name, n)
             return "你停下了手里的活，把食材收了回去。"
         return _serve(w, dish, use, outcome)
     try:
-        yield work(m["prep"], "cook", focus, f"准备{dish}")
+        yield work(r.work, "cook", focus, label)
     except Interrupted:
         for name, n in use.items():
             w.add_item(name, n)
         return "你停下了手里的活，食材还没下锅，先收了回去。"
-    w.start_job(dish, method, m["simmer"], outcome, use)
-    return (f"你把{dish}的材料{'放进烤架' if method == '烤' else '下了锅'}，接下来让它自己{method}，"
-            f"大约 {_minutes(m['simmer'])} 分钟后好。这段时间可以去做别的，好了以后回厨房就能盛出来（或者 wait() 等着）。")
+    verb = "煮" if r.method == "包" else r.method
+    w.start_job(dish, verb, r.wait, outcome, use)
+    return (f"{dish}已经{'上锅' if r.method == '蒸' else '下锅'}了，接下来让它自己{verb}，"
+            f"大约 {_minutes(r.wait)} 分钟后好。这段时间可以去做别的，好了以后回厨房就能盛出来（或者 wait() 等着）。")
 
 
 def _serve(w: World, dish: str, use: dict[str, int], outcome: str) -> str:
@@ -574,7 +574,8 @@ def _open(w: World, ref: str) -> str:
 @action("catalog()", "翻开开拓署的订货目录：能买什么、多少钱，以及你手上东西的收购价")
 def _catalog(w: World) -> str:
     _need_indoor(w)
-    buy = "、".join(f"{n} {p}" for n, p in C.CATALOG.items())
+    buy = "、".join(f"{n} {p}" + (f"/{C.ITEMS[n].unit}" if n in C.ITEMS and C.ITEMS[n].unit else "")
+                    for n, p in C.CATALOG.items())
     have = [n for n in w.inventory if n in C.SELL_PRICES]
     sell = "、".join(f"{n} {C.SELL_PRICES[n]}" for n in have) or "（背包里暂时没有能卖的东西）"
     return (f"订购（{C.CURRENCY}，第二天上午送到门口）：{buy}\n"

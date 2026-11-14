@@ -86,6 +86,7 @@ class Item:
     tags: frozenset[str] = field(default_factory=frozenset)
     fill: int = 0  # how much hunger eating it removes (0 = not edible)
     desc: str = ""
+    unit: str = ""  # what one of it is, for the catalog: "1斤", "半斤", "1个"
 
 
 def _items(*specs: tuple) -> dict[str, Item]:
@@ -94,20 +95,30 @@ def _items(*specs: tuple) -> dict[str, Item]:
         name, tags, *rest = spec
         fill = rest[0] if rest else 0
         desc = rest[1] if len(rest) > 1 else ""
-        out[name] = Item(name, frozenset(tags.split()), fill, desc)
+        unit = rest[2] if len(rest) > 2 else ""
+        out[name] = Item(name, frozenset(tags.split()), fill, desc, unit)
     return out
 
 
 ITEMS: dict[str, Item] = _items(
-    # staples (from the mailbox)
-    ("鸡蛋", "ingredient", 0), ("大米", "ingredient"), ("面粉", "ingredient"), ("牛奶", "ingredient food", 10),
-    ("猫粮", "petfood"),
-    # produce
-    ("番茄", "ingredient food produce", 10), ("萝卜", "ingredient produce"), ("生菜", "ingredient produce"),
-    ("草莓", "ingredient food produce", 10), ("南瓜", "ingredient produce"), ("菠菜", "ingredient produce"),
+    # staples (weekly supply, or the catalog)
+    ("鸡蛋", "ingredient", 0, "", "1个"), ("大米", "ingredient", 0, "", "1斤"), ("小米", "ingredient", 0, "", "1斤"),
+    ("面粉", "ingredient", 0, "", "1斤"), ("牛奶", "ingredient food", 10, "", "1盒"),
+    ("五花肉", "ingredient meat", 0, "肥瘦相间的一条五花肉。", "半斤"),
+    ("排骨", "ingredient meat", 0, "斩成小段的猪肋排。", "半斤"),
+    ("猪肉馅", "ingredient meat", 0, "三肥七瘦的猪肉馅。", "半斤"),
+    ("猫粮", "petfood", 0, "", "1份"),
+    # produce (grown, or bought)
+    ("番茄", "ingredient food produce", 8, "", "1个"), ("萝卜", "ingredient produce", 0, "", "1根"),
+    ("生菜", "ingredient produce", 0, "", "1颗"), ("草莓", "ingredient food produce", 10, "", "1盒"),
+    ("南瓜", "ingredient produce", 0, "", "1个"), ("菠菜", "ingredient produce", 0, "", "1把"),
+    ("土豆", "ingredient produce", 0, "", "1个"), ("黄瓜", "ingredient food produce", 8, "", "1根"),
+    ("白菜", "ingredient produce", 0, "", "1棵"), ("葱", "ingredient produce", 0, "", "1把"),
     # seeds
-    ("番茄种子", "seed"), ("萝卜种子", "seed"), ("生菜种子", "seed"), ("草莓种子", "seed"),
-    ("南瓜种子", "seed"), ("菠菜种子", "seed"),
+    ("番茄种子", "seed", 0, "", "1包"), ("萝卜种子", "seed", 0, "", "1包"), ("生菜种子", "seed", 0, "", "1包"),
+    ("草莓种子", "seed", 0, "", "1包"), ("南瓜种子", "seed", 0, "", "1包"), ("菠菜种子", "seed", 0, "", "1包"),
+    ("土豆种子", "seed", 0, "切好的种薯块，一块种一垄。", "1份"), ("黄瓜种子", "seed", 0, "", "1包"),
+    ("白菜种子", "seed", 0, "", "1包"), ("葱种子", "seed", 0, "", "1包"),
     # fish & catches
     ("小黄鱼", "fish ingredient"), ("沙丁鱼", "fish ingredient"), ("鲈鱼", "fish ingredient"),
     ("比目鱼", "fish ingredient"), ("章鱼", "fish ingredient"),
@@ -116,11 +127,10 @@ ITEMS: dict[str, Item] = _items(
     ("白色扇贝壳", "collectible shell"), ("粉色海螺", "collectible shell"), ("带花纹的贝壳", "collectible shell"),
     ("小蛤蜊壳", "collectible shell"), ("光滑的鹅卵石", "collectible"), ("绿色海玻璃", "collectible"),
     ("漂流瓶", "collectible readable", 0, "玻璃瓶里卷着一张纸条。"),
-    # dishes
-    ("番茄炒蛋", "dish food", 45), ("白米饭", "dish food", 35), ("煎蛋", "dish food", 20), ("烤鱼", "dish food", 40),
-    ("蔬菜沙拉", "dish food", 25), ("萝卜汤", "dish food", 30), ("南瓜粥", "dish food", 45),
-    ("草莓牛奶", "dish food", 20), ("菠菜蛋饼", "dish food", 40), ("鱼汤", "dish food", 45),
     ("焦掉的菜", "dish food", 10, "黑乎乎的，勉强能吃。"),
+    # dishes from older saves (no longer on the menu, still edible)
+    ("煎蛋", "dish food", 15), ("烤鱼", "dish food", 40), ("蔬菜沙拉", "dish food", 25), ("萝卜汤", "dish food", 30),
+    ("南瓜粥", "dish food", 40), ("草莓牛奶", "dish food", 20), ("菠菜蛋饼", "dish food", 40), ("鱼汤", "dish food", 45),
     # things found while cleaning
     ("纽扣", "collectible", 0, "一颗小小的木纽扣，不知道是从哪件衣服上掉的。"),
     ("毛线球", "collectible", 0, "团子藏起来的毛线球，已经被抓得毛毛的。"),
@@ -154,31 +164,71 @@ class Crop:
 CROPS: dict[str, Crop] = {
     c.seed: c
     for c in (
-        Crop("番茄", "番茄种子", 4, frozenset({SPRING, SUMMER})),
-        Crop("草莓", "草莓种子", 5, frozenset({SPRING})),
-        Crop("生菜", "生菜种子", 3, frozenset({SPRING, AUTUMN})),
-        Crop("萝卜", "萝卜种子", 3, frozenset({AUTUMN, WINTER})),
-        Crop("菠菜", "菠菜种子", 3, frozenset({AUTUMN, WINTER})),
+        Crop("番茄", "番茄种子", 4, frozenset({SPRING, SUMMER}), yield_count=4),
+        Crop("草莓", "草莓种子", 5, frozenset({SPRING}), yield_count=2),
+        Crop("生菜", "生菜种子", 3, frozenset({SPRING, AUTUMN}), yield_count=2),
+        Crop("萝卜", "萝卜种子", 3, frozenset({AUTUMN, WINTER}), yield_count=3),
+        Crop("菠菜", "菠菜种子", 3, frozenset({AUTUMN, WINTER}), yield_count=2),
         Crop("南瓜", "南瓜种子", 6, frozenset({SUMMER, AUTUMN}), yield_count=1),
+        Crop("土豆", "土豆种子", 5, frozenset({SPRING, AUTUMN}), yield_count=4),
+        Crop("黄瓜", "黄瓜种子", 4, frozenset({SPRING, SUMMER}), yield_count=3),
+        Crop("白菜", "白菜种子", 4, frozenset({AUTUMN, WINTER}), yield_count=1),
+        Crop("葱", "葱种子", 3, frozenset({SPRING, SUMMER, AUTUMN, WINTER}), yield_count=3),
     )
 }
 SEEDS_BY_SEASON = {s: [c.seed for c in CROPS.values() if s in c.seasons] for s in (SPRING, SUMMER, AUTUMN, WINTER)}
 
 # --------------------------------------------------------------------------- recipes
+#
+# Home-style Chinese dishes. Basic seasonings (oil, salt, soy sauce, vinegar,
+# sugar, ginger, garlic, oyster sauce, sesame oil) are assumed to be in the kitchen; what a
+# recipe lists has to be grown, caught or bought. "#fish" = any fish.
+#
+# ``work``: seconds she is busy with it. ``wait`` = 0: she has to stay the whole
+# time (leaving a wok on the fire burns it). ``wait`` > 0: after ``work`` the
+# pot looks after itself for ``wait`` seconds and she can go and do other
+# things. ``stove``: uses one of the two burners.
 
-# Ingredient keys are item names, or "#tag" for "any item with this tag".
-RECIPES: dict[str, dict[str, int]] = {
-    "番茄炒蛋": {"番茄": 1, "鸡蛋": 2},
-    "白米饭": {"大米": 1},
-    "煎蛋": {"鸡蛋": 1},
-    "烤鱼": {"#fish": 1},
-    "蔬菜沙拉": {"生菜": 1, "番茄": 1},
-    "萝卜汤": {"萝卜": 1},
-    "南瓜粥": {"南瓜": 1, "大米": 1},
-    "草莓牛奶": {"草莓": 1, "牛奶": 1},
-    "菠菜蛋饼": {"菠菜": 1, "鸡蛋": 1, "面粉": 1},
-    "鱼汤": {"#fish": 1, "萝卜": 1},
+
+@dataclass(frozen=True)
+class Recipe:
+    dish: str
+    ingredients: dict[str, int]
+    method: str  # 炒 煎 煮 炖 蒸 烧 拌 包
+    work: float
+    wait: float = 0.0
+    stove: bool = True
+    fill: int = 30
+    how: str = ""  # one line on what she does, shown in recipes()
+
+
+RECIPES: dict[str, Recipe] = {
+    r.dish: r
+    for r in (
+        Recipe("白米饭", {"大米": 1}, "煮", 30, 480, fill=30, how="淘米加水，盖上锅盖煮着就行"),
+        Recipe("荷包蛋", {"鸡蛋": 1}, "煎", 90, fill=15, how="小火煎到蛋白凝固、蛋黄溏心"),
+        Recipe("红烧肉", {"五花肉": 1}, "炖", 180, 480, fill=45, how="焯水、炒糖色，加酱油和水小火慢炖"),
+        Recipe("番茄炒蛋", {"番茄": 1, "鸡蛋": 2}, "炒", 120, fill=35),
+        Recipe("蛋炒饭", {"白米饭": 1, "鸡蛋": 1, "葱": 1}, "炒", 120, fill=50, how="用煮好的白米饭"),
+        Recipe("酸辣土豆丝", {"土豆": 2}, "炒", 150, fill=30, how="切丝、泡水，大火快炒"),
+        Recipe("蒜蓉菠菜", {"菠菜": 1}, "炒", 60, fill=15),
+        Recipe("蚝油生菜", {"生菜": 1}, "炒", 60, fill=15),
+        Recipe("醋溜白菜", {"白菜": 1}, "炒", 90, fill=20),
+        Recipe("拍黄瓜", {"黄瓜": 1}, "拌", 60, stove=False, fill=10, how="拍碎，拌上蒜末、醋和香油"),
+        Recipe("番茄蛋汤", {"番茄": 1, "鸡蛋": 1}, "煮", 60, 180, fill=20),
+        Recipe("萝卜炖排骨", {"萝卜": 1, "排骨": 1}, "炖", 120, 480, fill=45),
+        Recipe("南瓜小米粥", {"南瓜": 1, "小米": 1}, "煮", 60, 480, fill=35),
+        Recipe("清蒸鲈鱼", {"鲈鱼": 1}, "蒸", 120, 360, fill=40, how="改刀、铺上姜丝上锅蒸，出锅淋热油"),
+        Recipe("干煎小黄鱼", {"小黄鱼": 1}, "煎", 180, fill=30),
+        Recipe("红烧鱼", {"#fish": 1}, "烧", 150, 300, fill=40, how="煎到两面金黄，再加酱汁焖烧"),
+        Recipe("葱油饼", {"面粉": 1, "葱": 1}, "煎", 240, fill=45, how="和面、擀开、抹葱油，煎到两面焦黄"),
+        Recipe("白菜猪肉饺子", {"面粉": 1, "猪肉馅": 1, "白菜": 1}, "包", 300, 180, fill=60, how="和面、调馅、包好下锅煮"),
+    )
 }
+
+# Every dish is an edible item.
+for _r in RECIPES.values():
+    ITEMS.setdefault(_r.dish, Item(_r.dish, frozenset({"dish", "food"}), _r.fill))
 
 # --------------------------------------------------------------------------- fishing
 
@@ -227,23 +277,26 @@ DELIVERY_HOUR = 9  # orders and the weekly supply arrive after this hour
 PICKUP_HOUR = 18  # the consignment box is emptied after this hour
 SUPPLY_WEEKDAY = 0  # Monday
 
-# What the bureau pays for things put in the consignment box.
+# Prices are in 贝币, one 贝币 buying about what one yuan does. The bureau pays
+# for raw goods (produce, fish, things from the beach), a bit under retail.
 SELL_PRICES: dict[str, int] = {
-    "番茄": 12, "萝卜": 10, "生菜": 10, "草莓": 18, "南瓜": 30, "菠菜": 10,
-    "小黄鱼": 15, "沙丁鱼": 10, "鲈鱼": 25, "比目鱼": 30, "章鱼": 45, "旧靴子": 1,
-    "白色扇贝壳": 3, "小蛤蜊壳": 2, "带花纹的贝壳": 6, "粉色海螺": 10, "光滑的鹅卵石": 2, "绿色海玻璃": 12,
-    "浮木": 8, "玻璃弹珠": 5,
-    "番茄炒蛋": 20, "烤鱼": 30, "南瓜粥": 40, "鱼汤": 40, "菠菜蛋饼": 25, "萝卜汤": 18,
+    "番茄": 1, "萝卜": 1, "生菜": 2, "菠菜": 2, "南瓜": 4, "土豆": 1, "黄瓜": 1, "白菜": 2, "葱": 1, "草莓": 6,
+    "小黄鱼": 6, "沙丁鱼": 3, "鲈鱼": 18, "比目鱼": 22, "章鱼": 25,
+    "白色扇贝壳": 1, "小蛤蜊壳": 1, "带花纹的贝壳": 3, "粉色海螺": 6, "光滑的鹅卵石": 1, "绿色海玻璃": 5,
+    "浮木": 5, "玻璃弹珠": 2,
 }
 
-# The bureau's order catalog: item -> price.
+# The bureau's order catalog: item -> price (per unit, see ITEMS[...].unit).
 CATALOG: dict[str, int] = {
-    "番茄种子": 15, "萝卜种子": 10, "生菜种子": 10, "草莓种子": 25, "南瓜种子": 30, "菠菜种子": 10,
-    "鸡蛋": 6, "大米": 8, "面粉": 8, "牛奶": 8, "猫粮": 10,
-    "风铃": 60, "花瓶": 70, "台灯": 90, "小地毯": 120, "挂画": 150, "小书桌": 220, "懒人沙发": 260,
+    "番茄种子": 3, "萝卜种子": 2, "生菜种子": 2, "草莓种子": 5, "南瓜种子": 3, "菠菜种子": 2,
+    "土豆种子": 3, "黄瓜种子": 2, "白菜种子": 2, "葱种子": 2,
+    "鸡蛋": 1, "大米": 3, "小米": 5, "面粉": 3, "牛奶": 4, "猫粮": 3,
+    "五花肉": 9, "排骨": 15, "猪肉馅": 7,
+    "番茄": 2, "萝卜": 2, "生菜": 3, "菠菜": 3, "南瓜": 6, "土豆": 2, "黄瓜": 2, "白菜": 4, "葱": 2, "草莓": 10,
+    "风铃": 25, "花瓶": 35, "台灯": 59, "小地毯": 79, "挂画": 99, "小书桌": 199, "懒人沙发": 229,
 }
 
-WEEKLY_SUPPLY = {"大米": 2, "鸡蛋": 4, "猫粮": 4, "牛奶": 1}
+WEEKLY_SUPPLY = {"大米": 5, "鸡蛋": 6, "猫粮": 7, "牛奶": 2}
 
 WELCOME_LETTER = (
     "【开拓署 · 欢迎信】欢迎来到潮汐湾！这间小屋和院子从今天起就是你的了。"
@@ -293,7 +346,7 @@ PET_TEMPERS: list[tuple[str, int]] = [("黏人", 30), ("平常", 40), ("傲娇",
 
 # --------------------------------------------------------------------------- starting state
 
-START_INVENTORY = {"鱼竿": 1, "鸡蛋": 2, "大米": 2, "猫粮": 3, "萝卜种子": 2, "菠菜种子": 1}
+START_INVENTORY = {"鱼竿": 1, "鸡蛋": 4, "大米": 3, "猫粮": 4, "土豆": 2, "萝卜种子": 2, "菠菜种子": 1}
 PET_NAME = "团子"
 INDOOR_ROOMS = ("living_room", "kitchen", "bedroom")
 
@@ -319,19 +372,7 @@ ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
 }
 EAT_SECONDS = {"dish": 180, "other": 60}  # a proper meal takes a while; a snack is quick
 
-# How each dish is cooked. "busy" = she has to stay at the stove the whole time
-# (stir-frying); "prep" then "simmer" = a minute or two of work, after which the
-# pot looks after itself and she can go and do something else.
-COOK_METHODS: dict[str, dict[str, float]] = {
-    "炒": {"busy": 120}, "煎": {"busy": 120}, "拌": {"busy": 60}, "调": {"busy": 45},
-    "炖": {"prep": 90, "simmer": 180}, "煮": {"prep": 90, "simmer": 180},
-    "烤": {"prep": 90, "simmer": 180}, "蒸": {"prep": 90, "simmer": 180},
-}
-RECIPE_METHOD: dict[str, str] = {
-    "番茄炒蛋": "炒", "白米饭": "煮", "煎蛋": "煎", "烤鱼": "烤", "蔬菜沙拉": "拌",
-    "萝卜汤": "炖", "南瓜粥": "煮", "草莓牛奶": "调", "菠菜蛋饼": "煎", "鱼汤": "炖",
-}
-STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"])
+STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"]); cooking times are in RECIPES
 
 CLEAN_DIRT_PER_MINUTE = 25.0  # a filthy room (100) takes four minutes; progress is kept if she stops
 REST_SECONDS = 600
