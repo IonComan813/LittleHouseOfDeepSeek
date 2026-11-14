@@ -4,7 +4,9 @@
 #   tools/devenv.sh <work-dir> [minutes] [qq]   # set up (idempotent), then print the launch command
 #
 # Needs the cloud environment's setup script (DSH 0.2.2-rc.2 in /opt/lh/dsh, a
-# venv with pygame-ce + zstandard in /opt/lh/venv). The DeepSeek key is injected
+# venv with pygame-ce + zstandard in /opt/lh/venv). By hand, about a minute:
+#   mkdir -p /opt/lh/dsh && python3 -m venv /opt/lh/venv && /opt/lh/venv/bin/pip install -q pygame-ce zstandard
+#   cd /opt/lh/dsh && npm init -y >/dev/null && npm install -s @deepseek-ai/dsh@0.2.2-rc.2 The DeepSeek key is injected
 # by the proxy, so DEEPSEEK_API_KEY is only a placeholder. With minutes > 0 the
 # plugin opens a temporary free time 5 s after DSH starts; 0 = the real schedule.
 # With "qq" the plugin dials tools/fake-napcat.mjs on ws://127.0.0.1:3001

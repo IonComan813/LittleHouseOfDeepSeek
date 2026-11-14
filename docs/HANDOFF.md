@@ -1,180 +1,191 @@
 # 交接文档（给下一个接手的开发会话）
 
-> 2026-11-13 写于 M2.5；2026-11-14 在 M3 + LPC 画面 + 内容扩充之后整体重写。
-> 先读这份，再读 `README.md`（架构图）、`docs/PROTOCOL.md`（伪代码、动作时长、HTTP 接口、文件）、`docs/ROADMAP.md`（每步的实测记录）。
+> 2026-11-13 写于 M2.5；2026-11-14 在 M3 之后重写；2026-11-14 深夜在 M4 记忆、M5 手机 QQ、作息、夜空之后再次整体重写。
+> 先读这份，再读 `README.md`（架构图）、`docs/PROTOCOL.md`（伪代码、一天的安排、QQ、记忆、HTTP 接口、文件——**现状以它为准**）、
+> `docs/ROADMAP.md`（每一步的实测记录）。
 
 ## 1. 用户与环境
 
-- 用户用中文交流；**改动后用中文汇报**，要具体：做了什么、实测结果、用户要做什么。
-- **只在必要的时候用 API key 跑真实模型测试**：改动不太可能出问题、或者改动比较小时，单元测试 + 本地快进就够了，不调用 DeepSeek。
-  改了她看到的东西（规则、工具、开场消息）或者新玩法需要看她会不会用时才跑。
-- **每次用真实模型测试，都把完整的伪代码日志给用户一份**（插件发给她的消息、她的思考、每段 `house_do` 脚本和完整结果、日记、结束），
-  用第 6 节的 `tools/fulllog.py` 导出成 Markdown，用 SendUserFile 发过去。
-- **交接文档只在用户明确说要换会话时更新**（这一版就是用户要求写的）；其他文档（PROTOCOL / README / ROADMAP）随代码一起改。
-- **设计时长要省着用**：用户嫌时间设得偏长时会说（做饭、收拾乱子都压过一次）。新动作先给短的。
-- 用户喜欢「能做的先做完再汇报」，不喜欢一直守着确认；但需要用户拍板的设计问题（方向、取舍）要问，并给出建议。
+- 用户用中文交流；**改动后用中文汇报**，要具体：做了什么、实测结果、没测到什么、用户要做什么。
+- **用户没有直接否认的建议，就当作认可，直接去做**（用户明说的）。需要用户拍板、又确实拿不准的设计问题才问，并给出建议。
+  用户喜欢「能做的先做完再汇报」，不喜欢一直守着确认。用户的想法会变，前后矛盾时以最新的为准，真有冲突就问。
+- **只在必要的时候用 API key 跑真实模型测试**：改了她看到的东西（规则、工具、消息）或者新玩法要看她会不会用时才跑；小改动用单元测试 + 本地快进。
+- **每次用真实模型测试，都把完整日志给用户一份**（插件发给她的消息、她的思考、每段脚本和完整结果、手机消息、日记、结束）：
+  `tools/fulllog.py` 导出成 Markdown，用 SendUserFile 发。记忆整理也一样（整理会话的输入和输出、`memory/memory.md`）。
+- **交接文档只在用户明确要求时更新**（这一版就是）；PROTOCOL / README / ROADMAP / INSTALL-WINDOWS 随代码一起改。
+- **设计时长要省着用**：用户嫌时间偏长时会说（做饭、收拾乱子都压过一次）。新动作先给短的。
 - 运行环境：**Windows Server 2025 Datacenter 24H2**，mstsc（RDP）登录桌面；**DSH 桌面版 0.2.2-rc.2**，作为应用运行（不是服务）。
-  profile 多半叫 `desktop`（安装脚本优先选它）。用户的 profile 里还装了别的插件。**NapCat** 已经在本机登录 QQ 并能收发（M5 用）。
+  profile 多半叫 `desktop`（安装脚本优先选它），里面还装了别的插件。**NapCat** 已经在本机登录 QQ。用户在中国（东八区）。
 - 模型：**DeepSeek-V4.1-Flash**（API id `deepseek-flash`，支持图片输入；`deepseek-v4-pro` 只支持文本）。
 - 用户希望：轻量、为自己定制；服务器算力不富裕（画面只在需要时渲染）；时间与现实 1:1；画面**只读**（人和 DS 都不用键鼠操作游戏，
-  DS 用伪代码）；暖色田园风；她是**蓝发鲸鱼少女**（呆毛、鲸鱼尾巴、蓝白女仆装、围裙上的小鲸鱼；**没有鲸鳍耳**，用户要求去掉了）。
+  DS 用伪代码）；暖色田园风；她是**蓝发鲸鱼少女**（呆毛、鲸鱼尾巴、蓝白女仆装、围裙上的小鲸鱼；**没有鲸鳍耳**）；
+  **一切尽量「在世界里」（in-universe）**：手机是 QQ 的道具，看画面是用手机拍照，对别人说话不提「自由活动」这类系统词。
 
 ## 2. 当前状态
 
-代码在 `claude/happy-ptolemy-yj8v0n`（M0–M2.5 在 `claude/laughing-turing-ush012`，本分支从它快进而来）。**都还没合并进 `main`。**
+代码在 **`claude/practical-ptolemy-31lvw0`**（从 `claude/happy-ptolemy-yj8v0n` 快进而来；更早的 M0–M2.5 在 `claude/laughing-turing-ush012`）。
+**都还没合并进 `main`。** 用户还**没在自己的 Windows 上跑过 M4 / M5**，也没接真实 NapCat——所有端到端测试都在容器里用假 NapCat 做的。
 
-| 里程碑 | 内容 |
+| 里程碑 | 现状 |
 | --- | --- |
-| M0–M1.5 | DSH 插件、独立的「小屋生活」会话、工具白名单、Python 小屋进程、伪代码、世界内核、贝币经济、随机事件 |
-| 日记 | `diary_write` / `diary_read`，她自己决定写不写 |
-| M2 / M2.5 | 只读像素画面；`house_render` 看一帧；`view.bat` 动画窗口（同一进程） |
-| M2.6 | 画面换成 LPC 素材（家具、厨房、户外、四季的树、作物）；她由 LPC 角色图层拼成 + 代码画的鲸鱼部分；团子是 LPC 橘猫 |
-| M3 | 动作花真实时间（实时执行器、可打断）；每日作息（自由活动 / 平淡的日常）；操作提示 |
-| M7（进行中） | 18 道家常菜、物价对齐人民币、新作物和肉类、陪猫玩 + 猫玩具、猫闯的祸和 `tidy()`、`goto(团子)` |
+| M0–M3 | DSH 插件、Python 小屋进程、伪代码、世界、经济、随机事件、LPC 画面、动作花真实时间 |
+| 一天 | 7:30–8:30 醒来 = 第一段自由活动，中午、傍晚、晚上各一段（40 分钟）；23:30–24:00 睡觉（睡前整理日记）；0 点换天 |
+| 会话 | **每天一个会话**：当天的自由活动、手机 QQ、睡前都在里面；第一条消息带完整人设 + 记忆；系统提示词只有人设第一段 + 规则 |
+| M4 记忆 | 每晚 0:10 用不带人设的「记忆整理」会话读当天会话全文 + 日记 → JSON → `memory.json`，按天淡忘 |
+| M5 QQ | 插件直连 NapCat；手机道具；私聊（主人 + 账号的好友）；好友请求；图片、QQ 表情；语音 / 文件挡掉；睡着时挡掉；群聊暂时关（代码注释保留） |
+| M7 | 18 道家常菜、物价、猫玩具和乱子、看夜空（真实月相、流星雨）、日常活动（叫醒时才生成小结果）、在海边玩 |
 
-测试：`house/` 88 个（`python -m unittest discover -s tests`，无 pygame 时跳过渲染测试），`plugin/` 11 个（`npm test`）。
-在容器里用真实 DSH 0.2.2-rc.2 + deepseek-flash 跑过多次端到端（实测记录在 ROADMAP）。
-**还没在用户的 Windows 桌面上看过动画窗口和新画面**——请用户 `git pull` 后双击 `view.bat` 看。
+测试：`house/` 98 个（`python -m unittest discover -s tests`），`plugin/` 29 个（`npm test`）。
 
-她现在能用的工具：`house_do(script)`（所有行动，包括看看四周 `surroundings()`）、`house_render`（看一帧画面）、
-`end_free_time(note?)`（结束这次自由活动，可以提前）、`diary_write` / `diary_read`。
+她现在能用的工具（生活会话，preset `little-house`）：
+`house_do(script)`、`house_render`（用手机给小屋拍照，自己看）、`end_free_time`、`end_of_current_operation`、
+`phone_message(text, photo?, to?)`、`phone_friend_request(qq, accept)`、`diary_write` / `diary_edit(time, text)` / `diary_read(day?)`。
 
 ## 3. 关键设计与踩过的坑（改代码前务必看）
 
 ### DSH（cordis 插件框架）
 
 - **会话创建**照抄 dsh-schedule：`ctx.get('sessionController').create({ sessionId, cwd, agentPreset })`
-  → `resolveAgent(sessionId)`（返回 `{agent}` 或 `{error}`）→ `agent.followup(createUserMessage({content, source: {kind: 'little-house'}}))`
-  → `ctx.sessions.flush(agent.session)`。标题用 `ctx.get('sessionTitle')?.rename(session, title)`。
+  → `resolveAgent(sessionId)`（返回 `{agent}` 或 `{error}`）。标题用 `ctx.get('sessionTitle')?.rename(session, title)`。
+- **发消息给她一律用 `agent.steer(createUserMessage(...))`**：空闲时开一轮，正在跑的一轮在下一步插进去（QQ 消息在她做饭时也能进来）。
+  `followup` 只用在一次性的记忆整理会话。发完 `ctx.sessions.flush(agent.session)`。
+- **会话事件**：`ctx.on('session/event', (session, event) => …)`，事件有 `user/message`、`assistant/message`、`tool/call`、`tool/result`、`turn/end`。
+  插件用它记当天会话全文（`transcripts/`）和等记忆整理会话的回答（`runOnce`）。
 - **preset 子插件注册的工具，在 agent 看来是「继承的」**：`tools.restrict({ allow: [] })` 会连自己的工具一起藏掉。
-  做法：`restrict({ deny: <挂载时全部全局工具名> })` + `tools.guard()` 只放行 `OWN_TOOLS`（`plugin/agent-scope.js`）。
-  **新增工具时必须把名字加进 `OWN_TOOLS`**，否则会被守卫拒绝执行。
-- **工具超时是工具自己声明的**（`defineTool({ timeoutMs })`），不声明就不限时；`house_do` 声明了 60 分钟并响应 `exec.signal`
-  （DSH 中止这一轮时 `POST /interrupt`）。
-- **Node 的 `fetch` 5 分钟收不到响应头就断**，所以 `house_do` 分段等：`POST /do {wait: 240}`，没做完就 `POST /report {id, wait: 240}` 接着等。
-- `systemPrompt.suppressRuntimeContext()` 去掉编程向上下文（也就没有 DSH 自带的日期时间）；`working-directory` 一段去不掉（无害）。
-  她看到的所有时间都来自小屋的游戏时钟，插件开场消息的时间也从 `/status` 的 `now` 取。
-- 生活会话的系统提示词用 `complete: true` 的 section（人设 + 规则）。**QQ 会话不能这样做**：complete 会把 dsh-onebot 的平台提示词也吞掉。
+  做法：`restrict({ deny: <挂载时全部全局工具名> })` + `tools.guard()` 只放行 `OWN_TOOLS`（`plugin/agent-scope.js`）。**新增工具必须加进 `OWN_TOOLS`**。
+- 工具超时是工具自己声明的（`defineTool({ timeoutMs })`）；`house_do` 声明 60 分钟并响应 `exec.signal`。
+  **Node 的 `fetch` 5 分钟收不到响应头就断**，所以 `house_do` 分段等：`POST /do {wait: 240}`，没做完就 `POST /report`。
+- **DSH 进程里 Node 自带的 `WebSocket`（和 fetch 一样走全局 dispatcher）可能被代理劫持，连 127.0.0.1 都连不上**（容器里就是）。
+  所以 QQ 用自己写的极简 WebSocket 客户端（`plugin/lib/ws-client.js`，`node:http` + `agent: false`）。
+- `systemPrompt.suppressRuntimeContext()` 去掉编程向上下文；`complete: true` 的 section 是她的整个系统提示词。
 - `exec.concludeTurn()`（`end_free_time` 里）直接结束这一轮。
-- **`defineTool` 的输出 schema 顶层不能写 `required`**；在 `ctx.inject(...)` 回调里抛的错会被**静默吞掉**——插件把日志写到
-  `~/.dsh/little-house/plugin.log`。调试先看这个文件。
-- 工具结果里返回图片：`ctx.inject(['attachments'], ...)`，`attachments.saveImage({data, mediaType, name})`，再返回
-  `{ type: 'image', attachment: ref }`（见 `house_render`）。
-- 插件引用宿主包（`@deepseek-ai/dsh-tools`、`dsh-llm`、`cordis`、`schemastery`）靠 `peerDependencies` + DSH 的 peer 拦截；
-  插件目录没有 `node_modules` 也能跑。所以**单元测试只能测 `lib/` 里的纯函数**（`index.js` 引宿主包，测试里 import 不了）。
-- 改 profile 的 `cordis.patch.yml` 会**热重载**插件（小屋进程跟着重启）；改插件 JS 要重启 DSH。
-  新 profile 的 patch 文件里常有一行 `[]`，**直接追加会让 DSH 启动失败**，要先删掉。patch 一行会**整体替换**该行的 `config`。
-- 会话日志是多帧 zstd（`~/.dsh/sessions/<cwd>/<id>/session.v4.jsonl.zstd`），要跨帧解压；用量在 `assistant/message.data.usage`。
+- **`defineTool` 的输出 schema 顶层不能写 `required`**；`ctx.inject(...)` 回调里抛的错会被**静默吞掉**——看 `~/.dsh/little-house/plugin.log`。
+- 工具结果里返回图片：`ctx.inject(['attachments'], …)` → `attachments.saveImage({data, mediaType, name})` → `{ type: 'image', attachment }`。
+  用户消息里带图片：`{ type: 'image', attachment: ref }` 放进 `createUserMessage` 的 content（QQ 收到的图片就是这样给她看的）；宿主级服务用 `ctx.get('attachments')`。
+- 插件引用宿主包靠 `peerDependencies` + DSH 的 peer 拦截；插件目录没有 `node_modules`。**单元测试只能测 `lib/` 里的纯函数**。
+- 改 profile 的 `cordis.patch.yml` 会热重载插件；改插件 JS 要重启 DSH。patch 一行会**整体替换**该行的 `config`；新 profile 里那行 `[]` 要先删掉。
+- 会话日志是多帧 zstd（`~/.dsh/sessions/<cwd>/<id>/session.v4.jsonl.zstd`）；用量在 `assistant/message.data.usage`，**`inputTokens` 不含缓存命中**（`cacheReadTokens` 另算）。
 
-### 小屋：实时执行
+### 一天、会话和作息（`plugin/index.js`）
 
-- `house/littlehouse/tasks.py` 的 `Runner` 按游戏时钟播放脚本。每个动作是生成器（`actions.process`），yield 阶段
-  （`walk` 沿路点走、`work` 做事、`wait` 等待），返回结果文字。打断时把 `Interrupted(done)` 抛进生成器，由动作自己决定做一半的结果
-  （炒菜糊、打扫进度保留、钓鱼空竿……）。执行器只在被推进时动：小屋 ticker 线程（忙时 0.25 秒一次）、等脚本的 HTTP 请求、测试里的快进。
-- 新动作：简单动作在 `content.ACTION_SECONDS` 配时长；要分阶段、能被打断的写成 `proc=True` 的生成器（参考 `_cook`、`_clean`、`_fish`、`_tidy`）。
-  特效名在 `anim.EFFECTS`，站位在 `actions.ACTION_SPOTS` / `world.stand_at`。
-- **写错就整段不执行、只给建议（用户要求）**：脚本先过 `actions.check_calls`，有不存在的动作或参数太多就整段拒绝（`script.refuse_bad_steps`），
-  用 `actions.suggest`（常用词对照表 `SYNONYMS` + 拼写相近）给出建议。**绝不自动替她换成正确的动作**；菜名也一样
-  （`content.DISH_ALIASES` 只用来提示「你是不是想做荷包蛋」）。参数也要写全名：物品、商品、房间里的东西只写一部分时提示全名（`world.item_name`、`world.resolve`、`order`），不替她补全。新动作要考虑往 `SYNONYMS` 里加常见的别称。
-- **操作提示**（用户要求）：每段结果末尾有 `menu_line`（这里能做的动作 + 简短说明，`actions.SHORT`）；只写动作名会走 `actions.options()`
-  列出能填什么；做不了的动作要说怎么才能做（`先 goto(厨房)`、`团子在卧室……goto(团子)`、`可以 order(...)`）。**新动作要补这三处。**
-- 脚本只在内存里；灶台上的菜（`world.jobs`）、乱子（`kind="mess"` 的物件）、猫的状态在存档里（v4）。
+- `dayKey()` = `dayOf(now, session.rolloverHour)`，默认 0 点换天。`dayAgent()` 拿当天会话（有锁，避免唤醒和 QQ 同时开两个）。
+- `intro(agent)`：会话的第一条消息前面加「（日期，新的一天。）## 你是谁（完整人设）## 你的记忆」。人设文件里的 `<!-- -->` 注释不给她；
+  `personaBrief()`（第一段）放系统提示词。
+- 作息：`dayTimes()` = 当天醒来时间（第一个时段的开始）和睡觉时间（`sleep.from–to` 随机，存在 `plugin-state.json` 的 `beds`）。
+  `isAsleep()` = 醒来之前或睡觉之后。`goToBed()`：结束所有窗口和接管，告诉小屋 `asleep: true`，发「该睡觉了，看看今天的日记」。
+  醒来就是早上那段自由活动（`buildWakeMessage({ wokeUp: true })`，`asleep: false`）。
+- **自由活动窗口**（`windows`，按会话 id）：`openWindow` → 到点 `timeUp`。**`timeUp` 先问小屋 `/status`**：正在做事，或有开了头的事
+  （`unfinished`：灶上的菜、这次做好没吃的菜、猫弄的乱子）就**加时**（最多 30 分钟，`POST /session {overtime: true}`），小屋只接受做完这些的动作；
+  否则结束。`end_free_time` 第一次调用如果还没写日记，只**问**（日记、要不要给主人发消息），再调一次就结束——**不强制写日记**。
+  她提前停下、时间还多时 2 分钟后再叫她（最多 2 次）；加时里她停下就结束。
+- **自由活动以外**：`house_do` 先用 `look_only` 试（`surroundings` / `inventory` / `help` 马上回答）；要做别的，小屋回 `needs_control`，
+  插件就让她**接管角色**（`startControl`，最多 `control.maxMinutes` = 30 分钟），做完 `end_of_current_operation()`；忘了的话这一轮结束时自动交还。睡前那一轮不能接管。
+- QQ 消息来时（`phoneBuzz`），自由活动以外的开头是「（23:10，不是自由活动时间。你的角色此刻在客厅，陪团子玩（团子……）。手机响了，是 QQ 消息：）」。
 
-### 小屋：时间和作息
+### 手机和 QQ（`plugin/qq.js`、`lib/onebot*.js`）
 
-- 自由活动由插件 `POST /session {free_until}` 开关；小屋据此决定 `deadline`（到点不再开始新的一步）、结果里的「还剩多少分钟」、
-  时段外的日常（`content.IDLE_ACTIVITIES`，每小时挑一件走过去做；23–7 点睡觉）和时段外的饥饿上限（≤ 60）。
-- **没有精力 / 疲劳**（用户要求去掉，自由活动本来就短，不强迫她休息）；只有饥饿。没有 `rest()`，等就 `wait()`。
-  饿了可以做饭，也可以订即食食品（饭团、三明治、便当……），省下做饭的时间去陪猫之类。
-- 时长全部在 `content.py`：`WALK_TILES_PER_SEC`、`ACTION_SECONDS`、`EAT_SECONDS`、`RECIPES`（每道菜的 `work` / `wait`）、
-  `CLEAN_DIRT_PER_MINUTE`、`FISH_SECONDS`、`PLAY_SECONDS`、`MESSES`。`tests/test_tasks.py` 有「一圈约二十分钟」的检查。
-- 插件：`lib/wake.js` 作息表纯函数；每天投一次开始时间存在 `plugin-state.json` 的 `plans`；已结束的时段记在 `doneSlots`；
-  DSH 在时段中途启动会以「继续」打开剩下的时间。她没调 `end_free_time` 就停下、时间还剩 ≥ 5 分钟时，2 分钟后再叫她（最多 2 次）。
+- 正向连接 NapCat 的「WebSocket 服务端」（`qq.url` + `accessToken`），断线指数退避重连；动作按 `echo` 对应回复。
+- 谁的私聊交给她：主人（`ownerQQ`）+ `others`（默认 `friends` = **NapCat 登录的那个账号的好友**，`sub_type === 'friend'`；`listed` / `none`）。
+  别人显示成「主人的朋友<备注或昵称>」（好友请求里还不是朋友，不这么叫）。给她发过消息的人记在 `qq-contacts.json`，`phone_message(to: 名字)` 用。
+- **她直接写的文字不会发出去**，回消息只能用 `phone_message`（空行分条、`[表情:名称]` ↔ QQ face、去 Markdown）。
+- 语音 / 视频 / 文件 / 合并转发 / 卡片在桥这里挡掉（`readMessage().dropped`），只记录；只有这些内容的消息不叫醒她。
+- 睡着时一律不交给她，自动回 `qq.sleepReply`（同一聊天半小时一次）。
+- 好友请求（`post_type: request`）：告诉她是谁、验证消息，规则让她先问主人，再 `phone_friend_request`（`set_friend_add_request`）。
+  睡着时来的存在 `qq-requests.json`，早上醒来的消息里告诉她。
+- 群聊：用户说**先不做**。`qq.js` 里群聊的代码以注释保留，配置里的 `groups` / `names` 也注释掉了。
+- QQ 表情名表 `lib/qq-faces.js` 是从 dsh-onebot 搬的（BSD-3，文件头保留许可，NOTICE 里登记）。
 
-### 小屋：世界
+### 记忆（`plugin/lib/memory.js`、`memory-scope.js`）
 
-- 存档 `world/world.json` 有版本号（当前 v4），`World.load_json` 里有迁移。**改存档结构要加迁移并写测试。**
-  旧存档里的旧菜（煎蛋、萝卜汤……）和旧家具（风铃、懒人沙发）保留为能吃 / 能显示的物品。
-- 「世界自己发生的事」用 `world.log(..., actor="world")`，会进 `/news`，下次自由活动开始时告诉她「这段时间里」；
-  她自己的动作是 `actor="resident"`，变成「上次自由活动的时候，你……」（太长的截到 40 字）。
-- 世界描述里提到的地方 / 东西必须真的能去 / 能用。
-- **画面和文字必须描述同一个世界（用户明确要求）。** 唯一来源是 `content.APPEARANCE`：`render.py` 按它画，`examine`、房间描述、
-  家具描述都用它。改画面时同步改这张表（`tests/test_consistency.py` 检查「画了但没描述」）。
-- 物价：**1 贝币 ≈ 1 元人民币**；开拓署按略低于零售价收购原料，不收做好的菜（`tests/test_world.py` 有检查）。
-- 猫：`play` 的结果看当天脾气 / 饿不饿 / 刚玩过没有 / 是不是最爱的玩具；和她在一起后 10 分钟不乱走；没人看着时偶尔闯祸（`CAT_MISCHIEF`）。
+- 原料：**当天会话全文**（`recordTranscript` 边发生边写 `transcripts/<day>.jsonl`：消息、她写的话、工具调用、结果前 400 字；不含思考和 intro）
+  + 当天日记 + 现有记忆（第一天没有）。没有会话记录的旧日子退回 `qq/<day>.jsonl`。
+- 0:10（和 DSH 启动时，补最多 7 天）开「记忆整理 · 日期」会话（preset `little-house-memory`：**不带人设、没有任何工具**），回一个 JSON：
+  `summary`（最近的日子，可含适量平凡日常）、`plans`（**想做的事，必须列**）、`memories`（**只放不能忘的**：约定、主人的习惯、重要的第一次）、
+  `people`（两三句，以后归纳成人物画像）、`recalled` / `done`（编号）。`mergeDay` 合并，`forget` 删掉忘了的，`archive.jsonl` 永久留底。
+- 淡忘（纯代码）：按「上次想起」到今天的天数一档档变（清晰 → 清楚 → 模糊 → 只剩印象 → 忘记），想做的事快一倍，重要度 ≥ 90 不忘。
+  `render(..., { maxChars })`：默认 6000 字，超了先少放旧日子。
+
+### 小屋：实时执行、动作、错误提示
+
+- `tasks.Runner` 按游戏时钟播放脚本；动作是生成器（yield `walk` / `work` / `wait`），打断时把 `Interrupted(done)` 抛进去。
+  **到点不打断正在做的一步**，只是不再开始后面的步骤（`deadline`）。新动作：简单的在 `content.ACTION_SECONDS` 配时长，分阶段的写成 `proc=True` 生成器。
+- **写错只有两类提示，不猜**（用户要求）：动作名不存在 → 列出「这里能用的动作 / 其他地方的动作」；写的东西找不到 → 列出这里有的、背包里有的、
+  目录上有的、菜谱上的菜名。别的房间里有的东西说在哪。新东西不用再维护对照表。状态类提示（先 goto(厨房)、还缺原料……）照旧。
+- 手机：`content.PHONE`，一直在背包里，`take_item` 拒绝拿走它；老存档加载时补上。
+- 看夜空：`sky.py`（真实月相、月出、流星雨极大夜）+ `actions.sky_view()`（没有副作用的夜空描述）+ `stargaze()`；`content.SKY_EVENTS` 是随机小事。
+- **日常**（`content.IDLE_ACTIVITIES`，`world._routine`）：每小时一件，**只是个样子，不改变世界、不记录**；不安排答不上细节的事（看书）。
+  有消息叫醒她时 `world.idle_story()` 才临时生成一个小结果（`actions.STORIES`：团子的反应、海边、夜空），同一件事里不变。
+  收拾屋子去最干净的房间（真正脏的留给她）；陪团子玩跟着猫走；午觉只在 12–16 点。
+- 加时：`world.free_open()`（插件还没关掉窗口）、`unfinished()`、`overtime_problem()`；`set_free(until, overtime)`；`resident.cooked` 记这次做的菜。
+- 存档 `world/world.json` 当前 v4，`World.load_json` 里有迁移；**改存档结构要加迁移并写测试**。
+- **画面和文字描述同一个世界**（用户明确要求）：唯一来源是 `content.APPEARANCE`；改画面时同步（`tests/test_consistency.py`）。
+  画面里没画月亮，所以文字里的月相不冲突；以后要画月亮必须按 `sky.moon_phase` 画。
+- 物价：1 贝币 ≈ 1 元人民币；开拓署略低于零售价收原料，不收做好的菜。
 
 ### 小屋：画面
 
-- `render.render(world, t, pose)`；不传 pose 时用 `anim.current_pose`（此刻的真实状态）。窗口在 `display.py`，跑在小屋进程**主线程**，
-  开关走 `POST /window`。渲染时持有 `house.lock`。**不要在小屋进程里设置 `SDL_VIDEODRIVER=dummy`**（会让后来打开的真窗口失效）。
-- LPC 素材在 `house/littlehouse/assets/lpc/`（原样拷贝），`sprites.py` 运行时切图；`SPRITES` 表是名字 → (文件, 矩形)。
-  **素材文件缺失时每样东西都退回代码绘制**（`tests/test_render.py` 有检查）。
-  **加新素材时必须在 `CREDITS.md` 写清来源、许可、作者**（CC-BY-SA / GPL / OGA-BY，不是 Apache）。
-- 她：`sprites.resident(direction, frame)` 把 LPC 角色图层（身体、头、长发、蓝衬衫、白围裙、裙子）叠起来，头发和裙子按亮度重新上色成蓝色，
-  再画呆毛、鲸尾、围裙上的小鲸鱼。走路用左右 8 帧，其他时候面朝前。图层来自
-  [Universal LPC Spritesheet Character Generator](https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator)：
-  路径在它的 `CREDITS.csv` 里，原图在 `spritesheets/<路径>`，有颜色的在 `spritesheets/<路径去掉 .png>/<颜色>.png`。
-- 布局：场景仍是 40×26 个 16px 格子，LPC 素材按原尺寸画（32px = 2 格），家具位置按素材大小调过（`scene.FIXTURES`）。
+- `render.render(world, t, pose)`；窗口在 `display.py`，跑在小屋进程**主线程**，开关走 `POST /window`。
+  **不要在小屋进程里设置 `SDL_VIDEODRIVER=dummy`**（会让后来打开的真窗口失效）。容器里用 Xvfb 验证过真窗口能开、能动。
+- LPC 素材在 `house/littlehouse/assets/lpc/`，`sprites.py` 运行时切图；**素材缺失时退回代码绘制**；**加新素材必须在 `CREDITS.md` 写清来源、许可、作者**。
+- 墙和地板还是代码画的。用户的看法：地板不用换（一眼认得出）；墙最弱，但只是好不好看的问题，排得很后。
 
-## 4. 下一步（按用户意图排序）
+## 4. 下一步
 
-1. **请用户在 Windows 上看新画面**：`git pull`、`pip install pygame-ce`、重启 DSH、双击 `view.bat`。
-   旧的插件配置如果覆盖过 `wake`（minIntervalMinutes 等旧键），要换成新的 `slots`。
-2. **M5 QQ（复用 dsh-onebot）**——用户已同意复用：
-   - 方案 A（先试）：dsh-onebot 原样安装，`agentPreset` 指向新增的 `little-house-qq` preset：`dsh-persona` 行（同一份人设，**不要 complete**）、
-     `dsh-little-house/diary`（`config.source: QQ`）、注入「小屋近况 + 最近日记」的 system prompt section、可选只读的 `surroundings`。
-     关键待验证：我们往 dsh-onebot 的 QQ 会话里 `followup` 一条消息时，回复会不会经 dsh-onebot 发回 QQ。
-   - 方案 B：把 dsh-onebot 的 connection / cq / inbound / outbound 核心（BSD-3，保留声明）搬进本插件。
-   - **用户的决定**：自由活动以外也可以回复收到的 QQ 消息，但不主动发；主动行动（主动分享）都放在自由活动时间里。
-     自由活动 40 分钟里，小屋里的一圈大约 20 分钟，剩下的留给 QQ 和上网。
-   - 夜间（0–8 点）：QQ 消息按概率决定是否送达模型；不送达就直接回一句「她在睡觉」。主动分享要有每日上限、白名单。
-3. **M4 记忆**：小屋和 QQ **共用一份**。原料：`world/events.jsonl` + `diary/*.md` + QQ 会话。每天（或每段自由活动后）总结一段，
-   再维护一张会衰减的长期记忆卡（参考 surfcore 的 memory-card），注入生活会话和 QQ 会话。
-4. M6 上网（屋里的「电脑」：RSS、小说阅读带书签、只读、站点白名单、防 SSRF），放在自由活动里用；M8 设置界面。
-5. 画面的剩余部分（可选）：墙、地板、篱笆还是代码画的；LPC 里有木地板 / 墙面素材可以换。
-6. 每日 token 预算：用户决定先不做。
+1. **请用户在 Windows 上实际跑起来**：`git pull` 这个分支、完全重启 DSH；按 `docs/INSTALL-WINDOWS.md` 第 6 节开 NapCat 的 WebSocket 服务端、填 `qq` 配置。
+   看一整天：早上醒来、QQ、好友请求、睡前、`memory/memory.md`、`plugin.log`。以前用过 dsh-onebot 的话别让它连同一个账号。
+2. 还没在真实模型上碰到过的：早上醒来作为当天第一条消息（单元测试覆盖）、夜里来的好友请求早上告诉她、「别答应待会儿」那条规则、0:10 定时整理（整理本身测过）。
+3. **M6 上网**：用手机上网（RSS、小说带书签、网页正文；只读、站点白名单、防 SSRF），看到的东西她可以写进日记 → 进记忆。
+4. 群聊（用户说以后再做；代码已注释保留）。
+5. M8 设置界面（额度、记忆查看、开关）；墙面素材（可选）。
 
 ## 5. 用户做过的决定（备查）
 
-- 工具名：`house_render`（看画面）、`end_free_time`（结束自由活动）；`house_surroundings` 工具已删，看看四周用脚本里的 `surroundings()`
-  （`look()` 完全去掉，写了会提示用 `surroundings()`）。
-- 写错动作名：整段不执行，提示正确写法，不自动替换。
-- 不设精力，只有饥饿；目录里可以订即食食品。
-- 作息：早上 7:30–8:30 随机开始，40 分钟；中午、傍晚同样；深夜一半日子有。开始和结束直接告诉她，不做世界观包装。
-- 动作时长：做饭要分「必须守着」和「下锅后能走开」；一圈想做的事约 20 分钟；`tidy` 每处 5–15 秒；其他简单动作现在的时长可以。
-- 菜谱：十多道地道中餐（必须有白米饭、荷包蛋、红烧肉），原料自己种或买；物价对齐人民币。
-- 画面：用 LPC 素材（Kenney 的不够好认）；订货目录的家具按 LPC 有的来；去掉鲸鳍耳。
-- 猫：可以陪玩、玩具可以买、随机结果和房间联动、闯的祸要能收拾。
+- 写错：**只有两类提示，列出能写的，不猜、不替她改**；菜名没有别名表。
+- 不设精力 / 疲劳，只有饥饿；可以订即食食品。
+- 作息：7:30–8:30 醒来就是早上的自由活动，中午、傍晚、晚上各一段（每天都有）；23:30–24:00 睡觉，睡前整理日记；睡着时 QQ 挡掉；0 点换天。
+- **一天一个会话**（小屋 + 手机）；人设和记忆写在第一条消息里，系统提示词只放简短人设。
+- 日记：醒着随时能写、改、读以前的；不强制，结束自由活动时问一句。改之前先 `diary_read()` 看时间。
+- 记忆：原料是会话全文 + 日记；四块：最近的日子（可含平凡日常）、想做的事（必须有）、记得的事（只放不能忘的）、认识的人（两三句，逐渐成画像）。
+- QQ：直连 NapCat，不用 dsh-onebot；回复只能用 `phone_message`；条数不限；主动发消息只在自由活动里（随时），结束时问一句不强制；
+  账号的好友可以私聊，她也能应他们的请求做事；好友请求先问主人；语音文件挡掉；群聊先不做。
+- 自由活动以外：主人或朋友请她做事时可以接管角色，做完 `end_of_current_operation()`；不能答应「待会儿」做什么，请对方晚点再提醒（不提「自由活动」）。
+- 自由活动到点：手上的事做完为止；成套的事（做饭→吃饭、猫弄坏的东西）可以顺延做完，其他动作拒绝，日记和 end_free_time 随时可以。
+- 日常：不安排答不上来的事（看书）；只是个样子，没人问就不发生；有人问才临时生成结果；打扫不去真正脏的房间；有在海边玩。
+- 时长：做饭分「必须守着」和「下锅后能走开」；一圈想做的事约 20 分钟；`tidy` 每处 5–15 秒。
+- 画面：LPC 素材；去掉鲸鳍耳；地板不用换。
 
-## 6. 容器里的测试环境（下次如果还在同一个环境）
+## 6. 容器里的测试环境
 
-用户要求**保留**这些，不要删。scratchpad 路径：`/tmp/claude-0/-home-user-LittleHouseOfDeepSeek/<session>/scratchpad/`（新会话会不同）。
+新会话的 scratchpad 路径会变，里面的东西会丢；**要长期保留的工具都放在仓库的 `tools/`**。
 
-- `dsh/`：`npm install @deepseek-ai/dsh@0.2.2-rc.2`，命令 `npx dsh`（要 `DEEPSEEK_API_KEY=proxy-injected`，真 key 由代理注入）。
-- `venv/`：带 pygame-ce 和 zstandard 的 Python。
-- `dsh-home/`：测试用 `DSH_HOME`，profile `lhtest`，插件 junction 指向仓库的 `plugin/`（`scripts/install.py --profile lhtest`）。
-- `overlay.yml`：覆盖 `little-house` 行（`stateDir: <scratch>/lh-state`、`house.python` 指向 venv、`wake.firstWakeDelaySeconds: 5`、
-  `wake.testMinutes`）= 启动 5 秒后来一段临时自由活动。启动：
-  `DEEPSEEK_API_KEY=proxy-injected DSH_HOME=<scratch>/dsh-home npx dsh --profile lhtest --patch <scratch>/overlay.yml --no-open --port 3099`
-  （launcher 参数在 app 参数前面）。等 `plugin.log` 出现 `over in session` 就是这段结束了。
-- `tools/fulllog.py <dsh-home> <开场消息里的一段文字，如 "临时，07:04"> <输出.md> <events.jsonl>`：导出完整伪代码日志给用户。
-  `tools/readsession.py`、`tools/calls.py`：快速看会话。`tools/shot.py`：渲染一张摆满东西的测试画面。
-- `lpc-dl/`、`lpc-dl2/`、`ulpc/`：下载的 LPC 原始包（已拷进仓库的只是用到的那些）。
-- **网络**：云环境「LittleHouseOfDeepSeek」的允许列表里有 `opengameart.org`、`lpc.opengameart.org`、`kenney.nl`（kenney 返回 403）；
-  GitHub 的 `raw.githubusercontent.com` 和 `media.githubusercontent.com`（LFS）可以下载公开仓库的文件。
-- **DeepSeek API key**：保存在云环境「LittleHouseOfDeepSeek」的网络密钥里（由代理注入，从未写进任何文件）。2026-11-14 换过一次。
-  失效的话用 `request_credential` 重新申请，不要让用户把 key 贴进聊天。
+- 云环境「LittleHouseOfDeepSeek」有**启动脚本**：新容器建好时在 `/opt/lh` 装 DSH 0.2.2-rc.2（`/opt/lh/dsh`）和带 pygame-ce、zstandard 的 venv（`/opt/lh/venv`）。
+  （2026-11-14 加的，下一个新会话才第一次真正跑；如果 `/opt/lh` 不在，就照 `tools/devenv.sh` 开头的注释手动装，约 1 分钟。）
+- `tools/devenv.sh <工作目录> [分钟] [qq]`：建测试 profile `lhtest`、写 overlay，打印启动命令。分钟 > 0 时启动 5 秒后来一段临时自由活动；`qq` 连假 NapCat（主人 QQ 123）。
+  启动命令里加 `TZ=Asia/Shanghai` 就是用户的时区（测晚上的事很方便：容器是 UTC）。
+- `tools/fake-napcat.mjs`：假 NapCat（ws 3001，控制口 3002）。`POST /private {user_id, text, image, voice, nickname}`、`POST /request {user_id, nickname, comment}`、`GET /outbox`。
+- `tools/fulllog.py <DSH_HOME> <out.md> [开场消息里的一段文字] [--diary 目录]`：导出完整日志（找最新的、第一条消息含那段文字的会话；当天会话用 `"## 你是谁"`）。
+- `tools/shot.py <out.png>`：渲染一张截图。
+- 想造「没做完的事」：DSH 停着时往 `world/world.json` 的 `jobs` 里塞一锅还没好的菜。想测记忆整理：把某天的 `transcripts/`、`diary/` 复制成更早的日期再重启。
+- **DeepSeek API key** 在云环境的网络密钥里（代理注入，`DEEPSEEK_API_KEY=proxy-injected` 只是占位）。失效的话用 `request_credential` 重新申请，不要让用户贴进聊天。
+- 等日志里的某一行时注意：`plugin.log` 里有以前的同名行，等待条件要带时间戳或只看新行。
+- 杀测试进程时，别用会匹配到自己命令行的 `pkill -f`（会把当前 shell 也杀掉）：用 `pgrep` 列出再逐个 `kill`。
 
 ## 7. 仓库地图
 
 ```
-plugin/            DSH bundle：index.js（服务、作息、自由活动窗口）、agent-scope.js（规则 + 工具）、diary-scope.js、
-                   lib/（wake.js 作息纯函数、slots.js 默认时段、house-process.js、diary.js）、persona/、cordis.patch.yml、test/
-house/littlehouse/ 小屋：content（内容表，一切数值）/ world（状态、日常、乱子、灶台）/ actions（动作、提示、菜单）/
-                   tasks（实时执行器）/ script（解析、结果格式）/ server（HTTP）/ scene（布局）/ anim（此刻姿态）/
-                   render（渲染）/ sprites（LPC 切图、拼她）/ display（窗口）/ repl / clock / assets/lpc（素材 + CREDITS.md）
-house/tests/       unittest（world / tasks / anim / render / consistency）
-scripts/install.py 装进 / 卸出 DSH profile（junction + package.json，带备份）
-view.bat           只读窗口
+plugin/            DSH bundle（纯 ESM JS，无构建）
+  index.js         宿主服务 littleHouse：小屋进程、作息、当天会话、自由活动窗口 / 加时 / 接管、睡觉、记忆整理、会话全文
+  agent-scope.js   生活会话的规则（简短人设 + 规则）和工具（house_do、house_render、end_*、phone_*）
+  diary-scope.js   diary_write / diary_edit / diary_read
+  memory-scope.js  记忆整理会话（不带人设、没有工具）
+  qq.js            QQ：收消息、好友请求、睡着时挡掉、phone_message、记录
+  lib/             wake.js（作息、消息文本）、slots.js、diary.js、memory.js、onebot.js（消息格式）、onebot-client.js、ws-client.js、qq-faces.js、house-process.js
+  persona/         示例人设（第一段 = 简短版）
+  cordis.patch.yml 三行：little-house 服务、little-house preset、little-house-memory preset
+house/littlehouse/ 小屋：content（一切数值、日常、夜空小事）/ world（状态、日常、加时、灶台）/ actions（动作、提示、日常小结果）/
+                   sky（月相、流星雨）/ tasks（执行器）/ script（解析、结果格式）/ server（HTTP）/ scene / anim / render / sprites / display / repl / clock
+house/tests/       unittest（world / tasks / anim / render / consistency / sky）
+tools/             devenv.sh、fake-napcat.mjs、fulllog.py、shot.py（只用于开发）
+scripts/install.py 装进 / 卸出 DSH profile
 docs/              INSTALL-WINDOWS / PROTOCOL / ROADMAP / HANDOFF + 截图
 ```
