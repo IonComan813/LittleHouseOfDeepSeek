@@ -586,10 +586,9 @@ def _order(w: World, ref: str, n: float = 1) -> str:
     _need_indoor(w)
     name = str(ref).strip()
     if name not in C.CATALOG:
-        cands = [k for k in C.CATALOG if name in k]
-        if len(cands) != 1:
-            raise ActionError(f"目录里没有「{name}」。用 catalog() 看看。")
-        name = cands[0]
+        cands = [k for k in C.CATALOG if name and (name in k or k in name)]
+        hint = f"你是不是说{'、'.join(cands)}？要写全名。" if cands else "用 catalog() 看看。"
+        raise ActionError(f"目录里没有「{name}」。{hint}")
     count = int(n)
     if count < 1 or count > 20:
         raise ActionError("数量要在 1 到 20 之间。")
@@ -625,7 +624,9 @@ def _plant(w: World, seed_ref: str, plot_ref: str = "") -> str:
     _need_room(w, "yard")
     seed = w.item_name(seed_ref)
     if seed not in C.CROPS:
-        raise ActionError(f"{seed}不是种子。")
+        seeds = [s for s in w.items_with_tag("seed") if seed in s]
+        hint = f"你是不是想种{seeds[0]}？那就写 plant({seeds[0]})。" if seeds else ""
+        raise ActionError(f"{seed}不是种子。{hint}")
     if plot_ref:
         plot = w.resolve(plot_ref)
         if plot.kind != "plot":

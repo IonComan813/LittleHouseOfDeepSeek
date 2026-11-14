@@ -75,7 +75,7 @@
   特效名在 `anim.EFFECTS`，站位在 `actions.ACTION_SPOTS` / `world.stand_at`。
 - **写错就整段不执行、只给建议（用户要求）**：脚本先过 `actions.check_calls`，有不存在的动作或参数太多就整段拒绝（`script.refuse_bad_steps`），
   用 `actions.suggest`（常用词对照表 `SYNONYMS` + 拼写相近）给出建议。**绝不自动替她换成正确的动作**；菜名也一样
-  （`content.DISH_ALIASES` 只用来提示「你是不是想做荷包蛋」）。新动作要考虑往 `SYNONYMS` 里加常见的别称。
+  （`content.DISH_ALIASES` 只用来提示「你是不是想做荷包蛋」）。参数也要写全名：物品、商品、房间里的东西只写一部分时提示全名（`world.item_name`、`world.resolve`、`order`），不替她补全。新动作要考虑往 `SYNONYMS` 里加常见的别称。
 - **操作提示**（用户要求）：每段结果末尾有 `menu_line`（这里能做的动作 + 简短说明，`actions.SHORT`）；只写动作名会走 `actions.options()`
   列出能填什么；做不了的动作要说怎么才能做（`先 goto(厨房)`、`团子在卧室……goto(团子)`、`可以 order(...)`）。**新动作要补这三处。**
 - 脚本只在内存里；灶台上的菜（`world.jobs`）、乱子（`kind="mess"` 的物件）、猫的状态在存档里（v4）。

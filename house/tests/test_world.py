@@ -92,6 +92,19 @@ class MovementTest(unittest.TestCase):
         with self.assertRaises(ScriptError):
             run(new_world(), "dance()")
 
+    def test_names_must_be_whole(self):
+        w = new_world()
+        res = run(w, "goto(庭院); plant(萝卜)")
+        self.assertFalse(res[-1].ok)
+        self.assertIn("你是不是说萝卜种子", res[-1].text)
+        self.assertFalse(w.objects["plot#1"].state.get("seed"))
+        w.add_item("萝卜")
+        res = run(w, "plant(萝卜)")  # the vegetable, not the seed
+        self.assertIn("你是不是想种萝卜种子？那就写 plant(萝卜种子)", res[0].text)
+        self.assertIn("你是不是说菜地1", run(w, "water(菜地)")[0].text)
+        self.assertIn("番茄种子", run(w, "goto(客厅); order(番茄种)")[-1].text)
+        self.assertTrue(ok(run(w, "goto(庭院); plant(萝卜种子, 菜地1)")))
+
     def test_one_wrong_step_and_nothing_runs(self):
         w = new_world()
         with self.assertRaises(ScriptError) as e:
@@ -254,7 +267,7 @@ class EconomyTest(unittest.TestCase):
         self.assertTrue(any("包裹" in e.text for e in w.news_since("")))
         res = run(w, "goto(庭院); surroundings(); open(包裹)")
         self.assertTrue(ok(res), res)
-        self.assertIn("门口的包裹", res[1].text)
+        self.assertIn("包裹[parcel]（放在门口", res[1].text)
         self.assertFalse(w.parcels)
 
     def test_order_delivered_next_morning(self):

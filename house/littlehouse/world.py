@@ -71,7 +71,7 @@ def _fixtures() -> list[Obj]:
         Obj("stove", "灶台", "fixture", "kitchen"),
         Obj("table", "木桌", "fixture", "kitchen"),
         Obj("mailbox", "邮箱", "fixture", "yard"),
-        Obj("parcel", "门口的包裹", "fixture", "yard"),
+        Obj("parcel", "包裹", "fixture", "yard"),
         Obj("consign", "寄售箱", "fixture", "yard"),
         Obj("plot#1", "菜地1", "plot", "yard", {"water": 60.0}),
         Obj("plot#2", "菜地2", "plot", "yard", {"water": 60.0}),
@@ -357,11 +357,15 @@ class World:
         """An object in the current room by id ('pot#1') or name ('绿萝')."""
         ref = str(ref).strip()
         here = self.here()
-        for match in (lambda o: o.id == ref, lambda o: o.name == ref, lambda o: ref in o.name):
+        for match in (lambda o: o.id == ref, lambda o: o.name == ref):
             found = [o for o in here if match(o)]
             if found:
                 self.stand_at(found[0].id)
                 return found[0]
+        close = [o for o in here if ref and (ref in o.name or o.name in ref)]
+        if close:  # a partial name: say the full one, do not guess for her
+            names = "、".join(f"{o.name}（{o.id}）" for o in close)
+            raise ActionError(f"这里没有「{ref}」。你是不是说{names}？要写全名或编号。")
         pet = self.pet["name"]
         if ref in (pet, "猫", "小猫", "橘猫"):
             if self.pet["room"] == self.location:
@@ -522,16 +526,16 @@ class World:
     # ================================================================== inventory
 
     def item_name(self, ref: str, pool: dict[str, int] | None = None) -> str:
-        """Resolve a (possibly partial) item name against a pool (default: inventory)."""
+        """The exact name of something in a pool (default: inventory). A partial name is not
+        accepted: she is told which full name she probably meant."""
         pool = self.inventory if pool is None else pool
         ref = str(ref).strip()
         if pool.get(ref, 0) > 0:
             return ref
-        partial = [n for n, c in pool.items() if c > 0 and ref in n]
-        if len(partial) == 1:
-            return partial[0]
-        if len(partial) > 1:
-            raise ActionError(f"「{ref}」指的是哪一个？{'、'.join(partial)}")
+        partial = [n for n, c in pool.items() if c > 0 and ref and (ref in n or n in ref)]
+        if partial:
+            names = "、".join(partial)
+            raise ActionError(f"背包里没有「{ref}」。你是不是说{names}？要写全名，比如「{partial[0]}」。")
         how = []
         if ref in C.CATALOG:
             how.append(f"可以在客厅的订货目录上买（order({ref}, 数量)）")
@@ -600,7 +604,7 @@ class World:
         if o.id == "mailbox":
             return f"邮箱[mailbox]（{f'有 {len(self.mailbox)} 封信' if self.mailbox else '空的'}）"
         if o.id == "parcel":
-            return f"门口的包裹[parcel]（{sum(self.parcels.values())} 件东西）"
+            return f"包裹[parcel]（放在门口，{sum(self.parcels.values())} 件东西）"
         if o.id == "consign":
             return f"寄售箱[consign]（{'放着 ' + self.format_items(self.sale_box) + '，傍晚收走' if self.sale_box else '空的'}）"
         if o.id == "shelf":
@@ -705,6 +709,7 @@ class World:
         self.objects = {o["id"]: Obj(**o) for o in data.get("objects", [])}
         for o in _fixtures():  # fixtures added in newer versions appear in old saves too
             self.objects.setdefault(o.id, o)
+            self.objects[o.id].name = o.name  # and renamed ones get their current name
         self.resident.update(data.get("resident", {}))
         self.pet.update(data.get("pet", {}))
         self.dirt.update(data.get("dirt", {}))
