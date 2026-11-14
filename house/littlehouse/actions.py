@@ -359,12 +359,16 @@ def method_note(dish: str) -> str:
     method = C.RECIPE_METHOD.get(dish, "炒")
     m = C.COOK_METHODS[method]
     if "busy" in m:
-        return f"{method}，要一直守着，约 {_minutes(m['busy'])} 分钟"
-    return f"{method}，先忙 {_minutes(m['prep'])} 分钟，再自己{method} {_minutes(m['simmer'])} 分钟，期间可以走开"
+        return f"{method}，要一直守着，约 {_duration(m['busy'])}"
+    return f"{method}，先忙 {_duration(m['prep'])}，再自己{method} {_duration(m['simmer'])}，期间可以走开"
 
 
 def _minutes(secs: float) -> str:
     return f"{secs / 60:g}"
+
+
+def _duration(secs: float) -> str:
+    return f"{secs:g} 秒" if secs < 60 else f"{secs / 60:g} 分钟"
 
 
 @action("recipes()", "看看会做哪些菜、怎么做、要多久，以及现在缺什么")

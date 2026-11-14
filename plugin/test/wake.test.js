@@ -89,6 +89,8 @@ test('recapEvents skips moves and duplicates', () => {
   const r = recapEvents(many, 5)
   assert.equal(r.length, 5)
   assert.match(r[4], /等 11 件事/)
+  const long = recapEvents([{ kind: 'mail', text: '读了一封信：' + '很长'.repeat(50) }])
+  assert.ok(long[0].length <= 42 && long[0].endsWith('……'))
   const msg = buildWakeMessage({ slotName: '早上', start: at(8, 0), until: at(8, 40), recap: ['喂了团子'], news: [], look: 'L' })
   assert.match(msg, /上次自由活动的时候，你喂了团子。/)
 })

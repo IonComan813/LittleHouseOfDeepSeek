@@ -466,7 +466,7 @@ class World:
             extra = "，火候刚刚好，格外好吃" if j["outcome"] == "great" else ""
             self.log("cook", f"用{self.format_items(j['use'])}{j['method']}了{j['dish']}{extra}")
             got.append(j["dish"] + ("（火候刚刚好，香极了）" if extra else ""))
-        return f"（你把灶台上{'、'.join(got)}盛了出来。）"
+        return f"（你把灶台上的{'、'.join(got)}盛了出来。）"
 
     def take_kitchen_note(self) -> str:
         note, self._kitchen_note = getattr(self, "_kitchen_note", ""), ""

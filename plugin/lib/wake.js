@@ -111,11 +111,13 @@ const RECAP_SKIP = new Set(['move'])
  * Turn the house's resident events into a short recap list.
  * @param {{ kind: string, text: string }[]} events
  */
-export function recapEvents(events, max = 10) {
+export function recapEvents(events, max = 10, maxChars = 40) {
   const lines = []
   for (const e of events) {
-    if (RECAP_SKIP.has(e.kind) || lines.includes(e.text)) continue
-    lines.push(e.text)
+    // a whole letter read back is too much: the first few words are enough to remember it
+    const text = e.text.length > maxChars ? e.text.slice(0, maxChars) + '……' : e.text
+    if (RECAP_SKIP.has(e.kind) || lines.includes(text)) continue
+    lines.push(text)
   }
   return lines.length > max ? [...lines.slice(0, max - 1), `……等 ${lines.length - max + 1} 件事`] : lines
 }
