@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { appendEntry, lastEntry, listDays, readDay, resolveDay } from '../lib/diary.js'
+import { appendEntry, lastEntry, lastEntryNote, listDays, readDay, resolveDay } from '../lib/diary.js'
 
 test('diary entries accumulate in one file per day', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'lh-diary-'))
@@ -33,4 +33,11 @@ test('resolveDay', () => {
   assert.equal(resolveDay('yesterday', now), '2026-11-12')
   assert.equal(resolveDay('2026-10-01', now), '2026-10-01')
   assert.equal(resolveDay('上周', now), undefined)
+})
+
+test('lastEntryNote says when the entry was written', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'diary-'))
+  await appendEntry(dir, new Date(2026, 10, 14, 10, 5), '小屋 · 早上', '上午去了沙滩。')
+  assert.equal(await lastEntryNote(dir, new Date(2026, 10, 14, 12, 0)), '（今天 10:05 写的）上午去了沙滩。')
+  assert.equal(await lastEntryNote(dir, new Date(2026, 10, 15, 8, 0)), '（昨天 10:05 写的）上午去了沙滩。')
 })

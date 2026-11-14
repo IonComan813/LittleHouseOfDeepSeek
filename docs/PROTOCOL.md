@@ -170,6 +170,8 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 | `plugin.log` | 插件日志（超过 1 MB 轮换为 `.1`） |
 | `world/latest.png` | 最近一次截图 |
 | `plugin-state.json` | 今天的生活会话 id、今明两天投好的自由活动时间（`plans`）、已经结束的时段（`doneSlots`）、上次自由活动开始 / 结束时间 |
+| `qq-state.json` | 每个 QQ 聊天今天的会话 id、今天主动发给主人的条数（`shares`）、主人还没看到的主动消息（`unseen`，下次私聊开头告诉她） |
+| `qq/YYYY-MM-DD.jsonl` | 当天（凌晨 4 点换天）所有 QQ 消息：收到的、她发的、群里没叫她的，一行一条（`chat`、`name`、`text`、`addressed`、`out`、`proactive`）；记忆（M4）的原料 |
 
 ## 日记工具
 
@@ -180,6 +182,22 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 | `diary_write(entry)` | 往今天的日记里追加一段（最多 2000 字） |
 | `diary_read(day?)` | 读某天的日记：今天 / 昨天 / 前天 / YYYY-MM-DD |
 | `end_free_time()` | 结束这次自由活动。这次还没写日记时不结束，提示先 `diary_write`；时间到了她却停着没写日记时，插件会发一句「写下这次的日记，然后 end_free_time」 |
+
+## 手机与 QQ（M5）
+
+她的背包里一直有一部**手机**（`content.PHONE`）：不能吃、卖、摆、喂，`examine(手机)` 能看。它是 QQ（以后还有上网）在世界里的样子；工具由插件提供。
+
+插件直接连 NapCat 的 OneBot 11 **WebSocket 服务端**（`qq.url`，正向连接，`plugin/lib/onebot-client.js` + 自带的极简 WebSocket 客户端 `lib/ws-client.js`，不走代理），断线自动重连。
+
+| | |
+| --- | --- |
+| 会话 | 每个聊天每天一个（`little-house-qq` preset，标题「QQ · 主人 · 日期」），凌晨 4 点（`qq.rolloverHour`）换天；DSH 重启后接着用当天的。第一条消息前附：日期、她在小屋里做什么、最近一段日记（带写的时间） |
+| 谁能找她 | 私聊：`ownerQQ` 和 `friends`；群：`groups` 里的群，被 @、叫到名字（`names`）或回复她发的消息时才交给她；没叫她的消息攒着（最多 12 条），下次叫她时作为「群里刚才的消息」附上 |
+| 收到的消息 | 私聊「主人：……」；群聊「[群名] 昵称：……」，主人在群里标（主人）。QQ 表情写成 `[表情:微笑]`，图片写成 `[图片]` 并把图片本身附在消息后（下载后存为 DSH 附件，每轮最多 4 张；她能看见），表情包 `[表情包]`，语音 / 视频 / 文件只给占位 |
+| 她的回复 | 她写的文字就是发出去的消息（每段模型输出一到就发）；空行分成几条（最多 3 条）；`[表情:名称]` 变回 QQ 表情（`lib/qq-faces.js`，名字不对就原样当文字）；去掉 Markdown；只写 `[不回复]` 就不发 |
+| 她的工具 | `house_status`（只读：`/look`）、`house_photo(caption?)`（渲染一帧小屋，作为照片发到这个聊天）、`diary_write` / `diary_read`（来源标 QQ）。没有 shell / 文件 / 网络 |
+| 夜里 | `night.from`–`night.to`（默认 0–8 点）：一条消息以 `night.chance`（默认 0.3）的概率叫醒她（消息前加「你本来在睡觉，被手机的提示音吵醒了」）；没叫醒就自动回 `night.reply`（同一个聊天半小时最多一次） |
+| 主动发消息 | 只在自由活动里、**写完日记之后**：`diary_write` 的结果末尾问她要不要给主人发消息（只发有趣、重要的事，流水账不发），她用 `phone_message(text, photo?)` 发；每天最多 `dailyShares`（默认 3）条。主人下次私聊时，她的 QQ 会话会被告知「之前你在小屋里用手机发给主人的消息」 |
 
 ## 画面
 

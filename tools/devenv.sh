@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Development only: a DSH test profile for real-model runs in the cloud container.
 #
-#   tools/devenv.sh <work-dir> [minutes]   # set up (idempotent), then print the launch command
+#   tools/devenv.sh <work-dir> [minutes] [qq]   # set up (idempotent), then print the launch command
 #
 # Needs the cloud environment's setup script (DSH 0.2.2-rc.2 in /opt/lh/dsh, a
 # venv with pygame-ce + zstandard in /opt/lh/venv). The DeepSeek key is injected
 # by the proxy, so DEEPSEEK_API_KEY is only a placeholder. With minutes > 0 the
 # plugin opens a temporary free time 5 s after DSH starts; 0 = the real schedule.
+# With "qq" the plugin dials tools/fake-napcat.mjs on ws://127.0.0.1:3001
+# (owner QQ 123, group 456).
 set -e
 W=$(mkdir -p "${1:?work dir}" && cd "$1" && pwd)
 MIN=${2:-10}
+QQ=${3:-}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 LH=${LH_OPT:-/opt/lh}
 export DSH_HOME=$W/dsh-home DEEPSEEK_API_KEY=proxy-injected
@@ -28,5 +31,13 @@ cat > "$W/overlay.yml" <<YML
       firstWakeDelaySeconds: $DELAY
       testMinutes: $([ "$MIN" -gt 0 ] && echo "$MIN" || echo 40)
 YML
+if [ "$QQ" = qq ]; then cat >> "$W/overlay.yml" <<YML
+    qq:
+      enabled: true
+      url: ws://127.0.0.1:3001
+      ownerQQ: '123'
+      groups: ['456']
+YML
+fi
 echo "cd $LH/dsh && DSH_HOME=$DSH_HOME DEEPSEEK_API_KEY=proxy-injected npx dsh --profile lhtest --patch $W/overlay.yml --no-open --port 3099"
 echo "# done when $W/lh-state/plugin.log says 'over in session'"

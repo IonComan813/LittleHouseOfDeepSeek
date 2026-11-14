@@ -553,6 +553,8 @@ class World:
         self.inventory[name] = self.inventory.get(name, 0) + n
 
     def take_item(self, name: str, n: int = 1) -> None:
+        if name == C.PHONE:
+            raise ActionError("手机要一直带在身上，不能用掉、卖掉或者放下。")
         have = self.inventory.get(name, 0)
         if have < n:
             raise ActionError(f"{name}不够（有 {have}，需要 {n}）。")
@@ -701,6 +703,10 @@ class World:
         }
 
     def load_json(self, data: dict[str, Any]) -> None:
+        self._load_json(data)
+        self.inventory[C.PHONE] = 1  # older saves get her phone too
+
+    def _load_json(self, data: dict[str, Any]) -> None:
         version = int(data.get("version", 1))
         self.location = data.get("location", self.location)
         if self.location not in C.ROOMS:

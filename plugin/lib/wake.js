@@ -134,7 +134,7 @@ export function buildWakeMessage({ slotName, start, until, before, recap = [], n
     : `（自由活动时间到了：${slotName}，${hhmm(start)}–${hhmm(until)}，共 ${minutes} 分钟。）`]
   if (before) lines.push(`在这之前，你一直在过平淡的日常——刚才在${before.replace(/^在/, '')}。`)
   if (recap.length) lines.push('上次自由活动的时候，你' + recap.join('；') + '。')
-  if (lastNote) lines.push(`日记里最近的一段：${lastNote}`)
+  if (lastNote) lines.push(`日记里最近的一段${lastNote.startsWith('（') ? '' : '：'}${lastNote}`)
   const uniqueNews = [...new Set(news)].slice(-8)
   if (uniqueNews.length) lines.push('这段时间里：' + uniqueNews.join('；') + '。')
   lines.push('', look, '')

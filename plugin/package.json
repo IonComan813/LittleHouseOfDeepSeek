@@ -1,7 +1,7 @@
 {
   "name": "dsh-little-house",
   "version": "0.0.1",
-  "description": "Little House: lets a DeepSeek Harness agent live in a small simulated home, waking up at random times.",
+  "description": "Little House: lets a DeepSeek Harness agent live in a small simulated home, with free time every day and QQ on her phone.",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -10,12 +10,15 @@
     ".": "./index.js",
     "./agent-scope": "./agent-scope.js",
     "./diary": "./diary-scope.js",
+    "./qq": "./qq-scope.js",
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "agent-scope.js",
     "diary-scope.js",
+    "qq.js",
+    "qq-scope.js",
     "lib",
     "persona",
     "cordis.patch.yml"

@@ -103,6 +103,10 @@ def _items(*specs: tuple) -> dict[str, Item]:
     return out
 
 
+# Her phone: always in the bag, never used up, sold or put down. QQ messages (and
+# later the web) go through it; the DSH plugin offers the tools.
+PHONE = "手机"
+
 ITEMS: dict[str, Item] = _items(
     # staples (weekly supply, or the catalog)
     ("鸡蛋", "ingredient", 0, "", "1个"), ("大米", "ingredient", 0, "", "1斤"), ("小米", "ingredient", 0, "", "1斤"),
@@ -155,6 +159,7 @@ ITEMS: dict[str, Item] = _items(
     ("纸箱", "toy", 0, "拆快递剩下的纸箱，猫最喜欢钻。"),
     # tools
     ("鱼竿", "tool"),
+    (PHONE, "tool phone", 0, "开拓署发的一部旧手机，屏幕角上有道细细的裂纹。能用 QQ 和主人、朋友收发消息（以后也能上网）。一直带在身上。"),
     # furniture / decor
     ("小地毯", "furniture", 0, APPEARANCE["小地毯"]), ("台灯", "furniture", 0, APPEARANCE["台灯"]),
     ("挂画", "furniture", 0, APPEARANCE["挂画"]), ("风铃", "furniture", 0, APPEARANCE["风铃"]),
@@ -427,7 +432,7 @@ PET_TEMPERS: list[tuple[str, int]] = [("黏人", 30), ("平常", 40), ("傲娇",
 
 # --------------------------------------------------------------------------- starting state
 
-START_INVENTORY = {"鱼竿": 1, "鸡蛋": 4, "大米": 3, "猫粮": 4, "土豆": 2, "萝卜种子": 2, "菠菜种子": 1}
+START_INVENTORY = {PHONE: 1, "鱼竿": 1, "鸡蛋": 4, "大米": 3, "猫粮": 4, "土豆": 2, "萝卜种子": 2, "菠菜种子": 1}
 PET_NAME = "团子"
 INDOOR_ROOMS = ("living_room", "kitchen", "bedroom")
 

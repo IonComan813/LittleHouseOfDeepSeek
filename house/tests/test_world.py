@@ -12,7 +12,7 @@ from littlehouse import content as C
 from littlehouse.clock import Clock
 from littlehouse.script import ScriptError, parse, run
 from littlehouse.server import House, make_handler
-from littlehouse.world import World
+from littlehouse.world import ActionError, World
 
 
 def clock_at(y, m, d, h=10, mi=0, scale=1.0) -> Clock:
@@ -517,6 +517,26 @@ class TimeTest(unittest.TestCase):
         w = new_world()
         advance(w, 24 * 60)  # two months away: must not loop forever or crash
         self.assertLessEqual(w.resident["hunger"], 100)
+
+
+class PhoneTest(unittest.TestCase):
+    def test_the_phone_is_always_in_the_bag(self):
+        w = new_world()
+        self.assertEqual(w.inventory.get("手机"), 1)
+        self.assertIn("QQ", run(w, "examine(手机)")[0].text)
+        for src in ("eat(手机)", "place(手机)", "display(手机)", "feed(手机)", "goto(庭院); sell(手机)"):
+            run(w, src)
+            self.assertEqual(w.inventory.get("手机"), 1, src)
+        with self.assertRaises(ActionError):
+            w.take_item("手机")
+
+    def test_old_saves_get_a_phone(self):
+        w = new_world()
+        data = w.to_json()
+        data["inventory"].pop("手机")
+        w2 = new_world()
+        w2.load_json(data)
+        self.assertEqual(w2.inventory.get("手机"), 1)
 
 
 class SaveTest(unittest.TestCase):

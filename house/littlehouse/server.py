@@ -22,6 +22,7 @@ from urllib.parse import parse_qs
 from . import __version__
 from .actions import help_text
 from .display import Display, pygame_available
+from . import content as C
 from .script import ScriptError, format_report, parse, refuse_bad_steps
 from .world import Event, World
 
@@ -141,6 +142,7 @@ class House:
                 "doing": w.runner.doing() if not w.runner.routine else "",
                 "idle": idle.text if idle else w.resident.get("idle", ""),
                 "location": w.location,
+                "location_name": C.ROOMS[w.location].name,
             }
 
 

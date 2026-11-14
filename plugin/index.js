@@ -19,9 +19,10 @@ import { Service } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
-import { lastEntry } from './lib/diary.js'
+import { lastEntryNote } from './lib/diary.js'
 import { HouseProcess } from './lib/house-process.js'
 import { DEFAULT_SLOTS } from './lib/slots.js'
+import { QQ } from './qq.js'
 import {
   TIME_UP_TEXT, buildNudge, buildWakeMessage, checkSlots, findSlot, formatDuration, hhmm, localDay, localIso, planDay, recapEvents,
 } from './lib/wake.js'
@@ -73,6 +74,25 @@ export default class LittleHouse extends Service {
       agentPreset: Schema.string().default('little-house'),
       title: Schema.string().default('小屋生活'),
     }).default({}),
+    qq: Schema.object({
+      enabled: Schema.boolean().default(false).description('接入 QQ（NapCat 的 OneBot 11 WebSocket 服务端）'),
+      url: Schema.string().default('ws://127.0.0.1:3001').description('NapCat「WebSocket 服务端」的地址'),
+      accessToken: Schema.string().default('').description('和 NapCat 里填的 token 一致'),
+      ownerQQ: Schema.string().default('').description('主人的 QQ 号'),
+      ownerName: Schema.string().default('主人').description('她怎么称呼主人'),
+      friends: Schema.array(Schema.string()).default([]).description('除了主人，还接受谁的私聊（QQ 号）'),
+      groups: Schema.array(Schema.string()).default([]).description('她在哪些群里（群号）；群里被 @、叫名字或回复她时才回答'),
+      names: Schema.array(Schema.string()).default(['小栖']).description('群里提到这些名字也算在叫她'),
+      night: Schema.object({
+        from: Schema.string().default('00:00'),
+        to: Schema.string().default('08:00'),
+        chance: Schema.number().min(0).max(1).default(0.3).description('夜里一条消息叫醒她的概率'),
+        reply: Schema.string().default('（睡着了……zzZ）').description('没叫醒时自动回的话（同一个聊天半小时最多一次；留空 = 不回）'),
+      }).default({}),
+      dailyShares: Schema.natural().default(3).description('自由活动后她主动给主人发消息，每天最多几次'),
+      rolloverHour: Schema.natural().max(23).default(4).description('几点换成新的一天的会话'),
+      preset: Schema.string().default('little-house-qq'),
+    }).default({}),
   })
 
   constructor(ctx, config) {
@@ -99,6 +119,7 @@ export default class LittleHouse extends Service {
     this.budgets = new Map()
     /** Per-session free-time window: sessionId -> { until, name, ended, rested, nudges, timer } */
     this.windows = new Map()
+    this.qq = config.qq.enabled ? new QQ(this, config.qq) : undefined
 
     ctx.effect(() => {
       const boot = setTimeout(() => {
@@ -111,6 +132,7 @@ export default class LittleHouse extends Service {
           clearTimeout(w.timer)
           clearTimeout(w.nudgeTimer)
         }
+        this.qq?.stop()
         void this.house.dispose()
       }
     })
@@ -150,6 +172,11 @@ export default class LittleHouse extends Service {
       }
     } catch (e) {
       this.log('warn', `house not available yet: ${e.message}`)
+    }
+    try {
+      this.qq?.start()
+    } catch (e) {
+      this.log('warn', `QQ failed to start: ${e?.stack ?? e}`)
     }
     if (!this.config.wake.enabled) return
     if (this.config.wake.firstWakeDelaySeconds > 0) {
@@ -366,6 +393,22 @@ export default class LittleHouse extends Service {
     return w.name
   }
 
+  /**
+   * After her free-time diary entry: offer to message the owner, once per free
+   * time, when QQ is connected and today's shares are not used up.
+   */
+  async shareOffer(sessionId) {
+    const w = this.windows.get(sessionId)
+    if (!w || w.offered || !this.qq) return ''
+    try {
+      if (!(await this.qq.canShare())) return ''
+    } catch {
+      return ''
+    }
+    w.offered = true
+    return '\n要不要用手机给主人发条消息？只有你觉得有趣、重要、想让主人知道的事才发（phone_message）；平常的流水账不用发。不发的话直接 end_free_time。'
+  }
+
   /** Free time ran out. If she is idle and has not written her diary, ask her to. */
   async timeUp(sessionId) {
     const w = this.windows.get(sessionId)
@@ -439,7 +482,7 @@ export default class LittleHouse extends Service {
 
   /** The newest diary entry from any session, if any. */
   async lastDiaryNote() {
-    return lastEntry(join(this.stateDir, 'diary'))
+    return lastEntryNote(join(this.stateDir, 'diary'))
   }
 
   /** The live Agent of today's life session, creating the session when needed. */

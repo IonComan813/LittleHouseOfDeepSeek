@@ -38,7 +38,8 @@ export function apply(ctx, config) {
       const slot = ctx.littleHouse.markDiary(exec?.agent?.id)
       const source = slot ? `${config.source} · ${slot}` : config.source
       const { day, time } = await appendEntry(dir(), new Date(), source, args.entry)
-      return `（已写进 ${day} 的日记，${time}。）`
+      const offer = slot ? await ctx.littleHouse.shareOffer(exec?.agent?.id) : ''
+      return `（已写进 ${day} 的日记，${time}。）${offer}`
     },
   }))
 

@@ -88,3 +88,25 @@ export async function lastEntry(dir) {
   }
   return undefined
 }
+
+/**
+ * The newest entry with when it was written, for opening messages:
+ * "（今天 10:05 写的）……" — so "上午" in it is not read as some other day.
+ * @param {string} dir @param {Date} now
+ */
+export async function lastEntryNote(dir, now = new Date()) {
+  for (const day of await listDays(dir)) {
+    const text = await readDay(dir, day)
+    if (!text) continue
+    const heads = [...text.matchAll(/^### (\d{2}:\d{2})[^\n]*$/gm)]
+    const parts = text.split(/^### .*$/m)
+    const last = parts[parts.length - 1]?.trim()
+    if (!last) continue
+    const time = heads.length ? heads[heads.length - 1][1] : ''
+    const today = localDay(now)
+    const yesterday = localDay(new Date(now.getTime() - 86_400_000))
+    const when = day === today ? '今天' : day === yesterday ? '昨天' : day
+    return `（${when}${time ? ' ' + time : ''} 写的）${last}`
+  }
+  return undefined
+}

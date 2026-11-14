@@ -14,7 +14,7 @@
 
 </details>
 
-> 当前进度：**M0 → M3 完成**（世界、经济、日记、会动的只读像素画面、动作花真实时间、每日作息）。下一步是 QQ（M5）和记忆（M4）。
+> 当前进度：**M0 → M3、M5 完成**（世界、经济、日记、会动的只读像素画面、动作花真实时间、每日作息、手机 QQ）。下一步是记忆（M4）。
 > 路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)；接手开发请先读 [docs/HANDOFF.md](docs/HANDOFF.md)。
 
 ## 安装（Windows）
@@ -48,7 +48,10 @@ python scripts\install.py
 │  preset `little-house`（cordis.patch.yml）— 生活会话只挂这些行：             │
 │   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、                         │
 │     house_do / end_free_time / house_render；全局工具 deny + tools.guard 白名单   │
-│   · diary-scope.js：diary_write / diary_read（独立行，M5 直接挂进 QQ preset）  │
+│   · diary-scope.js：diary_write / diary_read（独立行，QQ preset 也挂）         │
+│  QQ（qq.js）：直连 NapCat（OneBot 11 正向 WebSocket），每个聊天每天一个会话    │
+│   · preset `little-house-qq`：qq-scope.js（人设 + QQ 规则、house_status /     │
+│     house_photo）+ 日记；图片能看，QQ 表情双向；夜里按概率叫醒             │
 │   · compaction                                                              │
 └───────────────┬────────────────────────────────────────────────────────────┘
                 │ HTTP 127.0.0.1 + X-House-Token
@@ -79,6 +82,8 @@ python scripts\install.py
   `house_render` 只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
 - **每段自由活动结束前写日记。** 写什么由她决定（重要的事、心情、想做的事）；每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。日记是以后记忆（M4）的原料。
+- **手机和 QQ。** 她背包里一直有一部手机：你可以用 QQ 私聊她、拉她进群；她看得懂图片，会用 QQ 表情，能拍小屋的照片发给你。
+  每个聊天每天一个会话；夜里多半睡着了。自由活动写完日记后，遇到有趣的事她可能主动给你发条消息（每天最多 3 条）。
 - **成本。** DeepSeek-V4.1-Flash 实测一次唤醒约 1.2～2 万 token，约八成是缓存命中。
 
 更多：[伪代码与接口](docs/PROTOCOL.md) · [路线图与实测记录](docs/ROADMAP.md) · [交接文档](docs/HANDOFF.md)
@@ -93,8 +98,8 @@ cd house; python -m littlehouse --repl     # 在终端里用伪代码"过日子"
 ## 开发
 
 ```bash
-cd house && python -m unittest discover -s tests   # 73 个（无 pygame 时跳过 3 个渲染测试）
-cd plugin && npm test                               # 作息表、唤醒消息、日记
+cd house && python -m unittest discover -s tests   # 91 个（无 pygame 时跳过渲染测试）
+cd plugin && npm test                               # 作息表、唤醒消息、日记、QQ 消息格式、WebSocket
 ```
 
 ## 许可

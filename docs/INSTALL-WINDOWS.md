@@ -47,8 +47,9 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 完全退出 DSH（确认任务管理器里没有残留的 DSH 进程），再打开。
 
 - 小屋进程会在后台自动启动（`python -m littlehouse`，端口 8770，只监听本机）。
-- 大约 **2 分钟**后，第一次唤醒发生：会话列表里出现 **「小屋生活 · 日期」**，点进去就能看到她做了什么。
-- 之后每隔 90～240 分钟随机醒来一次，00:30～08:00 不打扰，每天最多 8 次。
+- 每天早上、中午、傍晚（一半的日子还有深夜）各有一段 40 分钟的**自由活动**，开始时间在时段内随机（早上 7:30–8:30、中午 11:30–12:30、傍晚 17:30–18:30、深夜 21:30–22:30）。
+  到点后会话列表里出现 **「小屋生活 · 日期」**（每天一个），点进去就能看到她做了什么。
+- 自由活动以外她自己过平淡的日常（看书、发呆、睡觉……），画面上看得到。
 
 她的日记写在 `%USERPROFILE%\.dsh\little-house\diary\日期.md`（每天一个文件）。
 
@@ -64,7 +65,7 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 
 想让 DSH 一启动就把窗口打开，在配置里把 `house.window` 设为 `true`。
 
-底栏从左到右：日期、时间、天气、季节、贝币；右边两条是她的饱腹和精力，粉色那条是团子的亲密度。
+底栏从左到右：日期、时间、天气、季节、贝币；右边橙色那条是她的饱腹，粉色那条是团子的亲密度。
 
 ## 5. 改配置（可选）
 
@@ -83,16 +84,49 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
       autoStart: true
       window: false             # true = DSH 启动时打开只读动画窗口
     wake:
-      minIntervalMinutes: 90
-      maxIntervalMinutes: 240
-      quietHours: '00:30-08:00'
-      maxPerDay: 8
-      firstWakeDelaySeconds: 120
-      maxActionsPerWake: 12
+      slots:                    # 每天的自由活动时段：from–to 之间随机开始，持续 minutes 分钟
+        - { name: 早上, from: '07:30', to: '08:30', minutes: 40 }
+        - { name: 中午, from: '11:30', to: '12:30', minutes: 40 }
+        - { name: 傍晚, from: '17:30', to: '18:30', minutes: 40 }
+        - { name: 深夜, from: '21:30', to: '22:30', minutes: 40, chance: 0.5 }
+    qq:                         # 见第 6 节
+      enabled: false
 ```
 
 保存即可，**不需要重启 DSH**：几秒内插件会自动重载（小屋进程也会随之重启），新配置立刻生效。
-注意重载会重新开始「首次唤醒」倒计时；改插件的 JS 代码则需要完全重启 DSH。
+改插件的 JS 代码则需要完全重启 DSH。
+
+## 6. 接上 QQ（NapCat）
+
+她背包里有一部手机：你可以用 QQ 私聊她，她也可以在群里聊天；自由活动写完日记后，遇到有趣或重要的事，她可能会主动给你发条消息（每天最多 3 条）。
+插件**直接连 NapCat**，不需要再装别的 QQ 插件（如果之前装过 dsh-onebot，别让它和这里连同一个 NapCat 账号）。
+
+**NapCat 这边**：网页控制台 → 网络配置 → 新建 **「WebSocket 服务端」**：
+- 主机 `127.0.0.1`，端口 `3001`（或别的，下面对应改）；
+- token 随便设一串（下面填同一串）；
+- 消息格式选 **array**（数组）。保存并启用。
+
+**插件这边**（第 5 节那段配置里的 `qq`）：
+
+```yaml
+    qq:
+      enabled: true
+      url: 'ws://127.0.0.1:3001'
+      accessToken: '和 NapCat 里一样的 token'
+      ownerQQ: '你的 QQ 号'
+      ownerName: '主人'          # 她怎么称呼你
+      friends: []               # 除了你，还接受谁的私聊（QQ 号）
+      groups: ['123456789']     # 她在哪些群里（群号）；群里被 @、叫到名字或回复她时才回答
+      names: ['小栖']            # 群里提到这些名字也算叫她
+      night: { from: '00:00', to: '08:00', chance: 0.3, reply: '（睡着了……zzZ）' }
+      dailyShares: 3            # 她每天最多主动给你发几条
+```
+
+- 每个聊天每天一个会话：「QQ · 主人 · 日期」「QQ · 群「群名」 · 日期」，凌晨 4 点换新的一天（开头会告诉她日期、她在小屋里做什么、最近的日记）。
+- 她能看懂你发的图片和 QQ 表情，也会用 QQ 表情；可以按你的要求拍一张小屋的照片发过来。语音、文件她打不开。
+- 夜里（默认 0–8 点）一条消息只有 30% 的概率把她叫醒；没叫醒就自动回一句「睡着了」（同一个聊天半小时最多一次）。
+- 群里没叫她的消息不会让她回复，但会在下次有人叫她时作为「群里刚才的消息」给她看，也会记进 `little-house\qq\日期.jsonl`（以后整理记忆用）。
+- 连接状态看 `plugin.log` 里的 `QQ: connected`。
 
 ## 卸载
 
@@ -111,5 +145,6 @@ python scripts\install.py --uninstall
 | 有会话但她什么都没做 | 在会话里看报错；多半是小屋进程没起来（检查 `python --version`，或在配置里写 python 的完整路径） |
 | 端口 8770 被占用 | 配置里把 `house.port` 改成别的 |
 | 她的工具里没有 house_render | 小屋进程的 Python 里没装 pygame-ce，或 `house.python` 指向了另一个 Python |
-| 想立刻看到一次唤醒 | 临时把 `firstWakeDelaySeconds` 改成 `10` 再重启 DSH |
+| 想立刻看到一次自由活动 | 临时把 `wake.firstWakeDelaySeconds` 改成 `10`（`wake.testMinutes` 是这段多长）再重启 DSH |
+| QQ 没反应 | `plugin.log` 里没有 `QQ: connected`：检查 NapCat 的 WebSocket 服务端是否启用、端口和 token 是否一致；有 connected 但不回：私聊要在 `ownerQQ` / `friends` 里，群要在 `groups` 里 |
 | DSH 关了但 python 还在跑 | 正常：DSH 被强制关闭时来不及通知小屋退出。下次 DSH 启动会直接连上它；想关掉就在任务管理器结束那个 python 进程（存档每次行动后都会写盘） |

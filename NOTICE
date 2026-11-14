@@ -1,9 +1,8 @@
 Little House of DeepSeek
 Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-This project's design draws on the following projects. No source files are
-copied verbatim at this time; if code is ported later, the original copyright
-and license notices will be kept in the ported files and listed here.
+This project's design draws on the following projects. Ported code keeps the
+original copyright and license notice in the file and is listed here.
 
 - surfcore — https://github.com/Mieksido/surfcore
   MIT License, Copyright (c) 2026 Derpyu520 and qq-bridge / QSH contributors
@@ -12,7 +11,10 @@ and license notices will be kept in the ported files and listed here.
 
 - dsh-onebot — https://github.com/mario841859784/dsh-onebot
   BSD 3-Clause License, Copyright (c) 2026, dsh-external contributors
-  (ideas: per-agent scope composition via agent presets)
+  (ideas: per-agent scope composition via agent presets; how a OneBot 11
+  connection to NapCat works)
+  Ported: plugin/lib/qq-faces.js — the QQ face id -> name table
+  (dsh-onebot src/qq-faces.ts).
 
 - DeepSeek Harness — https://github.com/deepseek-ai/deepseek-harness
   MIT License (host APIs used by the plugin)
