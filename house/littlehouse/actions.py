@@ -324,7 +324,7 @@ def _eat(w: World, ref: str) -> Proc:
     return f"你吃了{name}，{full}。"
 
 
-@action("wait(分钟)", f"原地等一会儿：wait(5) 等 5 分钟（最多 {C.MAX_WAIT_MINUTES}）；wait() 等到灶台上的菜好", 0, 1, proc=True)
+@action("wait(分钟)", f"原地等一会儿：wait(5) 等 5 分钟（最多 {C.MAX_WAIT_MINUTES}）；wait() 等到灶台上最先好的那道菜好（还要多久就等多久）", 0, 1, proc=True)
 def _wait(w: World, minutes: float = 0) -> Proc:
     now = w.clock.timestamp()
     if minutes:
@@ -343,9 +343,16 @@ def _wait(w: World, minutes: float = 0) -> Proc:
     try:
         yield Phase("wait", secs, "wait", label=f"等{what}" if what else "等一会儿")
     except Interrupted as e:
-        return f"你等了 {e.done / 60:.0f} 分钟。"
+        return f"你等了{_waited(e.done)}。"
     note = w.collect_dishes()
-    return f"你等了 {secs / 60:.0f} 分钟。" + note
+    return f"你等了{_waited(secs)}{'，等到' + what + '好了' if what else ''}。" + note
+
+
+def _waited(secs: float) -> str:
+    if secs < 60:
+        return f" {max(1, round(secs))} 秒"
+    m, sec = divmod(round(secs), 60)
+    return f" {m} 分 {sec} 秒" if sec else f" {m} 分钟"
 
 
 # ---------------------------------------------------------------- kitchen
