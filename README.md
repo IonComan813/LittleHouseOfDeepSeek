@@ -71,7 +71,7 @@ python scripts\install.py
 - **她只能用伪代码生活。** 生活会话里看不到 shell、文件、网络等任何 DSH 自带工具（fail-closed），
   只有 `house_*` 和 `diary_*`。伪代码一次可以写多步，省 token：`goto(庭院); open(包裹); plant(萝卜种子); water()`。
 - **做事要花时间。** 走路按路程（和画面上一样），炒菜要一直守着，炖汤先忙一分半钟、再自己炖三分钟，
-  打扫一半走开下次接着扫；`house_do` 等到这一串做完才返回。一圈想做的事大约二十分钟。
+  打扫一半走开下次接着扫；`house_do` 等这一串做完才给出结果。一圈想做的事大约二十分钟。
 - **世界会自己运转。** 时间与现实 1:1；她会饿会累，植物会干，房间会落灰，团子会饿、脾气每天不同，
   开拓署每周一送补给，快递员阿陆每天送货、傍晚收走寄售箱。很多结果带随机性
   （打扫时的发现、做饭失手、收成浮动、每天的小事件）。
@@ -101,4 +101,4 @@ cd plugin && npm test                               # 作息表、唤醒消息�
 
 Apache-2.0。设计参考了 [surfcore](https://github.com/Mieksido/surfcore)（MIT）和
 [dsh-onebot](https://github.com/mario841859784/dsh-onebot)（BSD-3-Clause），见 [NOTICE](NOTICE)。
-画面用的是 OpenGameArt 上的 LPC 像素素材（家具、灶台、草地、沙滩、海、树、礁石、作物、团子；她由 LPC 角色生成器的图层拼成，蓝发、鲸鳍耳、呆毛、鲸尾和围裙上的小鲸鱼由代码画上去）。这些素材是 CC-BY-SA 3.0 / GPL 3.0 等许可，不属于 Apache-2.0，署名见 [house/littlehouse/assets/lpc/CREDITS.md](house/littlehouse/assets/lpc/CREDITS.md)；墙、地板、冰箱、邮箱和菠菜 / 葱 / 南瓜 / 草莓等由代码绘制。
+画面用的是 OpenGameArt 上的 LPC 像素素材（家具、灶台、草地、沙滩、海、树、礁石、作物、团子；她由 LPC 角色生成器的图层拼成，蓝发、呆毛、鲸尾和围裙上的小鲸鱼由代码画上去）。这些素材是 CC-BY-SA 3.0 / GPL 3.0 等许可，不属于 Apache-2.0，署名见 [house/littlehouse/assets/lpc/CREDITS.md](house/littlehouse/assets/lpc/CREDITS.md)；墙、地板、冰箱、邮箱和菠菜 / 葱 / 南瓜 / 草莓等由代码绘制。

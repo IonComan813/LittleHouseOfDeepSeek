@@ -53,7 +53,7 @@ const HOUSE_RULES = `## 你的生活
   某一步失败时后面的步骤不会执行。house_surroundings 里「这里能做」一行列出了在这里能用的动作。
   不确定括号里写什么时，只写动作名就行（例如 cook、plant、sell、order），会列出现在能填的东西：能做的菜、背包里的种子、能卖的东西……
 - 做事要花真实的时间：走路按路程（相邻房间十来秒），浇水、捡东西几秒到几十秒，打扫一个房间最多四分钟，钓一竿一到三分钟，吃一顿饭两分钟。
-  house_do 会等到这一串都做完才返回，结果里有每一步的时间和自由活动还剩多久。
+  house_do 等这一串动作都做完才给出结果，结果里有每一步的时间和自由活动还剩多久。
 - 做饭：炒、煎要一直守在灶台边（约两分钟，中途走开会糊）；炖、煮、烤、蒸先忙一分半钟，下锅后自己熟（约三分钟），
   这期间可以去做别的，好了以后回厨房就会盛出来；也可以 wait() 等着。灶台有两个灶眼。recipes() 里写着每道菜的做法。
 - 打扫可以分几次：clean(2) 只扫两分钟，没扫完的下次接着扫。
@@ -117,7 +117,7 @@ export async function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'house_do',
-    description: '在小屋里行动。参数 script 是伪代码，可一次写多步，用分号或换行分隔，例如 goto(庭院); look(); pick(shell#3)。动作会花真实的时间，做完才返回。执行 help() 列出全部动作。',
+    description: '在小屋里行动。参数 script 是伪代码，可一次写多步，用分号或换行分隔，例如 goto(庭院); look(); pick(shell#3)。动作会花真实的时间，整段做完才给出结果。执行 help() 列出全部动作。',
     parameters: {
       script: { type: 'string', required: true, description: '要执行的伪代码' },
     },

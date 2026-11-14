@@ -106,15 +106,14 @@ def available() -> bool:
 #
 # 小栖 is put together at run time from LPC character-generator layers (CREDITS.md):
 # body, plain skirt (recoloured navy), blue blouse, white apron, head, long hair
-# (recoloured blue). Her whale bits are drawn on top: fin-shaped ears, a cowlick
-# (呆毛), a tail with a fluke, and a little whale on the apron.
+# (recoloured blue). Her whale bits are drawn on top: a cowlick (呆毛), a tail
+# with a fluke, and a little whale on the apron.
 # Walk sheets are 9 frames x 4 rows of 64x64: rows up, left, down, right; frame 0 = standing.
 
 CHAR = ASSETS / "character"
 DIRECTIONS = {"up": 0, "left": 1, "down": 2, "right": 3}
 HAIR_RAMP = [(22, 34, 84), (34, 62, 140), (52, 98, 190), (92, 148, 226), (156, 202, 246)]
 SKIRT_RAMP = [(20, 30, 70), (32, 48, 108), (48, 72, 150), (78, 106, 182)]
-FIN = ((64, 112, 186), (30, 52, 112), (150, 196, 236))  # body, outline, light
 TAIL = ((52, 92, 170), (26, 42, 96), (170, 206, 238))
 
 
@@ -166,15 +165,6 @@ def _bbox(layer: pygame.Surface, rect: tuple[int, int, int, int]) -> pygame.Rect
     if not rects:
         return None
     return rects[0].unionall(rects[1:])
-
-
-def _fin(surf: pygame.Surface, x: int, y: int, side: int) -> None:
-    """A small whale fin sticking out sideways (side -1 = to the left, 1 = to the right)."""
-    body, line, light = FIN
-    pts = [(x, y), (x + 5 * side, y - 4), (x + 6 * side, y - 1), (x + 2 * side, y + 3)]
-    pygame.draw.polygon(surf, body, pts)
-    pygame.draw.polygon(surf, line, pts, 1)
-    surf.set_at((x + 3 * side, y - 1), light)
 
 
 def _tail(surf: pygame.Surface, x: int, y: int, dx: int, dy: int) -> None:
@@ -238,14 +228,7 @@ def resident(direction: str, frame: int) -> pygame.Surface | None:
     out.blit(layers["head_female_walk"], (0, 0), rect)
     out.blit(_ramp(layers["hair_long_walk"].subsurface(rect), HAIR_RAMP), (0, 0))
     if direction == "up":
-        _tail(out, body.centerx, body.bottom - 15, 0, 6)
-    ear_y = head.top + head.height // 2
-    if direction in ("down", "up"):
-        _fin(out, head.left, ear_y, -1)
-        _fin(out, head.right - 1, ear_y, 1)
-    else:
-        side = 1 if direction == "left" else -1  # the fin shows on the back of her head
-        _fin(out, head.centerx + 2 * side, ear_y, side)
+        _tail(out, body.centerx + 3, body.bottom - 12, 7, 4)  # out from under the skirt
     hair = _bbox(layers["hair_long_walk"], rect) or head
     cx = hair.centerx + (2 if direction == "left" else -2 if direction == "right" else 0)
     for i, (px, py) in enumerate(((cx, hair.top), (cx + 1, hair.top - 1), (cx + 2, hair.top - 2), (cx + 2, hair.top - 3), (cx + 1, hair.top - 4))):

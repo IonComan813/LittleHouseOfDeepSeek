@@ -26,8 +26,8 @@ house cuts single pictures out of them at run time (`littlehouse/sprites.py`).
 | `character/skirt_plain_walk.png` | same generator, `legs/skirts/plain/thin`; [LPC Medieval fantasy character sprites](https://opengameart.org/content/lpc-medieval-fantasy-character-sprites) | OGA-BY 3.0 / CC-BY-SA 3.0 / GPL 3.0 | bluecarrot16, Pierre Vigier (pvigier), Johannes Sjölund (wulax), Ahmad3366, JaidynReiman |
 
 The resident is assembled from the `character/` layers at run time (`sprites.resident`): the
-hair and skirt are recoloured blue, and her whale-fin ears, cowlick, tail and the little whale
-on her apron are drawn by code. The cat is the golden coat from `cats.png`.
+hair and skirt are recoloured blue, and her cowlick, whale tail and the little whale on her
+apron are drawn by code. The cat is the golden coat from `cats.png`.
 
 The Object Kit pages also credit the related LPC packs it builds on:
 [LPC Upholstery](https://opengameart.org/content/lpc-upholstery),

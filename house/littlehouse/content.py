@@ -388,12 +388,12 @@ PLAY_TOY_LINES = {
 # the picture shows them) until she tidies them up: tidy() / fix(), or clean().
 # kind -> (name, seconds to tidy, dirt it took into the room, how it looks, where she stands)
 MESSES: dict[str, tuple[str, float, float, str, str]] = {
-    "soil": ("撒了一地的土", 60, 20, "{target}的盆倒在地上，土撒了一片。", ""),
-    "water": ("洒了一地的水", 40, 10, "花瓶倒在地上，水在地板上淌开一小摊。", ""),
-    "book": ("掉在地上的书", 10, 0, "一本从书架上掉下来的书，书页摊开着。", "bookshelf"),
-    "catalog": ("掉在地上的订货目录", 10, 0, "开拓署的订货目录摊在地板上。", "catalog"),
-    "quilt": ("被踩乱的被子", 30, 0, "被子被踩得皱巴巴的，上面还粘着几根橘色的猫毛。", "bed"),
-    "cushion": ("掉在地上的靠垫", 15, 0, "沙发上的靠垫被蹬到了地板上。", "sofa"),
+    "soil": ("撒了一地的土", 15, 20, "{target}的盆倒在地上，土撒了一片。", ""),
+    "water": ("洒了一地的水", 12, 10, "花瓶倒在地上，水在地板上淌开一小摊。", ""),
+    "book": ("掉在地上的书", 5, 0, "一本从书架上掉下来的书，书页摊开着。", "bookshelf"),
+    "catalog": ("掉在地上的订货目录", 5, 0, "开拓署的订货目录摊在地板上。", "catalog"),
+    "quilt": ("被踩乱的被子", 10, 0, "被子被踩得皱巴巴的，上面还粘着几根橘色的猫毛。", "bed"),
+    "cushion": ("掉在地上的靠垫", 5, 0, "沙发上的靠垫被蹬到了地板上。", "sofa"),
 }
 
 # While they play. room -> [(text, effect, weight)]; effect is a MESSES kind, "dirt", or "".

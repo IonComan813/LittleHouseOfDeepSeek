@@ -139,7 +139,7 @@ export function buildWakeMessage({ slotName, start, until, before, recap = [], n
   if (uniqueNews.length) lines.push('这段时间里：' + uniqueNews.join('；') + '。')
   lines.push('', look, '')
   lines.push('这段时间由你自己安排，想做什么都可以，用 house_do 行动。动作会花真实的时间（走路、做饭、打扫……），'
-    + 'house_do 会等到做完才返回；炖、煮、烤、蒸的菜下锅以后可以先去做别的。')
+    + 'house_do 等整段脚本做完才给出结果；炖、煮、烤、蒸的菜下锅以后可以先去做别的。')
   lines.push('时间到了，或者你想结束的时候，调用 end_free_time。之后你的角色会自己去做一些日常事务，直到下一次自由活动。')
   return lines.join('\n')
 }
