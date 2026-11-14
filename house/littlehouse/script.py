@@ -2,7 +2,7 @@
 
 A script is a sequence of calls separated by ``;`` (or fullwidth ``；``) or newlines::
 
-    goto(厨房); look()
+    goto(厨房); surroundings()
     water(绿萝)
     pick(shell#3)
 
@@ -131,7 +131,7 @@ def run(world: World, src: str, deadline: float | None = None) -> list[StepResul
     """
     calls = parse(src)
     if not calls:
-        raise ScriptError("脚本是空的。试试 look()。")
+        raise ScriptError("脚本是空的。试试 surroundings()。")
     world.update()
     rid = world.runner.submit(calls, deadline)
     report = world.runner.reports[rid]
@@ -166,7 +166,7 @@ def format_report(world: World, report: Report) -> str:
     if not report.done:
         left = report.total - len(report.results) - 1
         more = f"，后面还有 {left} 步会接着做" if left > 0 else ""
-        lines.append(f"（还在进行：{world.runner.doing()}{more}。可以先做别的打算，用 look() 看看进度。）")
+        lines.append(f"（还在进行：{world.runner.doing()}{more}。可以先做别的打算，用 surroundings() 看看进度。）")
     elif report.stopped:
         lines.append(f"（{report.stopped}，后面的步骤没有执行。）")
     if report.done:
@@ -174,6 +174,6 @@ def format_report(world: World, report: Report) -> str:
 
         lines.append(menu_line(world))
     tail = world.free_time_text() or f"现在 {world.now():%H:%M}"
-    if not (report.results and report.results[-1].text.endswith(tail)):  # look() already says it
+    if not (report.results and report.results[-1].text.endswith(tail)):  # surroundings() already says it
         lines.append(tail)
     return "\n".join(lines)

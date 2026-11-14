@@ -95,7 +95,7 @@ class House:
         picks it up again. Raises ScriptError."""
         calls = parse(src)
         if not calls:
-            raise ScriptError("脚本是空的。试试 look()。")
+            raise ScriptError("脚本是空的。试试 surroundings()。")
         w = self.world
         with self.lock:
             w.update()

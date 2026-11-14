@@ -15,7 +15,7 @@ import { OVER_TEXT, REST_TEXT } from './lib/wake.js'
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
 
-const OWN_TOOLS = new Set(['house_surroundings', 'house_do', 'end_free_time', 'house_render', ...DIARY_TOOLS])
+const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'house_render', ...DIARY_TOOLS])
 
 const IMAGE_SCHEMA = {
   type: 'object',
@@ -46,19 +46,20 @@ const HOUSE_RULES = `## 你的生活
 可以做饭、种菜、钓鱼、捡贝壳摆上收藏架、赚钱买家具布置房间、陪团子玩（play，也可以买逗猫棒之类的玩具）……想做什么做什么。团子闯了祸（打翻盆栽、把书碰到地上……）可以用 tidy 收拾。
 
 ## 怎么在小屋里行动
-- house_surroundings：看看四周。
-- house_do：用伪代码行动，一次可以写好几步，用分号或换行隔开，例如
-  goto(庭院); open(邮箱); plant(萝卜种子); water()
+- house_do：用伪代码做所有事，一次可以写好几步，用分号或换行隔开，例如
+  goto(庭院); open(邮箱); plant(萝卜种子); water(); surroundings()
+  surroundings() 是看看四周（时间、位置、看到的东西、这里能做什么、你的状态和背包），可以写在脚本的任何位置。
   参数可以写编号（pot#1）或名字（绿萝）。很多动作不写参数就作用于这里所有的东西，比如 water()、pick()、harvest()。
-  某一步失败时后面的步骤不会执行。house_surroundings 里「这里能做」一行列出了在这里能用的动作。
+  某一步失败时后面的步骤不会执行。每段结果的末尾和 surroundings() 里都列着在这里能用的动作。
   不确定括号里写什么时，只写动作名就行（例如 cook、plant、sell、order），会列出现在能填的东西：能做的菜、背包里的种子、能卖的东西……
 - 做事要花真实的时间：走路按路程（相邻房间十来秒），浇水、捡东西几秒到几十秒，打扫一个房间最多四分钟，钓一竿一到三分钟，吃一顿饭两分钟。
   house_do 等这一串动作都做完才给出结果，结果里有每一步的时间和自由活动还剩多久。
-- 做饭：炒、煎要一直守在灶台边（约两分钟，中途走开会糊）；炖、煮、烤、蒸先忙一分半钟，下锅后自己熟（约三分钟），
+- 做饭：炒、煎要一直守在灶台边（一两分钟，中途走开会糊）；煮饭、炖、蒸先忙半分钟到两分钟，下锅后自己熟（三到五分钟），
   这期间可以去做别的，好了以后回厨房就会盛出来；也可以 wait() 等着。灶台有两个灶眼。recipes() 里写着每道菜的做法。
+- 累了吃顿正经饭能缓过来一些；想歇着、想等的时候用 wait(分钟)。
 - 打扫可以分几次：clean(2) 只扫两分钟，没扫完的下次接着扫。
 - house_render：看一眼小屋现在的样子（一张静态像素画，只在你看的那一刻画一帧）。
-  画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_surroundings 和 house_do 就够了，
+  画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_do（和里面的 surroundings()）就够了，
   只在真想看看整个家、院子和海边的样子时偶尔看一眼，一次自由活动最多一两次。
 - end_free_time：结束这次自由活动。
 
@@ -87,7 +88,7 @@ export async function apply(ctx) {
   if (globalNames.length > 0) ctx.tools.restrict({ deny: globalNames })
   ctx.tools.guard((exec) => OWN_TOOLS.has(exec.name)
     ? undefined
-    : `小屋里没有「${exec.name}」这个工具。你只能用 house_surroundings、house_do、house_render、end_free_time 和日记工具。`)
+    : `小屋里没有「${exec.name}」这个工具。你只能用 house_do、house_render、end_free_time 和日记工具。`)
   // Drop the coding-oriented runtime context (file policy, GUI URL, ...).
   ctx.systemPrompt.suppressRuntimeContext()
 
@@ -105,19 +106,8 @@ export async function apply(ctx) {
   }
 
   ctx.tools.register(defineTool({
-    name: 'house_surroundings',
-    description: '看看四周：当前时间、天气、你所在的位置、能看到的东西和背包。',
-    parameters: {},
-    output: textOutput,
-    async execute() {
-      const r = await house.house.request('GET', '/look')
-      return r.text
-    },
-  }))
-
-  ctx.tools.register(defineTool({
     name: 'house_do',
-    description: '在小屋里行动。参数 script 是伪代码，可一次写多步，用分号或换行分隔，例如 goto(庭院); look(); pick(shell#3)。动作会花真实的时间，整段做完才给出结果。执行 help() 列出全部动作。',
+    description: '在小屋里行动。参数 script 是伪代码，可一次写多步，用分号或换行分隔，例如 goto(庭院); surroundings(); pick(shell#3)。动作会花真实的时间，整段做完才给出结果。执行 help() 列出全部动作。',
     parameters: {
       script: { type: 'string', required: true, description: '要执行的伪代码' },
     },
@@ -163,7 +153,7 @@ export async function apply(ctx) {
       if (args.note && String(args.note).trim()) {
         await appendEntry(join(house.stateDir, 'diary'), new Date(), '小屋', args.note)
       }
-      await house.rest(exec.agent?.id)
+      await house.endFreeTime(exec.agent?.id)
       exec.concludeTurn()
       return REST_TEXT
     },
@@ -174,7 +164,7 @@ export async function apply(ctx) {
 function registerGlance(imageCtx, house) {
   imageCtx.tools.register(defineTool({
     name: 'house_render',
-    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的静态像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。每次都要在本机渲染一帧，本机算力有限，请只在需要时偶尔看一眼（一次自由活动最多一两次）；了解情况优先用 house_surroundings。',
+    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的静态像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。每次都要在本机渲染一帧，本机算力有限，请只在需要时偶尔看一眼（一次自由活动最多一两次）；了解情况优先用 house_do 里的 surroundings()。',
     parameters: {},
     output: {
       schema: IMAGE_SCHEMA,

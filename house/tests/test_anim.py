@@ -56,12 +56,6 @@ class PoseTest(unittest.TestCase):
         self.assertIsNone(current_pose(w).effect)
         self.assertIn("荷包蛋", w.inventory)
 
-    def test_resting_in_bed_is_drawn_asleep(self):
-        w = new_world()
-        start(w, "goto(卧室); rest(床)")
-        step(w, 60)
-        self.assertTrue(current_pose(w).asleep)
-
     def test_outside_free_time_she_sleeps_at_night(self):
         w = new_world(when=(2026, 10, 15, 2), free=False)
         for _ in range(10):

@@ -50,8 +50,8 @@ def advance(w: World, hours: float) -> None:
 
 class ParseTest(unittest.TestCase):
     def test_calls_and_separators(self):
-        calls = parse('goto(厨房); look\nwater(pot#1) // comment\nsay("你好，世界")')
-        self.assertEqual([c.name for c in calls], ["goto", "look", "water", "say"])
+        calls = parse('goto(厨房); surroundings\nwater(pot#1) // comment\nsay("你好，世界")')
+        self.assertEqual([c.name for c in calls], ["goto", "surroundings", "water", "say"])
         self.assertEqual(calls[0].args, ["厨房"])
         self.assertEqual(calls[2].args, ["pot#1"])
         self.assertEqual(calls[3].args, ["你好，世界"])
@@ -85,14 +85,14 @@ class MovementTest(unittest.TestCase):
 
     def test_stops_at_first_error(self):
         w = new_world()
-        res = run(w, "goto(厨房); water(灶台); look()")
+        res = run(w, "goto(厨房); water(灶台); surroundings()")
         self.assertEqual([r.ok for r in res], [True, False])
 
     def test_unknown_action(self):
         self.assertFalse(run(new_world(), "dance()")[0].ok)
 
     def test_look_mentions_status_and_hints(self):
-        text = run(new_world(), "look()")[0].text
+        text = run(new_world(), "surroundings()")[0].text
         for part in ("你：", "这里能做：", "背包：", "鱼竿"):
             self.assertIn(part, text)
 
@@ -225,7 +225,7 @@ class EconomyTest(unittest.TestCase):
         advance(w, 14)  # Monday 10:00
         self.assertEqual(w.parcels.get("鸡蛋"), C.WEEKLY_SUPPLY["鸡蛋"])
         self.assertTrue(any("包裹" in e.text for e in w.news_since("")))
-        res = run(w, "goto(庭院); look(); open(包裹)")
+        res = run(w, "goto(庭院); look(); open(包裹)")  # look() still works as another name
         self.assertTrue(ok(res), res)
         self.assertIn("门口的包裹", res[1].text)
         self.assertFalse(w.parcels)
@@ -333,14 +333,14 @@ class HouseworkTest(unittest.TestCase):
     def test_dirt_and_clean(self):
         w = new_world()
         advance(w, 24 * 7)
-        self.assertIn("地上", run(w, "look()")[0].text)
+        self.assertIn("地上", run(w, "surroundings()")[0].text)
         self.assertTrue(ok(run(w, "clean()")))
         self.assertEqual(w.dirt["living_room"], 0)
 
     def test_decorate(self):
         w = new_world()
         w.add_item("台灯")
-        res = run(w, "goto(卧室); place(台灯); look()")
+        res = run(w, "goto(卧室); place(台灯); surroundings()")
         self.assertTrue(ok(res), res)
         self.assertIn("台灯", res[-1].text)
         self.assertTrue(ok(run(w, "stow(台灯)")))
@@ -350,16 +350,15 @@ class HouseworkTest(unittest.TestCase):
         w = new_world()
         w.resident["energy"] = 0
         self.assertFalse(run(w, "clean()")[0].ok)
-        self.assertTrue(run(w, "look()")[0].ok)  # free actions still work
+        self.assertTrue(run(w, "surroundings()")[0].ok)  # free actions still work
 
-    def test_rest_restores_energy_once_an_hour(self):
+    def test_a_meal_gives_back_some_energy(self):
         w = new_world()
-        w.resident["energy"] = 30
-        run(w, "rest()")  # ten minutes on the sofa (+15), minus a little everyday tiredness
-        self.assertAlmostEqual(w.resident["energy"], 45, delta=1)
-        e = w.resident["energy"]
-        run(w, "rest()")
-        self.assertAlmostEqual(w.resident["energy"], e, delta=0.1)
+        w.resident["energy"] = 20
+        w.add_item("红烧肉")
+        run(w, "eat(红烧肉)")
+        self.assertGreater(w.resident["energy"], 25)
+        self.assertFalse(ok(run(w, "rest()")))  # no lying down during free time any more
 
 
 class CatTest(unittest.TestCase):

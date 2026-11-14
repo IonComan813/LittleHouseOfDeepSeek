@@ -67,7 +67,7 @@ def process(w: World, name: str, args: list) -> Proc:
     """One action as a sequence of phases; returns the text of what happened."""
     spec = ACTIONS[name]
     if spec.effort and w.resident["energy"] < TIRED_THRESHOLD:
-        raise ActionError("你太累了，做不动了。先 rest() 歇一歇，或者吃点东西。")
+        raise ActionError("你太累了，做不动了。吃顿正经饭能缓过来一些，或者结束这次自由活动去休息。")
     if spec.proc:
         text = yield from spec.fn(w, *args)
     else:
@@ -152,8 +152,8 @@ def _minutes_since(w: World, ts: float) -> float:
 # ---------------------------------------------------------------- looking around
 
 
-@action("look()", "看看四周")
-def _look(w: World) -> str:
+@action("surroundings()", "看看四周：时间、位置、看到的东西、这里能做什么、你的状态和背包")
+def _surroundings(w: World) -> str:
     return w.look()
 
 
@@ -268,42 +268,6 @@ def _say(w: World, text: str) -> str:
 # ---------------------------------------------------------------- self care
 
 
-@action("rest(地点)", f"在沙发或床上歇一会儿（约 {C.REST_SECONDS // 60} 分钟），恢复精力", 0, 1, proc=True)
-def _rest(w: World, ref: str = "") -> Proc:
-    start = w.tile()
-    if ref:
-        o = w.resolve(ref)
-        if o.id not in ("sofa", "bed"):
-            raise ActionError(f"不能在{o.name}上休息。")
-        where = o
-    else:
-        spot = {"living_room": "sofa", "bedroom": "bed"}.get(w.location)
-        if spot is None:
-            raise ActionError("这里没地方躺，去客厅或卧室吧。")
-        where = w.objects[spot]
-        w.stand_at(spot)
-    yield from walk_from(w, start, "rest")
-    if _minutes_since(w, w.resident.get("last_rest", 0.0)) < 60:
-        yield work(10, "rest", where.id)
-        return f"你在{where.name}上躺了一下，但刚歇过，没什么困意。"
-    gain = 25.0 if where.id == "bed" else 15.0
-    try:
-        yield work(C.REST_SECONDS, "rest", where.id, f"在{where.name}上休息")
-    except Interrupted as e:
-        part = gain * e.done / C.REST_SECONDS
-        w.resident["energy"] = min(100.0, w.resident["energy"] + part)
-        w.log("rest", f"在{where.name}上歇了一小会儿")
-        return f"你在{where.name}上歇了一小会儿就起来了。"
-    w.resident["energy"] = min(100.0, w.resident["energy"] + gain)
-    w.resident["last_rest"] = w.clock.timestamp()
-    if w.rng.random() < 0.12:
-        dream = w.rng.choice(C.DREAMS)
-        w.log("rest", f"在{where.name}上打了个盹，{dream}")
-        return f"你在{where.name}上打了个盹，{dream}醒来精神好多了。"
-    w.log("rest", f"在{where.name}上歇了一会儿")
-    return f"你在{where.name}上歇了一会儿，精神好多了。"
-
-
 @action("eat(食物)", "吃东西（一顿饭约 2 分钟，零嘴不到 1 分钟）", 1, 1, proc=True)
 def _eat(w: World, ref: str) -> Proc:
     name = w.item_name(ref)
@@ -315,6 +279,8 @@ def _eat(w: World, ref: str) -> Proc:
         yield from walk_to(w, "table", "eat")
     secs = C.EAT_SECONDS["dish" if "dish" in item.tags else "other"]
     w.resident["hunger"] = max(0.0, w.resident["hunger"] - item.fill)
+    if "dish" in item.tags:  # a proper meal also gives her some strength back
+        w.resident["energy"] = min(100.0, w.resident["energy"] + C.MEAL_ENERGY)
     w.log("eat", f"吃了{name}")
     try:
         yield work(secs, "eat", w.resident.get("focus"), f"吃{name}")
@@ -886,7 +852,7 @@ def _pet(w: World, ref: str = "") -> str:
 # ---------------------------------------------------------------- what can I do here / with what
 
 
-ALWAYS = ("goto", "look", "examine", "inventory", "wait", "say", "help")
+ALWAYS = ("goto", "surroundings", "examine", "inventory", "wait", "say", "help")
 
 
 def actions_here(w: World) -> list[str]:
@@ -1032,7 +998,7 @@ def _play_event(w: World, mood: str) -> str:
 
 # ---------------------------------------------------------------- tidying up after the cat
 
-ALIASES = {"fix": "tidy"}  # other names she may use for an action
+ALIASES = {"fix": "tidy", "look": "surroundings"}  # other names she may use for an action
 
 
 @action("tidy(乱子)", "收拾乱子（猫弄倒的盆、洒的水、掉在地上的书……）；不写参数就收拾这里所有的。也可以写 fix()", 0, 1, proc=True)
@@ -1077,8 +1043,8 @@ def _put_right(w: World, m: Obj) -> None:
 
 # A few words on each action, for the menu after every script.
 SHORT = {
-    "look": "看看四周", "help": "全部动作", "goto": "走到某处", "examine": "仔细看", "inventory": "看背包", "say": "自言自语",
-    "rest": "躺一会儿", "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
+    "surroundings": "看看四周", "help": "全部动作", "goto": "走到某处", "examine": "仔细看", "inventory": "看背包", "say": "自言自语",
+    "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water": "浇水", "open": "看信 / 拆包裹", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick": "捡东西", "fish": "钓鱼", "read": "读纸条",
     "display": "摆上收藏架", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩", "tidy": "收拾乱子",

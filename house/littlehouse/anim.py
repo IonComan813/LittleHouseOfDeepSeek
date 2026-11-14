@@ -56,8 +56,6 @@ def current_pose(world, now: float | None = None) -> Pose:
             return Pose(px, py, f, walking=True, step=int(elapsed * 8) % 8, active=True)
         if phase.kind == "work":
             effect = EFFECTS.get(phase.action)
-            if phase.action == "rest" and phase.focus == "bed":
-                return Pose(x, y, facing, focus="bed", asleep=True, active=True)
             return Pose(x, y, facing, effect=effect, effect_p=(elapsed % EFFECT_SECONDS) / EFFECT_SECONDS,
                         focus=phase.focus, active=True)
         return Pose(x, y, facing, active=True)  # waiting

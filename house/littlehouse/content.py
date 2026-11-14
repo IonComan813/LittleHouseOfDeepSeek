@@ -25,11 +25,11 @@ ROOMS: dict[str, Room] = {
     r.id: r
     for r in (
         Room("living_room", "客厅", "朝南的小客厅，木地板，有一张红色布艺沙发和一扇大窗；圆木桌上放着开拓署的订货目录。", ("kitchen", "bedroom", "yard"),
-             hints=("catalog()", "order(物品, 数量)", "rest(沙发)", "display(收藏品)", "place(家具)", "clean()")),
+             hints=("catalog()", "order(物品, 数量)", "display(收藏品)", "place(家具)", "clean()")),
         Room("kitchen", "厨房", "小小的厨房，铺着粉白相间的格子地砖；靠墙是灶台、带水槽的台面和一台白色冰箱，中间有一张两人用的木桌。", ("living_room",),
              hints=("recipes()", "cook(菜名)", "eat(食物)", "clean()")),
         Room("bedroom", "卧室", "木地板的卧室，有一张床、一个书架和一个木衣柜。", ("living_room",),
-             hints=("rest(床)", "place(家具)", "clean()")),
+             hints=("place(家具)", "clean()")),
         Room("yard", "庭院", "屋前的小草地院子，有三块菜地、一个邮箱和开拓署的寄售箱，东边长着一棵树，角落里有几丛灌木，院子和沙滩之间隔着一道矮木篱笆。往前走就是沙滩。", ("living_room", "beach"), outdoor=True,
              hints=("open(邮箱)", "open(包裹)", "sell(物品, 数量)", "plant(种子, 菜地)", "water()", "harvest()")),
         Room("beach", "沙滩", "细细的白沙滩，海浪会把贝壳冲上岸，岸边有一块适合钓鱼的礁石。", ("yard",), outdoor=True,
@@ -384,7 +384,7 @@ PLAY_TOY_LINES = {
     "猫薄荷玩偶": "{pet}抱着猫薄荷玩偶又啃又蹬，晕乎乎地翻了个肚皮。",
     "逗猫棒": "{pet}追着羽毛跳得老高。",
 }
-# Messes the cat leaves behind. They are things in the room (look() lists them,
+# Messes the cat leaves behind. They are things in the room (surroundings() lists them,
 # the picture shows them) until she tidies them up: tidy() / fix(), or clean().
 # kind -> (name, seconds to tidy, dirt it took into the room, how it looks, where she stands)
 MESSES: dict[str, tuple[str, float, float, str, str]] = {
@@ -448,7 +448,7 @@ WALK_TILES_PER_SEC = 1.0  # the picture walks at exactly this speed; ~10 s betwe
 # Seconds she is busy with a simple action (walking to the spot comes on top).
 # A tuple is (first target, each further target) for actions that work on several things at once.
 ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
-    "look": 0, "help": 0, "inventory": 0, "recipes": 0,
+    "surroundings": 0, "help": 0, "inventory": 0, "recipes": 0,
     "examine": 5, "say": 5, "call": 10,
     "catalog": 30, "order": 20, "sell": 20,
     "open": 30, "read": 30, "display": 30,
@@ -461,7 +461,7 @@ EAT_SECONDS = {"dish": 120, "other": 45}  # a meal takes a couple of minutes; a 
 STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"]); cooking times are in RECIPES
 
 CLEAN_DIRT_PER_MINUTE = 25.0  # a filthy room (100) takes four minutes; progress is kept if she stops
-REST_SECONDS = 600
+MEAL_ENERGY = 10.0  # a proper meal gives back this much energy (there is no lying down during free time)
 FISH_SECONDS = (60, 180)  # each cast waits this long (random) for a bite
 MAX_WAIT_MINUTES = 30
 

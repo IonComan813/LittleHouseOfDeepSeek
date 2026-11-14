@@ -46,7 +46,7 @@ python scripts\install.py
 │   · plugin.log                                                              │
 │                                                                            │
 │  preset `little-house`（cordis.patch.yml）— 生活会话只挂这些行：             │
-│   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、house_surroundings /       │
+│   · agent-scope.js：人设 + 小屋规则（complete 系统提示词）、                         │
 │     house_do / end_free_time / house_render；全局工具 deny + tools.guard 白名单   │
 │   · diary-scope.js：diary_write / diary_read（独立行，M5 直接挂进 QQ preset）  │
 │   · compaction                                                              │

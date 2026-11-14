@@ -63,7 +63,7 @@ def repl(state_dir: Path) -> None:
                 return f"✗ 脚本错误：{e}"
 
     print(look())
-    print("（输入伪代码，例如 goto(沙滩); look()。help() 查看动作，空行或 Ctrl+C 退出）")
+    print("（输入伪代码，例如 goto(沙滩); surroundings()。help() 查看动作，空行或 Ctrl+C 退出）")
     try:
         while True:
             try:

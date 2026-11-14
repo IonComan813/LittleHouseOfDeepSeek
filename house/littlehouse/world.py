@@ -641,7 +641,7 @@ class World:
         if self.jobs:
             lines.append("灶台上：" + self.stove_text())
         lines += [
-            "这里能做：" + "、".join(self.actions_here()) + "；随时能做：goto、look、examine、inventory、wait、say、help",
+            "这里能做：" + "、".join(self.actions_here()) + "；随时能做：goto、surroundings、examine、inventory、wait、say、help",
             "可去：" + "、".join(C.ROOMS[e].name for e in room.exits),
             *([f"{self.pet['name']}：在{C.ROOMS[self.pet['room']].name}（goto({self.pet['name']}) 可以走过去）"]
               if self.pet["room"] != self.location else []),

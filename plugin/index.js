@@ -374,7 +374,7 @@ export default class LittleHouse extends Service {
   }
 
   /** end_free_time: she ends her free time herself. */
-  async rest(sessionId) {
+  async endFreeTime(sessionId) {
     const w = this.windows.get(sessionId)
     if (w) w.rested = true
     await this.endWindow(sessionId, 'she went to rest')
