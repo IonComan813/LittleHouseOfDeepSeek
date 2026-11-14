@@ -8,7 +8,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { DIARY_TOOLS } from './diary-scope.js'
 import { COMMON_FACES } from './lib/onebot.js'
-import { DIARY_FIRST_TEXT, REST_TEXT } from './lib/wake.js'
+import { REST_TEXT } from './lib/wake.js'
 
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
@@ -33,17 +33,16 @@ const PHONE_TOOL = `
 
 function phoneRules(ownerName, maxMinutes) {
   return `## 手机
-你的背包里一直有一部手机。${ownerName}随时可能用 QQ 给你发消息：自由活动的时候，过日常的时候，甚至睡着的时候。
-消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」；附带的图片你看得到，[表情:名称] 是 QQ 表情。
-- 回消息、发消息都用 phone_message：text 就是发出去的话。**你在这里直接写的文字，对方看不到。**
+你的背包里一直有一部手机。${ownerName}和${ownerName}的朋友们醒着的时候随时可能用 QQ 给你发消息（睡着以后手机静音）。
+消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」或「……${ownerName}的朋友阿青：……」；附带的图片你看得到，[表情:名称] 是 QQ 表情。
+- 回消息、发消息都用 phone_message：text 就是发出去的话，to 写发给谁（不写就是${ownerName}；回朋友就写朋友的名字）。**你在这里直接写的文字，对方看不到。**
   像平时用手机聊天一样：口语、简短，不用 Markdown；想分几条发就用空行隔开；
   可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，一两个就好。photo=true 会附一张小屋现在的照片。
 - 想发几条就发几条，不想回也可以不回。
 - 不是自由活动时间的时候，消息开头会告诉你角色此刻在做什么（看书、发呆、晒太阳……）。这时你只用手机回消息，也可以用 house_do 看看四周（surroundings()、inventory()）。
-  **如果${ownerName}请你在屋里做什么事**（浇浇花、做顿饭、拍张照……），你可以直接用 house_do 去做：这会接过角色的控制权（最多 ${maxMinutes} 分钟）。
-  做完以后调用 end_of_current_operation，把角色交还给日常。不是${ownerName}请你做的事，就留到自由活动时间。
-- 自由活动里写完日记以后，如果有你觉得有趣、重要、想让${ownerName}知道的事，可以主动发条消息；平常的流水账不用发。
-- 睡着以后手机是静音的，第二天醒来以后才会看到消息。
+  **如果${ownerName}或朋友请你在屋里做什么事**（浇浇花、做顿饭、看看星星……），你可以直接用 house_do 去做：这会接过角色的控制权（最多 ${maxMinutes} 分钟）。
+  做完以后调用 end_of_current_operation，把角色交还给日常。没人请你做的事，就留到自由活动时间。
+- 自由活动里，如果有你觉得有趣、重要、想让${ownerName}知道的事，可以主动发条消息；平常的流水账不用发。
 
 `
 }
@@ -79,14 +78,15 @@ const HOUSE_RULES = `## 你的生活
   这期间可以去做别的，好了以后回厨房就会盛出来；也可以 wait() 等着。灶台有两个灶眼。recipes() 里写着每道菜的做法。
 - 饿了可以做饭，也可以在订货目录上买饭团、三明治、便当这类即食食品，拆开就能吃，省下做饭的时间。想等的时候用 wait(分钟)。
 - 打扫可以分几次：clean(2) 只扫两分钟，没扫完的下次接着扫。
-- house_render：看一眼小屋现在的样子（一张静态像素画，只在你看的那一刻画一帧）。
-  画画要用到这台机器的算力，而这台机器不算宽裕：平时用 house_do（和里面的 surroundings()）就够了，
-  只在真想看看整个家、院子和海边的样子时偶尔看一眼，一次自由活动最多一两次。
-- end_free_time：结束这次自由活动。结束前要先写这次的日记。{{PHONE_TOOL}}
+- house_render：用手机给小屋拍一张照片（整个家、院子和沙滩，只有你自己看；想发给别人用 phone_message 的 photo）。醒着的时候随时可以拍。
+  拍照要用到这台机器的算力，而这台机器不算宽裕：了解情况平时用 house_do 里的 surroundings() 就够了，想拍的时候再拍。
+- 天黑以后可以到院子或沙滩上 stargaze() 看看夜空：月亮的圆缺和真实的日子一样，运气好能看到流星。
+- end_free_time：结束这次自由活动（会问你要不要写日记）。{{PHONE_TOOL}}
 
 ## 日记
-醒着的时候随时都可以写日记：diary_write 追加一段，diary_edit 修改或删掉今天的某一段，diary_read 翻看某天的日记（今天、昨天、前天或某个日期）。
-每次自由活动结束前，要写一段这次的日记，然后再 end_free_time。
+醒着的时候随时都可以写日记：diary_write 追加一段（每次写的就是一段，标题是写的时间），diary_read 翻看某天的日记（今天、昨天、前天或某个日期）。
+要修改日记，先 diary_read() 看今天的内容——每一段的标题里有时间，再用 diary_edit(时间, 改好的整段) 修改（内容写空就是删掉那一段）。
+也可以先随手用 diary_write 记下来，等当天晚些时候（比如睡前）再整理。
 日记每天一本、长期保存，**以后你记得的事主要来自日记**：没写进去的，过些日子就淡忘了。所以写你觉得重要的、想记住的：
 - 值得记住的事和新发现（第一次做成的菜、团子做了什么、收到的信、看到的景色……）；
 - 心情和想法；
@@ -94,7 +94,7 @@ const HOUSE_RULES = `## 你的生活
 不用记流水账，也不用面面俱到；平淡的时候写一两句就好。
 
 {{PHONE_RULES}}## 注意
-- 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就写日记、end_free_time。
+- 时间是有限的：一圈想做的事大概二十分钟就够了，不必把时间填满，做完想做的就 end_free_time。
 - 尽量一次写好几步，少来回问。
 - 只描述真正发生的事，不要编造没有执行过的动作。
 - 回复保持简短，像在写自己的生活片段。`
@@ -150,9 +150,8 @@ export async function apply(ctx) {
         // Outside free time (answering the phone, say): looking is always fine;
         // anything else takes over her character until end_of_current_operation.
         const r = await house.doScript(args.script, exec.signal, true)
-        if (!r.needs_control) return r.text + (house.needsDiary(sessionId) ? `\n${DIARY_FIRST_TEXT}` : '')
+        if (!r.needs_control) return r.text
         if (await house.isAsleep()) return '现在该睡觉了，不能再做别的事。'
-        if (house.needsDiary(sessionId)) return DIARY_FIRST_TEXT
         await house.startControl(sessionId)
         took = '（你接过了角色的控制权。做完以后调用 end_of_current_operation，把角色交还给日常。）\n'
       }
@@ -221,15 +220,14 @@ export async function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'end_free_time',
-    description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。结束前要先用 diary_write 写下这次的日记。',
+    description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。第一次调用时会问你要不要写日记，再调用一次就结束。',
     parameters: {},
     output: textOutput,
     async execute(_args, exec) {
       const sessionId = exec.agent?.id
-      if (!house.window(sessionId) && !house.needsDiary(sessionId) && !house.windowOver(sessionId, true)) {
-        return '现在不是自由活动时间，不用结束。'
-      }
-      if (!house.diaryWritten(sessionId)) return DIARY_FIRST_TEXT
+      if (!house.window(sessionId) && !house.windowOver(sessionId, true)) return '现在不是自由活动时间，不用结束。'
+      const ask = house.diaryWritten(sessionId) ? '' : house.askBeforeEnd(sessionId)
+      if (ask) return ask
       await house.endFreeTime(sessionId)
       exec.concludeTurn()
       return REST_TEXT

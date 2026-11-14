@@ -465,7 +465,9 @@ class World:
         asleep = self.resident.get("asleep")
         if asleep is True or (asleep is None and night(dt.hour)):
             return next(a for a in C.IDLE_ACTIVITIES if a.when == "night")
-        ok = [a for a in C.IDLE_ACTIVITIES if a.when == "day" or (a.when == "dry" and not self.raining(dt) and not is_dark(dt))]
+        dry = not self.raining(dt)
+        ok = [a for a in C.IDLE_ACTIVITIES if a.when == "day" or (a.when == "dry" and dry and not is_dark(dt))
+              or (a.when == "clear_night" and dry and is_dark(dt) and self.weather(dt) != "阴")]
         rng = random.Random(dt.strftime("%Y-%m-%d %H") + "idle")
         return _weighted(rng, [(a, a.weight) for a in ok])
 

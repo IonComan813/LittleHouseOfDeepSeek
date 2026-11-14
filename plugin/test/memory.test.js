@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildSummaryPrompt, clarity, emptyMemory, fade, forget, formatChats, mergeDay, parseReply, render } from '../lib/memory.js'
+import { buildSummaryPrompt, clarity, emptyMemory, fade, forget, formatChats, formatTranscript, mergeDay, parseReply, render } from '../lib/memory.js'
 
 const reply = {
   summary: '今天第一次钓到了鲈鱼，团子很黏我。',
@@ -57,4 +57,15 @@ test('the summary prompt and chat lines', () => {
   assert.equal(chats, '10:07 主人：在吗\n10:08 她：在呀')
   const p = buildSummaryPrompt({ name: '她', day: '2026-11-14', memoryText: '', diary: '日记', chats })
   assert.ok(p.includes('"plans"') && p.includes('2026-11-14 的日记') && p.includes('10:07 主人：在吗'))
+})
+
+test('the day session as a transcript for the summariser', () => {
+  const t = formatTranscript([
+    { t: '11:27', who: 'in', text: '（手机响了，是 QQ 消息：）\n主人：帮我浇花' },
+    { t: '11:27', who: 'call', tool: 'house_do', text: '{"script":"water(绿萝)"}' },
+    { t: '11:27', who: 'result', text: '✓ water(绿萝)\n  浇好了' },
+  ])
+  assert.equal(t, '[11:27] 消息：（手机响了，是 QQ 消息：）\n主人：帮我浇花\n[11:27] 她用了 house_do：{"script":"water(绿萝)"}\n  → ✓ water(绿萝)\n      浇好了')
+  const p = buildSummaryPrompt({ name: '她', day: '2026-11-14', memoryText: '', diary: '日记', transcript: t })
+  assert.ok(p.includes('2026-11-14 的对话记录') && p.includes('不能忘'))
 })

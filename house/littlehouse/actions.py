@@ -21,6 +21,8 @@ from typing import Callable
 
 from . import content as C
 from . import scene as S
+from . import sky
+from .clock import is_dark
 from .tasks import Interrupted, Phase, Proc, walk
 from .world import ActionError, Obj, World, _weighted
 
@@ -737,6 +739,62 @@ def _fish(w: World) -> Proc:
     return f"钓到了一条{catch}！"
 
 
+@action("stargaze()", "在院子或沙滩上看夜空（天黑以后）：月亮、星星，有时有流星", 0, 0, proc=True)
+def _stargaze(w: World) -> Proc:
+    if not C.ROOMS[w.location].outdoor:
+        raise ActionError("看星星要到外面去，先 goto(庭院) 或 goto(沙滩)。")
+    now = w.now()
+    if not is_dark(now):
+        raise ActionError("天还亮着，看不到星星。天黑以后（晚上七点以后）再来吧。")
+    yield from walk_to(w, None, "stargaze")
+    try:
+        yield work(w.rng.uniform(*C.STARGAZE_SECONDS), "stargaze", None, "看星星")
+    except Interrupted:
+        return "你刚抬头看了一会儿，就停下了。"
+    weather = w.weather()
+    if weather in C.RAINY or weather == "阴":
+        sound = {"小雪": "雪花落在脸上凉凉的", "阴": "风有点凉"}.get(weather, "只听见雨落在屋檐上的声音")
+        w.log("sky", "想看星星，可是云太厚了")
+        return f"{'下着' + weather + '，' if weather != '阴' else '云层很厚，'}天上什么也看不见，{sound}。"
+    cloudy = weather == "多云"
+    phase = sky.moon_phase(now)
+    light = sky.moon_light(now) if phase != "新月" and sky.moon_up(now) else 0.0
+    lines = [sky.moon_text(now) + "。"]
+    if cloudy:
+        lines.append("云一块一块地飘着，云缝里能看见几颗星星。")
+    elif light > 0.75:
+        lines.append("月光很亮，星星淡了不少，只剩最亮的那几颗。")
+    else:
+        lines.append(sky.SEASON_STARS[w.season()] + "。")
+        if light < 0.25 and w.season() in ("summer", "autumn"):
+            lines.append("没有月光，银河看得清清楚楚。")
+    shower = sky.meteor_shower(now)
+    chance = (0.85 if shower else 0.12) * (0.4 if cloudy else 1.0) * (0.5 if light > 0.75 else 1.0)
+    meteors = 0
+    if w.rng.random() < chance:
+        meteors = w.rng.randint(2, 7) if shower else 1
+        if shower:
+            lines.append(f"今晚是{shower}最多的时候，你数到了 {meteors} 颗流星，其中一颗拖着长长的尾巴。")
+        else:
+            lines.append(w.rng.choice(("一颗流星从东边的天上划过，一眨眼就不见了。", "一道很细的流星从头顶滑向海面，你差点没看见。")))
+    elif shower:
+        lines.append(f"听说今晚是{shower}，可惜{'云太多' if cloudy else '月光太亮' if light > 0.75 else '运气不好'}，看了半天也没等到。")
+    pet = w.pet
+    conds = {
+        "summer": w.season() == "summer", "warm": w.season() in ("summer", "autumn"), "yard": w.location == "yard",
+        "beach": w.location == "beach", "clear": not cloudy, "cloudy": cloudy, "moon": light > 0,
+        "pet": pet["affection"] >= 50 and pet["room"] != "outside",
+    }
+    events = list(C.SKY_EVENTS)
+    w.rng.shuffle(events)
+    for text, p, cond in events:
+        if all(conds.get(c, False) for c in cond.split()) and w.rng.random() < p:
+            lines.append(text.format(pet=pet["name"]))
+            break
+    w.log("sky", f"看了夜空：{phase}" + (f"，看到了 {meteors} 颗流星" if meteors > 1 else "，看到了流星" if meteors else ""))
+    return "".join(lines)
+
+
 @action("read(东西)", "读漂流瓶里的纸条", 1, 1)
 def _read(w: World, ref: str) -> str:
     name = w.item_name(ref)
@@ -865,6 +923,8 @@ def actions_here(w: World) -> list[str]:
         names.append("read")
     if w.messes():
         names.insert(0, "tidy")
+    if room.outdoor and is_dark(w.now()):
+        names.append("stargaze")
     return list(dict.fromkeys(n for n in names if n in ACTIONS))
 
 
@@ -1038,7 +1098,7 @@ SHORT = {
     "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water": "浇水", "open": "看信 / 拆包裹", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick": "捡东西", "fish": "钓鱼", "read": "读纸条",
-    "display": "摆上收藏架", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩", "tidy": "收拾乱子",
+    "display": "摆上收藏架", "stargaze": "看夜空", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play": "陪猫玩", "tidy": "收拾乱子",
 }
 
 

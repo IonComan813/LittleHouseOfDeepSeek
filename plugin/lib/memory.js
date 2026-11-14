@@ -1,13 +1,15 @@
 // Her long-term memory (M4): pure functions, no host dependencies.
 //
 // Once a day a separate summarising session (no persona, no tools) reads the
-// day's diary and QQ chats plus her current memory and answers in JSON; this
+// day's whole session (free time, phone, bedtime), her diary and her current
+// memory and answers in JSON; this
 // module folds that answer in, lets memories fade with time, and renders the
 // text that opens each day's session.
 //
 //   items: { id, kind: 'day' | 'event' | 'plan', day, text, importance, seen }
-//     day    one summary per day ("最近的日子")
-//     event  something worth remembering
+//     day    one summary per day ("最近的日子"), ordinary life included
+//     event  something important she must not forget ("记得的事": promises,
+//            the owner's habits, big firsts) — not the day's ordinary events
 //     plan   something she wants to do (fades faster; dropped once done)
 //   people: { name: { note, day } }
 //
@@ -17,7 +19,7 @@
 // never forgotten. Forgotten items leave the card but stay in the archive.
 
 export const CLARITY = ['vivid', 'clear', 'fuzzy', 'trace', 'forgotten']
-export const MAX_SUMMARY_CHARS = 300
+export const MAX_SUMMARY_CHARS = 600
 export const MAX_ITEM_CHARS = 120
 
 /** Whole days from `from` to `to` (YYYY-MM-DD). */
@@ -134,9 +136,10 @@ export function render(mem, today, opts = {}) {
 }
 
 /** The summariser's instructions for one day. */
-export function buildSummaryPrompt({ name, day, memoryText, diary, chats }) {
+export function buildSummaryPrompt({ name, day, memoryText, diary, transcript = '', chats = '' }) {
   return [
-    `下面是${name}（日记和聊天里的「我」/「她」）在 ${day} 这一天的日记和 QQ 聊天，以及她现在的记忆。请整理这一天，用于更新她的长期记忆。`,
+    `下面是${name}（日记和对话里的「我」/「她」）在 ${day} 这一天的完整记录：她这一天的对话（自由活动里在小屋做的事、手机上的 QQ 聊天、睡前整理日记），她的日记，以及她现在的记忆。请整理这一天，用于更新她的长期记忆。`,
+    '日记是她自己挑出来想记住的事，最重要；对话记录用来补充细节和日记里没写的事（比如聊天里说过的话、答应别人的事）。',
     '',
     '## 她现在的记忆（方括号里是编号）',
     memoryText || '（还没有）',
@@ -144,23 +147,34 @@ export function buildSummaryPrompt({ name, day, memoryText, diary, chats }) {
     `## ${day} 的日记`,
     diary || '（这天没有日记）',
     '',
-    `## ${day} 的 QQ 聊天`,
-    chats || '（这天没有聊天）',
+    ...(transcript ? [`## ${day} 的对话记录`, transcript] : [`## ${day} 的 QQ 聊天`, chats || '（这天没有聊天）']),
     '',
     '## 输出',
     '只输出一个 JSON 对象，不要别的文字：',
     '{',
-    '  "summary": "这一天的概括：第一人称（我），三到五句，写最重要的事和心情",',
-    '  "plans": ["她想做、打算做、还没做完的事，第一人称，一条一句。日记和聊天里提到的都要列上（包括和主人约好的事）；已经做完的不要列；现有记忆里已有的不要重复"],',
-    '  "memories": [{"text": "值得长期记住的一件事，第一人称一句话", "importance": 1到100}],',
-    '  "people": {"名字": "对这个人的印象和最近和他有关的事，一两句（会替换旧的）"},',
+    '  "summary": "第一人称（我）写这一天：先写最重要的事和心情；篇幅允许的话，平凡的日常也可以写一些（做了什么饭、天气、团子），四到八句；不要以「这一天」开头",',
+    '  "plans": ["想做的事、打算、没做完的事，第一人称，一条一句。日记和对话里提到的都要列上（包括答应别人的事）；已经做完的不要列；现有记忆里已有的不要重复"],',
+    '  "memories": [{"text": "不能忘的重要的事，第一人称一句话", "importance": 80到100}],',
+    '  "people": {"名字": "对这个人的印象、他的习惯和喜好、最近和他有关的事，一两句（会替换旧的）"},',
     '  "recalled": ["这一天又提到或想起的旧记忆的编号，如 m3"],',
     '  "done": ["「想做的事」里这一天已经做到了的编号"]',
     '}',
-    'memories 只放真正值得记住的（第一次做成的事、约定、强烈的情绪、和主人有关的事、新发现），平常的琐事不放，0 到 5 条。',
-    'importance：日常小事 20–40，有点特别 50–70，第一次 / 约定 / 很重要的情绪 80–100。',
+    'memories 只放**重要、不能忘**的事：和别人的约定、主人的习惯和喜好、很重要的第一次、改变生活的大事。平常的事写进 summary，不要放进 memories。大多数日子是 0 条，最多 3 条。',
     '只根据上面的内容，不要编造。',
   ].join('\n')
+}
+
+/** Day-session transcript lines (transcripts/<day>.jsonl) as readable text. */
+export function formatTranscript(entries) {
+  return entries
+    .filter((e) => e && e.text)
+    .map((e) => {
+      if (e.who === 'in') return `[${e.t}] 消息：${e.text}`
+      if (e.who === 'she') return `[${e.t}] 她：${e.text}`
+      if (e.who === 'call') return `[${e.t}] 她用了 ${e.tool}：${e.text}`
+      return `  → ${e.text.replace(/\n/g, '\n    ')}`
+    })
+    .join('\n')
 }
 
 /** QQ transcript lines (qq/<day>.jsonl entries) as readable text. */

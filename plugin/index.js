@@ -20,12 +20,12 @@ import Schema from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 import { lastEntryNote } from './lib/diary.js'
-import { buildSummaryPrompt, emptyMemory, forget, formatChats, mergeDay, parseReply, render as renderMemory } from './lib/memory.js'
+import { buildSummaryPrompt, emptyMemory, forget, formatChats, formatTranscript, mergeDay, parseReply, render as renderMemory } from './lib/memory.js'
 import { HouseProcess } from './lib/house-process.js'
 import { DEFAULT_SLEEP, DEFAULT_SLOTS } from './lib/slots.js'
 import { QQ } from './qq.js'
 import {
-  TIME_UP_TEXT, buildNudge, buildWakeMessage, checkSlots, dayOf, findSlot, formatDuration, hhmm, localDay, localIso, parseClock, planBed, planDay,
+  TIME_UP_TEXT, buildNudge, endAsk, buildWakeMessage, checkSlots, dayOf, findSlot, formatDuration, hhmm, localDay, localIso, parseClock, planBed, planDay,
   recapEvents,
 } from './lib/wake.js'
 
@@ -42,6 +42,8 @@ const MIN_SLOT_MINUTES = 5
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const MEMORY_DELAY_MINUTES = 10 // after the day changes, before the day is summarised
 const MEMORY_TIMEOUT_MS = 10 * 60_000
+const TRANSCRIPT_RESULT_CHARS = 400
+const INTRO_RE = /^（\d{4}-\d{2}-\d{2} 周.，新的一天。）/
 
 /** Identifies one slot on one day, e.g. "2026-11-14 早上". */
 function slotKey(plan) {
@@ -97,7 +99,8 @@ export default class LittleHouse extends Service {
       accessToken: Schema.string().default('').description('和 NapCat 里填的 token 一致'),
       ownerQQ: Schema.string().default('').description('主人的 QQ 号'),
       ownerName: Schema.string().default('主人').description('她怎么称呼主人'),
-      friends: Schema.array(Schema.string()).default([]).description('除了主人，还接受谁的私聊（QQ 号）'),
+      others: Schema.union(['friends', 'listed', 'none']).default('friends').description('除了主人，还接受谁的私聊：friends = 她的 QQ 好友都可以；listed = 只有 friends 里列的；none = 只有主人'),
+      friends: Schema.array(Schema.string()).default([]).description('others 为 listed 时，接受这些 QQ 号的私聊'),
       // Group chats are off for now (see qq.js):
       // groups: Schema.array(Schema.string()).default([]).description('她在哪些群里（群号）'),
       // names: Schema.array(Schema.string()).default(['小栖']).description('群里提到这些名字也算在叫她'),
@@ -565,22 +568,19 @@ export default class LittleHouse extends Service {
     return w.name
   }
 
-  /**
-   * After her free-time diary entry: offer to message the owner, once per free
-   * time, when QQ is connected.
-   */
-  async shareOffer(sessionId) {
+  /** end_free_time: the first time in a free time it asks (diary? a message?) instead of ending. */
+  askBeforeEnd(sessionId) {
     const w = this.windows.get(sessionId)
-    if (!w || w.offered || !this.qq?.connected || !this.config.qq.ownerQQ) return ''
-    w.offered = true
-    return '\n要不要用手机给主人发条消息？只有你觉得有趣、重要、想让主人知道的事才发（phone_message）；平常的流水账不用发。不发的话直接 end_free_time。'
+    if (!w || w.asked) return ''
+    w.asked = true
+    return endAsk(Boolean(this.qq?.connected && this.config.qq.ownerQQ))
   }
 
-  /** Free time ran out. If she is idle and has not written her diary, ask her to. */
+  /** Free time ran out. If she is idle (and has not ended it herself), tell her. */
   async timeUp(sessionId) {
     const w = this.windows.get(sessionId)
     await this.endWindow(sessionId, 'time is up')
-    if (!w || w.rested || w.diary || w.agent?.status !== 'idle') return
+    if (!w || w.rested || w.agent?.status !== 'idle') return
     try {
       await this.send(w.agent, TIME_UP_TEXT)
       this.log('info', `asked for the diary at the end of ${w.name} (session ${sessionId})`)
@@ -593,12 +593,6 @@ export default class LittleHouse extends Service {
   windowOver(sessionId, unrested = false) {
     const w = this.windows.get(sessionId)
     return Boolean(w && w.ended && !(unrested && w.rested))
-  }
-
-  /** Free time ran out a little while ago and she has not written its diary yet. */
-  needsDiary(sessionId) {
-    const w = this.windows.get(sessionId)
-    return Boolean(w && w.ended && !w.rested && !w.diary && Date.now() - w.until < 15 * 60_000)
   }
 
   minutesLeft(sessionId) {
@@ -684,7 +678,9 @@ export default class LittleHouse extends Service {
     }
     if (state.lifeSessionId && state.lifeSessionDay === today) {
       try {
-        return await resolveAgent(state.lifeSessionId)
+        const agent = await resolveAgent(state.lifeSessionId)
+        this.daySession = { id: agent.id, day: today }
+        return agent
       } catch (e) {
         this.log('warn', `could not resume life session ${state.lifeSessionId}: ${e?.message ?? e}; creating a new one`)
       }
@@ -700,6 +696,7 @@ export default class LittleHouse extends Service {
       this.log('warn', `could not title the life session: ${e?.message ?? e}`)
     }
     await this.updateState((s) => ({ ...s, lifeSessionId: agent.id, lifeSessionDay: today }))
+    this.daySession = { id: agent.id, day: today }
     this.log('info', `created life session ${agent.id}`)
     return agent
   }
@@ -745,7 +742,7 @@ export default class LittleHouse extends Service {
     const mem = await this.readMemory()
     const today = this.dayKey()
     const days = new Set()
-    for (const [sub, ext] of [['diary', '.md'], ['qq', '.jsonl']]) {
+    for (const [sub, ext] of [['diary', '.md'], ['qq', '.jsonl'], ['transcripts', '.jsonl']]) {
       try {
         for (const f of await readdir(join(this.stateDir, sub))) {
           if (f.endsWith(ext)) days.add(f.slice(0, -ext.length))
@@ -762,21 +759,53 @@ export default class LittleHouse extends Service {
   }
 
   /** One day into memory: a fresh summarising session reads the day and answers in JSON. */
+  /**
+   * Keep the day session as plain lines (transcripts/<day>.jsonl) for the night's
+   * memory summary: what she was told, what she wrote, every tool call and (cut
+   * short) its result. Her reasoning and the day's opening (persona, memory) are left out.
+   */
+  async recordTranscript(day, event) {
+    const d = event?.data ?? {}
+    const text = (content) => (content ?? []).map((b) => (b.type === 'text' ? b.text : b.type === 'image' ? '[图片]' : '')).join('')
+    let entry
+    if (event.type === 'user/message') {
+      const t = (d.content ?? []).filter((b) => !(b.type === 'text' && (INTRO_RE.test(b.text) || b.text.startsWith('<system-reminder>'))))
+      const s = text(t).trim()
+      if (s) entry = { who: 'in', text: s }
+    } else if (event.type === 'assistant/message') {
+      const s = text((d.message?.content ?? []).filter((b) => b.type === 'text')).trim()
+      if (s) entry = { who: 'she', text: s }
+    } else if (event.type === 'tool/call') {
+      entry = { who: 'call', tool: d.name, text: String(d.arguments ?? '') }
+    } else if (event.type === 'tool/result') {
+      entry = { who: 'result', text: text(d.message?.content).slice(0, TRANSCRIPT_RESULT_CHARS) }
+    }
+    if (!entry) return
+    try {
+      await mkdir(join(this.stateDir, 'transcripts'), { recursive: true })
+      await appendFile(join(this.stateDir, 'transcripts', `${day}.jsonl`), JSON.stringify({ t: hhmm(event.time ?? Date.now()), ...entry }) + '\n', 'utf8')
+    } catch (e) {
+      this.log('warn', `transcript: ${e?.message ?? e}`)
+    }
+  }
+
   async summariseDay(day) {
     const read = async (path) => readFile(path, 'utf8').catch(() => '')
+    const lines = (src) => src.split('\n').filter(Boolean).map((l) => {
+      try {
+        return JSON.parse(l)
+      } catch {
+        return undefined
+      }
+    })
     const diary = (await read(join(this.stateDir, 'diary', `${day}.md`))).trim()
-    const chats = formatChats((await read(join(this.stateDir, 'qq', `${day}.jsonl`)))
-      .split('\n').filter(Boolean).map((l) => {
-        try {
-          return JSON.parse(l)
-        } catch {
-          return undefined
-        }
-      }), this.config.qq.ownerName)
+    const transcript = formatTranscript(lines(await read(join(this.stateDir, 'transcripts', `${day}.jsonl`))))
+    // older days (before transcripts were kept) only have the QQ log
+    const chats = transcript ? '' : formatChats(lines(await read(join(this.stateDir, 'qq', `${day}.jsonl`))), this.config.qq.ownerName)
     let mem = await this.readMemory()
-    if (diary || chats) {
+    if (diary || transcript || chats) {
       const prompt = buildSummaryPrompt({
-        name: '她', day, diary, chats, memoryText: renderMemory(mem, day, { ids: true }),
+        name: '她', day, diary, transcript, chats, memoryText: renderMemory(mem, day, { ids: true }),
       })
       const reply = parseReply(await this.runOnce(this.config.memory.preset, `记忆整理 · ${day}`, prompt))
       const merged = mergeDay(mem, day, reply)
@@ -829,6 +858,7 @@ export default class LittleHouse extends Service {
   }
 
   onSessionEvent(session, event) {
+    if (session?.id && session.id === this.daySession?.id) void this.recordTranscript(this.daySession.day, event)
     const w = this.waiters.get(session?.id)
     if (!w) return
     if (event.type === 'assistant/message') {

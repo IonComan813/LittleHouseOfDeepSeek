@@ -24,7 +24,7 @@ EFFECTS = {
     "place": "sparkle", "stow": "sparkle", "plant": "dirt", "harvest": "pop", "fish": "fishing",
     "pet": "hearts", "feed": "hearts", "call": "hearts", "play": "hearts", "tidy": "sparkle", "eat": "eat", "rest": "zzz",
     "open": "paper", "read": "paper", "catalog": "paper", "order": "coin",
-    "sell": "coin", "say": "speech", "examine": "look",
+    "sell": "coin", "say": "speech", "examine": "look", "stargaze": "look",
 }
 
 

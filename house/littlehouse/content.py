@@ -462,6 +462,20 @@ STOVE_BURNERS = 2  # the stove has two rings (see APPEARANCE["stove"]); cooking 
 
 CLEAN_DIRT_PER_MINUTE = 25.0  # a filthy room (100) takes four minutes; progress is kept if she stops
 FISH_SECONDS = (60, 180)  # each cast waits this long (random) for a bite
+STARGAZE_SECONDS = (120, 240)  # stargaze(): how long she looks up
+
+# Things that may happen while she looks at the night sky: (text, chance, condition).
+# Conditions: summer / warm (summer, autumn) / yard / beach / clear / cloudy /
+# moon (the moon is up) / pet (the cat is fond of her).
+SKY_EVENTS: tuple[tuple[str, float, str], ...] = (
+    ("一颗人造卫星不紧不慢地划过头顶，一闪一闪的。", 0.10, "clear"),
+    ("院子的草丛里亮起几只萤火虫，忽明忽暗地飞来飞去。", 0.45, "summer yard"),
+    ("浪花碎在沙滩上的时候泛着淡蓝色的光——是夜光藻。", 0.25, "warm beach"),
+    ("远处海面上有几点渔船的灯火，慢慢地往港口那边移。", 0.25, "beach"),
+    ("一只夜鸟从树梢上扑棱棱飞走了，叫了两声。", 0.10, "yard"),
+    ("月亮周围有一圈淡淡的光晕，听说这样第二天可能会变天。", 0.30, "cloudy moon"),
+    ("{pet}不知什么时候跟了出来，蹲在你脚边，也仰着头看。", 0.20, "pet"),
+)
 MAX_WAIT_MINUTES = 30
 
 # --------------------------------------------------------------------------- outside free time
@@ -469,7 +483,7 @@ MAX_WAIT_MINUTES = 30
 # Free time is when the agent is awake and choosing what to do. The rest of the
 # day she "just lives": the house picks one of these each hour (stable within
 # the hour), walks her there, and the picture shows it. ``when``: night (she is
-# asleep), day, dry (daytime and not raining).
+# asleep), day, dry (daytime and not raining), clear_night (after dark, before bed, not raining).
 
 
 @dataclass(frozen=True)
@@ -491,6 +505,8 @@ IDLE_ACTIVITIES: tuple[Idle, ...] = (
     Idle("在床上睡午觉", "bedroom", "bed", "zzz", "day", 1),
     Idle("在院子里的树下晒太阳", "yard", "tree", None, "dry", 2),
     Idle("在沙滩上散步", "beach", None, "look", "dry", 2),
+    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3),
+    Idle("在沙滩上吹着海风看夜里的海", "beach", None, "look", "clear_night", 1),
 )
 NIGHT_HOURS = (23, 7)  # asleep from 23:00 to 07:00 outside free time
 OFF_HOURS_HUNGER_CAP = 60.0  # she grabs a bite on her own; still peckish when free time starts

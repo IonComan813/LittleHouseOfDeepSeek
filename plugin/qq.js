@@ -2,7 +2,8 @@
 // session (the same one as her free time in the house) as "the phone buzzed";
 // she answers with the phone_message tool — whatever else she writes is not sent.
 //
-// - Private chats with the owner (and listed friends), any time she is awake.
+// - Private chats with the owner and (`others`) her QQ friends — "主人的朋友<昵称>" —
+//   any time she is awake.
 // - Voice, video and files are stopped here: they never reach the model. A
 //   message with nothing else in it is only recorded.
 // - While she sleeps (bedtime until her first free time) nothing reaches her;
@@ -13,7 +14,7 @@
 // Group chats are switched off for now (owner's decision, 2026-11-14). The code
 // that handled them is kept below as comments.
 
-import { appendFile, mkdir } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { OneBotClient } from './lib/onebot-client.js'
@@ -74,12 +75,12 @@ export class QQ {
     if (kind !== 'private') return // group chats are off for now (see the comment at the top)
     const owner = String(this.config.ownerQQ || '')
     const isOwner = owner !== '' && userId === owner
-    if (!isOwner && !this.config.friends.map(String).includes(userId)) return
+    if (!isOwner && !this.accepts(userId, event.sub_type)) return
 
     const msg = readMessage(event.message ?? event.raw_message, this.client.selfId)
     const sender = event.sender ?? {}
-    const name = isOwner ? this.config.ownerName : sender.nickname || userId
-    if (!isOwner) this.contacts.set(name, userId)
+    const name = isOwner ? this.config.ownerName : sender.remark || sender.nickname || userId
+    if (!isOwner) await this.addContact(name, userId)
     const dropped = msg.dropped.map((t) => DROPPED_NAMES[t] ?? t)
     await this.record({ chat: chatId, from: userId, name, text: [msg.text, ...dropped.map((d) => `[${d}]`)].filter(Boolean).join(' ') })
     if (!msg.text && !msg.images.length) return // only voice / video / files: stopped here
@@ -101,7 +102,7 @@ export class QQ {
       this.house.log('info', `QQ: ${chatId} while she sleeps: not passed on`)
       return
     }
-    const line = formatLine({ name, text: msg.text || '[图片]' })
+    const line = formatLine({ name: isOwner ? name : `${this.config.ownerName}的朋友${name}`, text: msg.text || '[图片]' })
     const images = await this.images(msg.images.slice(0, MAX_IMAGES_PER_MESSAGE))
     await this.house.phoneBuzz({ line, images })
   }
@@ -158,22 +159,48 @@ export class QQ {
     return { type: 'image', data: { file: 'base64://' + Buffer.from(png).toString('base64') } }
   }
 
+  /** Whether a private message from someone other than the owner is passed on. */
+  accepts(userId, subType) {
+    if (this.config.others === 'none') return false
+    if (this.config.friends.map(String).includes(userId)) return true
+    return this.config.others === 'friends' && subType === 'friend'
+  }
+
+  get contactsPath() {
+    return join(this.house.stateDir, 'qq-contacts.json')
+  }
+
+  /** People who have messaged her (name -> QQ), kept across restarts so she can write back. */
+  async addContact(name, qq) {
+    if (!this.contactsLoaded) {
+      try {
+        for (const [n, q] of Object.entries(JSON.parse(await readFile(this.contactsPath, 'utf8')))) this.contacts.set(n, q)
+      } catch {
+        // none yet
+      }
+      this.contactsLoaded = true
+    }
+    if (this.contacts.get(name) === qq) return
+    this.contacts.set(name, qq)
+    await writeFile(this.contactsPath, JSON.stringify(Object.fromEntries(this.contacts), null, 1), 'utf8').catch(() => {})
+  }
+
   /** The QQ number for a name she writes in phone_message(to) ('' = the owner). */
   resolveContact(to) {
-    const name = String(to ?? '').trim()
+    const name = String(to ?? '').trim().replace(new RegExp(`^${this.config.ownerName}的朋友`), '')
     if (!name || name === this.config.ownerName || name === '主人') return String(this.config.ownerQQ || '')
-    return this.contacts.get(name) ?? (/^\d{5,}$/.test(name) ? name : '')
+    return this.contacts.get(name) ?? ([...this.contacts.values()].includes(name) ? name : '')
   }
 
   /** phone_message: send her message (maybe with a photo of the house). */
   async phoneMessage(text, { photo = false, to = '' } = {}) {
+    if (!this.contactsLoaded) await this.addContact(this.config.ownerName, String(this.config.ownerQQ || ''))
     if (!this.connected) throw new Error('手机现在没有信号（QQ 没有连上）。')
     const qq = this.resolveContact(to)
     if (!qq) {
       const known = [...this.contacts.keys()].join('、') || this.config.ownerName
       throw new Error(`联系人里没有「${to}」。能发给：${known}。`)
     }
-    if (qq !== String(this.config.ownerQQ) && !this.config.friends.map(String).includes(qq)) throw new Error('只能发给主人和联系人里的朋友。')
     const chatId = `private:${qq}`
     const bubbles = splitReply(text)
     if (!bubbles.length && !photo) throw new Error('消息是空的。')
