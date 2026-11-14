@@ -135,6 +135,14 @@ class KitchenTest(unittest.TestCase):
             if name in C.CATALOG:
                 self.assertLess(price, C.CATALOG[name], name)  # the bureau buys below retail
 
+    def test_dish_aliases_and_menu_hint(self):
+        w = new_world()
+        res = run(w, "goto(厨房); cook(煎蛋)")
+        self.assertTrue(ok(res), res)
+        self.assertTrue("荷包蛋" in w.inventory or "焦掉的菜" in w.inventory)
+        res = run(w, "cook(宫保鸡丁)")
+        self.assertIn("会做的菜：白米饭、荷包蛋、红烧肉", res[0].text)
+
     def test_fried_rice_needs_cooked_rice(self):
         w = new_world()
         w.add_item("葱")

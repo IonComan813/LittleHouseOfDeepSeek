@@ -391,9 +391,10 @@ def _cook_outcome(w: World) -> str:
 @action("cook(菜名)", "在厨房做菜，如 cook(番茄炒蛋)。炒、煎要一直守在灶台边；煮饭、炖、蒸先忙一会儿，之后自己熟，期间可以去做别的", 1, 1, effort=3, proc=True)
 def _cook(w: World, dish: str) -> Proc:
     _need_room(w, "kitchen")
-    dish = str(dish).strip()
+    asked = str(dish).strip()
+    dish = C.DISH_ALIASES.get(asked, asked)
     if dish not in C.RECIPES:
-        raise ActionError(f"不会做「{dish}」。用 recipes() 看看菜谱。")
+        raise ActionError(f"不会做「{asked}」。会做的菜：{'、'.join(C.RECIPES)}。recipes() 里有每道菜要什么、做多久。")
     r = C.RECIPES[dish]
     ok, use, missing = _recipe_status(w, r.ingredients)
     if not ok:
