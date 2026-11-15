@@ -65,6 +65,11 @@ EXTRAS: dict[str, Rect] = {
     "wardrobe": (10, 2, 2, 4),
     "tree": (32, 13, 4, 6),
 }
+
+# Places she stands that are not things (nothing drawn there).
+STANDS: dict[str, tuple[int, int]] = {
+    "shore": (22, 22),  # playing in the water: the last row of sand, at the waves
+}
 BUSHES = [(1, 13), (17, 13), (30, 17), (38, 15)]
 
 # Where placed furniture goes, in order, per room.
@@ -141,6 +146,8 @@ def spot_of(obj_id: str, room: str, find_pos: dict[str, tuple[int, int]],
     if decor_pos and obj_id in decor_pos:
         x, y = decor_pos[obj_id]
         return x, min(y + 1, _area_bottom(room))
+    if obj_id in STANDS:
+        return STANDS[obj_id]
     rect = FIXTURES.get(obj_id) or EXTRAS.get(obj_id)
     if rect and _in_area(room, rect[0], rect[1]):
         x, y, w, h = rect

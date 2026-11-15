@@ -55,7 +55,7 @@ APPEARANCE: dict[str, str] = {
     "table": "深色的长木桌。",
     "fridge": "白色的高冰箱，上面是冷冻室，门上贴着一个红色的冰箱贴。",
     "counter": "靠墙的深色木台面和柜子，台面上嵌着一个带水龙头的水槽。",
-    "mailbox": "立在木桩上的蓝色邮箱，有信的时候会竖起一面红色小旗。",
+    "mailbox": "立在木桩上的蓝色邮箱。",
     "consign": "开拓署的木制寄售箱，箍着铁条，正面有一道青绿色的标记。",
     "parcel": "用胶带封好的纸箱。",
     "rock": "岸边一块深灰色的大礁石，顶上平平的，适合坐着钓鱼。",
@@ -331,13 +331,6 @@ WELCOME_LETTER = (
     "每天下午快递来的时候会一起收走，货款直接记到你的账上。祝你在这里住得开心。"
 )
 SUPPLY_LETTER = "【开拓署】本周补给已送达门口，请查收。如有需要请随时订货。"
-LETTERS = (
-    "【开拓署通知】有渔民报告在潮汐湾外看到了海豚群，如在海边看到，请勿靠近打扰。",
-    "【开拓署通知】码头修缮进度过半，下个季度会通一班渡船。",
-    "【邻岛的来信】你好呀，我是灯塔岛的守塔人。听说潮汐湾有新的定居者，送你一句问候。夜里如果看见灯光闪三下，那是我在打招呼。",
-    "【开拓署通知】近期海况良好，礁石附近鲈鱼较多，请注意安全。",
-    "【邻岛的来信】又是我，灯塔岛的守塔人。这几天风大，夜里的灯我多擦了两遍。你那边的海还好吗？",
-)
 
 # --------------------------------------------------------------------------- surprises
 
@@ -387,7 +380,7 @@ PLAY_TOY_LINES = {
     "逗猫棒": "{pet}追着羽毛跳得老高。",
 }
 # Messes the cat leaves behind. They are things in the room (surroundings() lists them,
-# the picture shows them) until she tidies them up: tidy() / fix(), or clean().
+# the picture shows them) until she tidies them up: tidy_mess(), or clean().
 # kind -> (name, seconds to tidy, dirt it took into the room, how it looks, where she stands)
 MESSES: dict[str, tuple[str, float, float, str, str]] = {
     "soil": ("撒了一地的土", 15, 20, "{target}的盆倒在地上，土撒了一片。", ""),
@@ -507,7 +500,7 @@ IDLE_ACTIVITIES: tuple[Idle, ...] = (
     Idle("在床上睡觉", "bedroom", "bed", None, "night"),
     Idle("在收拾屋子、擦擦桌子", "", None, "sparkle", "day", 2),  # the tidiest room: real cleaning waits for her
     Idle("在陪团子玩", "", None, "hearts", "day", 3, story="play_with_cat"),
-    Idle("在海边玩水、踩浪", "beach", None, "water", "dry", 2, story="play_in_water"),
+    Idle("在海边玩水、踩浪", "beach", "shore", "wade", "dry", 2, story="play_in_water"),
     Idle("在礁石边钓鱼", "beach", "rock", "fishing", "dry", 2, story="fish"),
     Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, story="look_at_sky"),
     Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 1),
@@ -574,6 +567,13 @@ SHALLOW_FISH: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 )
 FISH_CHANCE = {"spring": 0.4, "summer": 0.5, "autumn": 0.4, "winter": 0.2}
 NO_FISH_WINTER = "水太凉了，浅水里看不到鱼。"  # sometimes said in winter when no fish came
+
+
+def fish_seen(text: str) -> bool:
+    """Whether a play_in_water text has small fish she can see (the picture draws them)."""
+    return any(who in text for who, _, _ in SHALLOW_FISH)
+
+
 FISH_IN_THE_DARK = "黑暗里有什么滑溜溜的小东西擦过你的小腿，看不清是什么。"
 
 NIGHT_HOURS = (23, 7)  # asleep from 23:00 to 07:00 outside free time

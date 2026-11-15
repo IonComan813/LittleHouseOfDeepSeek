@@ -22,9 +22,9 @@ EFFECT_SECONDS = 1.6  # one loop of an effect animation
 EFFECTS = {
     "water_plants": "water", "cook": "steam", "clean": "sparkle", "pick_up": "sparkle", "put_on_shelf": "sparkle",
     "place": "sparkle", "stow": "sparkle", "plant": "dirt", "harvest": "pop", "fish": "fishing",
-    "stroke_cat": "hearts", "feed_cat": "hearts", "call_cat": "hearts", "play_with_cat": "hearts", "tidy": "sparkle", "eat": "eat", "rest": "zzz",
+    "stroke_cat": "hearts", "feed_cat": "hearts", "call_cat": "hearts", "play_with_cat": "hearts", "tidy_mess": "sparkle", "eat": "eat", "rest": "zzz",
     "open": "paper", "catalog": "paper", "order": "coin",
-    "sell": "coin", "examine": "look", "look_at_sky": "look", "play_in_water": "water",
+    "sell": "coin", "examine": "look", "look_at_sky": "look", "play_in_water": "wade",
 }
 
 
@@ -56,13 +56,21 @@ def current_pose(world, now: float | None = None) -> Pose:
             return Pose(px, py, f, walking=True, step=int(elapsed * 8) % 8, active=True)
         if phase.kind == "work":
             effect = EFFECTS.get(phase.action)
+            focus = phase.focus
+            if phase.action == "play_in_water" and world.resident.get("wade_fish"):
+                focus = "fish"  # small fish gathered round her feet
             return Pose(x, y, facing, effect=effect, effect_p=(elapsed % EFFECT_SECONDS) / EFFECT_SECONDS,
-                        focus=phase.focus, active=True)
+                        focus=focus, active=True)
         return Pose(x, y, facing, active=True)  # waiting
     idle = world.current_idle()
     if idle is not None:
         if idle.focus == "bed":
             return Pose(x, y, facing, focus="bed", asleep=True)
         p = (time.time() % (EFFECT_SECONDS * 2)) / (EFFECT_SECONDS * 2)
-        return Pose(x, y, facing, effect=idle.effect, effect_p=p, focus=idle.focus)
+        focus = idle.focus
+        if idle.story == "play_in_water":  # fish only if the story told when someone asked had them
+            kept = world.resident.get("idle_story")
+            if kept and kept[0] == world.resident.get("idle_key") and C.fish_seen(kept[1]):
+                focus = "fish"
+        return Pose(x, y, facing, effect=idle.effect, effect_p=p, focus=focus)
     return Pose(x, y, facing, active=world.free(now))

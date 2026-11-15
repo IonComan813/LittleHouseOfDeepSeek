@@ -67,3 +67,20 @@ class PoseTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WadeTest(unittest.TestCase):
+    def test_fish_gather_round_her_only_when_the_text_says_so(self):
+        seen = {}
+        for seed in range(40):
+            w = new_world(when=(2026, 7, 20, 15))
+            w.rng.seed(seed)
+            rid = start(w, "goto(沙滩); play_in_water()")
+            step(w, 40)  # at the waves, playing
+            pose = current_pose(w)
+            self.assertEqual((pose.effect, (pose.x, pose.y)), ("wade", (22, 22)))
+            seen[pose.focus == "fish"] = True
+            fish = pose.focus == "fish"
+            step(w, 300)
+            self.assertEqual(fish, C.fish_seen(w.runner.reports[rid].results[-1].text))
+        self.assertEqual(set(seen), {True, False})

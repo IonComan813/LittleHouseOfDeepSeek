@@ -244,7 +244,7 @@ def _examine(w: World, ref: str) -> str:
         return f"{name}：{item.desc or '没什么特别的。'}" if item else f"{name}。"
     if o.kind == "mess":
         target = w.objects.get(o.state.get("target") or "")
-        return C.MESSES[o.state["kind"]][3].format(target=target.name if target else "") + "可以 tidy() 收拾。"
+        return C.MESSES[o.state["kind"]][3].format(target=target.name if target else "") + "可以 tidy_mess() 收拾。"
     look = C.APPEARANCE.get(o.id) or C.APPEARANCE.get(o.name, "")
     if o.id == "shelf":
         return look + "上面摆着：" + (w.format_items(w.shelf) if w.shelf else "什么都还没有。")
@@ -531,7 +531,7 @@ def _water(w: World, ref: str = "") -> Proc:
             raise ActionError(f"{o.name}不需要浇水。")
     fallen = [o for o in targets if o.state.get("fallen")]
     if fallen and len(fallen) == len(targets):
-        raise ActionError(f"{fallen[0].name}的盆倒在地上，先 tidy() 把它扶起来。")
+        raise ActionError(f"{fallen[0].name}的盆倒在地上，先 tidy_mess() 把它扶起来。")
     targets = [o for o in targets if not o.state.get("fallen")]
     w.stand_near(start)
     watered: list[Obj] = []
@@ -883,13 +883,15 @@ def _wade(w: World) -> Proc:
     _need_room(w, "beach")
     if w.weather() == "雷阵雨":
         raise ActionError("在打雷，别下水了。")
-    yield from walk_to(w, None, "play_in_water")
+    yield from walk_to(w, "shore", "play_in_water")
+    text = wade_text(w)  # rolled first, so the picture shows the fish while she plays
+    w.resident["wade_fish"] = C.fish_seen(text)
     try:
-        yield work(w.rng.uniform(*C.WADE_SECONDS), "play_in_water", None, "玩水")
+        yield work(w.rng.uniform(*C.WADE_SECONDS), "play_in_water", "shore", "玩水")
     except Interrupted:
         return "你刚踩了两下水就上岸了。"
     w.log("beach", "在海边玩了一会儿水")
-    return wade_text(w)
+    return text
 
 
 def _read_bottle(w: World, name: str) -> str:
@@ -1015,7 +1017,7 @@ def actions_here(w: World) -> list[str]:
     if w.items_with_tag("readable"):
         names.append("open")
     if w.messes():
-        names.insert(0, "tidy")
+        names.insert(0, "tidy_mess")
     if room.outdoor and is_dark(w.now()):
         names.append("look_at_sky")
     return list(dict.fromkeys(n for n in names if n in ACTIONS))
@@ -1142,7 +1144,7 @@ def _play_event(w: World, mood: str) -> str:
 
 # ---------------------------------------------------------------- tidying up after the cat
 
-@action("tidy(乱子)", "收拾乱子（猫弄倒的盆、洒的水、掉在地上的书……）；不写参数就收拾这里所有的", 0, 1, proc=True)
+@action("tidy_mess(乱子)", "收拾乱子（猫弄倒的盆、洒的水、掉在地上的书……）；不写参数就收拾这里所有的", 0, 1, proc=True)
 def _tidy(w: World, ref: str = "") -> Proc:
     if ref:
         o = w.resolve(ref)
@@ -1165,8 +1167,8 @@ def tidy_messes(w: World, messes: list[Obj]) -> Proc:
     done: list[str] = []
     try:
         for m in messes:
-            yield from walk_to(w, m.state.get("spot") or None, "tidy")
-            yield work(C.MESSES[m.state["kind"]][1], "tidy", m.state.get("spot"), f"收拾{m.name}")
+            yield from walk_to(w, m.state.get("spot") or None, "tidy_mess")
+            yield work(C.MESSES[m.state["kind"]][1], "tidy_mess", m.state.get("spot"), f"收拾{m.name}")
             _put_right(w, m)
             done.append(m.name)
     except Interrupted:
@@ -1188,7 +1190,7 @@ SHORT = {
     "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water_plants": "浇水", "open": "取信 / 拆包裹 / 开漂流瓶", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick_up": "捡东西", "fish": "钓鱼",
-    "put_on_shelf": "摆上收藏架", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call_cat": "叫猫过来", "feed_cat": "喂猫", "stroke_cat": "摸猫", "play_with_cat": "陪猫玩", "tidy": "收拾猫弄的乱子",
+    "put_on_shelf": "摆上收藏架", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call_cat": "叫猫过来", "feed_cat": "喂猫", "stroke_cat": "摸猫", "play_with_cat": "陪猫玩", "tidy_mess": "收拾猫弄的乱子",
 }
 
 

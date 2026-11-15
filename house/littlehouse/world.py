@@ -328,10 +328,6 @@ class World:
             self.parcels[item] = self.parcels.get(item, 0) + n
         if delivered:
             self.log("mail", "快递把包裹放在了门口", actor="world", at=at)
-        rng = random.Random(_day(d) + "letter")
-        if rng.random() < 0.15:
-            self.mailbox.append(rng.choice(C.LETTERS))
-            self.log("mail", "邮箱里多了一封信", actor="world", at=at)
         if self.sale_box:
             total = sum(C.SELL_PRICES.get(n, 0) * c for n, c in self.sale_box.items())
             sold = self.format_items(self.sale_box)
@@ -500,14 +496,14 @@ class World:
         out = [f"等灶台上的{j['dish']}好了盛出来（wait()）" for j in self.jobs if not j["ready"]]
         out += [f"去厨房把灶台上的{j['dish']}盛出来（goto(厨房)）" for j in self.jobs if j["ready"]]
         out += [f"吃{d}（eat({d})）" for d in dict.fromkeys(self.resident.get("cooked", [])) if self.inventory.get(d, 0) > 0]
-        out += [f"收拾{C.ROOMS[o.room].name}里{o.name}（tidy()）" for o in self.objects.values() if o.kind == "mess"]
+        out += [f"收拾{C.ROOMS[o.room].name}里{o.name}（tidy_mess()）" for o in self.objects.values() if o.kind == "mess"]
         return out
 
     def overtime_problem(self, calls) -> str:
         """Why a script may not run in overtime ('' = it may)."""
         dishes = set(self.resident.get("cooked", [])) | {j["dish"] for j in self.jobs}
         for c in calls:
-            if c.name in ("goto", "wait", "tidy", "surroundings", "inventory", "help"):
+            if c.name in ("goto", "wait", "tidy_mess", "surroundings", "inventory", "help"):
                 continue
             if c.name == "eat" and (not c.args or str(c.args[0]).strip() in dishes):
                 continue

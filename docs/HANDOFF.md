@@ -115,7 +115,7 @@
 - 手机：`content.PHONE`，一直在背包里，`take_item` 拒绝拿走它；老存档加载时补上。
 - 看夜空：`sky.py`（真实月相、月出、流星雨极大夜）+ `actions.sky_view()`（没有副作用的夜空描述）+ `look_at_sky()`；`content.SKY_EVENTS` 是随机小事。
   海边：`play_in_water()`，结果带 `actions.sea_light()`（清早朝阳、白天阳光、傍晚夕阳、晚上按真实月相的月光、雨 / 阴天）。
-- 动作名：看名字就懂，多个词用下划线连起来（用户要求的）：`call_cat`、`feed_cat`、`stroke_cat`、`play_with_cat`、`pick_up`、`water_plants`、`put_on_shelf`、`play_in_water`、`look_at_sky`；没有 `say`；`open` 管邮箱、包裹和漂流瓶。工具：`house_photo`、`end_errand`。
+- 动作名：看名字就懂，多个词用下划线连起来（用户要求的）：`call_cat`、`feed_cat`、`stroke_cat`、`play_with_cat`、`tidy_mess`、`pick_up`、`water_plants`、`put_on_shelf`、`play_in_water`、`look_at_sky`；没有 `say`；`open` 管邮箱、包裹和漂流瓶。工具：`house_photo`、`end_errand`。
 - **日常**（`content.IDLE_ACTIVITIES`，`world._routine`）：每小时一件，**只是个样子，不改变世界、不记录**；不安排答不上细节的事（看书）。
   有消息叫醒她时 `world.idle_story()` 才临时生成一个小结果（`actions.STORIES`：团子的反应、海边玩水 + 海面上的光、钓鱼（不会真钓到）、
   沙滩散步 / 夜里看海的海面、夜空），同一件事里不变。收拾屋子去最干净的房间（真正脏的留给她）；陪团子玩跟着猫走；钓鱼要有鱼竿、不打雷；
@@ -156,7 +156,7 @@
 - 自由活动到点：手上的事做完为止；成套的事（做饭→吃饭、猫弄坏的东西）可以顺延做完，其他动作拒绝，日记和 end_free_time 随时可以。
 - 日常：不安排答不上来的事（看书）；只是个样子，没人问就不发生；有人问才临时生成结果；打扫不去真正脏的房间；有在海边玩水、钓鱼；不给植物「擦叶子」。
 - 动作名要一看就懂：`play_with_cat`、`play_in_water`、`look_at_sky`。
-- 时长：做饭分「必须守着」和「下锅后能走开」；一圈想做的事约 20 分钟；`tidy` 每处 5–15 秒。
+- 时长：做饭分「必须守着」和「下锅后能走开」；一圈想做的事约 20 分钟；`tidy_mess` 每处 5–15 秒。
 - 画面：LPC 素材；去掉鲸鳍耳；地板不用换。
 
 ## 6. 容器里的测试环境

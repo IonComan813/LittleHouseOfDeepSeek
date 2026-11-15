@@ -303,7 +303,7 @@ class EconomyTest(unittest.TestCase):
         self.assertTrue(all((14, 0) <= (t.hour, t.minute) <= (16, 30) for t in times))
         self.assertGreater(len({(t.hour, t.minute) for t in times}), 10)
         self.assertEqual(courier_time(datetime(2026, 11, 5, 9)), courier_time(datetime(2026, 11, 5, 22)))
-        self.assertNotIn("阿陆", C.WELCOME_LETTER + "".join(C.LETTERS))
+        self.assertNotIn("阿陆", C.WELCOME_LETTER)
 
     def test_cannot_overspend(self):
         w = new_world()
@@ -484,14 +484,14 @@ class CatTest(unittest.TestCase):
         look = w.look()
         self.assertIn("撒了一地的土", look)
         self.assertIn("盆倒在地上", look)
-        self.assertIn("tidy", w.actions_here())
-        self.assertIn("tidy()", run(w, "water_plants(绿萝)")[0].text)
-        self.assertIn("可以 tidy() 收拾", run(w, "examine(撒了一地的土)")[0].text)
+        self.assertIn("tidy_mess", w.actions_here())
+        self.assertIn("tidy_mess()", run(w, "water_plants(绿萝)")[0].text)
+        self.assertIn("可以 tidy_mess() 收拾", run(w, "examine(撒了一地的土)")[0].text)
         with self.assertRaises(ScriptError) as e:
             run(w, "fix(撒了一地的土)")
-        self.assertIn("这里能用的动作：tidy", str(e.exception))  # listed, not run for her
+        self.assertIn("这里能用的动作：tidy_mess", str(e.exception))  # listed, not run for her
         self.assertTrue(pot.state["fallen"])
-        res = run(w, "tidy(撒了一地的土)")
+        res = run(w, "tidy_mess(撒了一地的土)")
         self.assertTrue(ok(res), res)
         self.assertFalse(pot.state["fallen"])
         self.assertEqual(len(w.messes()), 1)

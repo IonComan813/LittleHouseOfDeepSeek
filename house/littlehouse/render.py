@@ -675,7 +675,7 @@ def _plot_crops(surf, r, state, season):
                 pygame.draw.circle(surf, PAL["x"], (cx + 1, cy - 2), 1)
 
 
-def _mailbox(surf, r, has_mail):
+def _mailbox(surf, r):
     if SP.available():  # drawn at the LPC scale: a blue box on a wooden post
         cx, base = r.centerx, r.bottom + 4
         pygame.draw.rect(surf, PAL["T"], (cx - 2, base - 14, 4, 14))
@@ -684,16 +684,10 @@ def _mailbox(surf, r, has_mail):
         pygame.draw.rect(surf, PAL["b"], box, border_radius=4)
         pygame.draw.rect(surf, PAL["n"], box, 1, border_radius=4)
         pygame.draw.line(surf, PAL["B"], (box.left + 3, box.top + 3), (box.right - 4, box.top + 3))
-        if has_mail:
-            pygame.draw.rect(surf, PAL["r"], (box.right, box.top - 6, 2, 9))
-            pygame.draw.rect(surf, PAL["r"], (box.right, box.top - 6, 5, 4))
         return
     pygame.draw.rect(surf, PAL["d"], (r.centerx - 1, r.top + 8, 3, 8))
     pygame.draw.rect(surf, PAL["b"], (r.left + 2, r.top + 2, 12, 8), border_radius=3)
     pygame.draw.rect(surf, PAL["n"], (r.left + 2, r.top + 2, 12, 8), 1, border_radius=3)
-    if has_mail:
-        pygame.draw.rect(surf, PAL["r"], (r.right - 3, r.top - 2, 2, 6))
-        pygame.draw.rect(surf, PAL["r"], (r.right - 3, r.top - 2, 4, 3))
 
 
 def _consign(surf, r, has_goods):
@@ -969,6 +963,13 @@ def _effect(surf, pose, world, t):
         for i in range(4):
             k = (p + i * 0.25) % 1.0
             pygame.draw.circle(surf, PAL["B"], (target[0] - 6 + i * 4, int(target[1] - 10 + 12 * k)), 1)
+    elif e == "wade":
+        fx, fy = px, int(pose.y * T + T)  # her feet, at the edge of the waves
+        for i in range(3):  # splashes kicked up by her feet
+            k = (p + i * 0.33) % 1.0
+            pygame.draw.circle(surf, PAL["x"], (fx - 8 + i * 8, int(fy - 2 - 8 * math.sin(k * math.pi))), 1)
+        if pose.focus == "fish":
+            _fish_school(surf, fx, S.SEA[1] * T + 10, t)
     elif e == "steam":
         r = focus_rect or pygame.Rect(px - 8, py, 16, 16)
         for i in range(3):
@@ -1017,6 +1018,20 @@ def _effect(surf, pose, world, t):
         else:
             for dx in (-3, 0, 3):
                 surf.set_at((bubble.centerx + dx, bubble.centery), PAL["k"])
+
+
+def _fish_school(surf, cx, cy, t):
+    """A handful of small fish in the shallows, drifting in round her feet (no particular kind)."""
+    rng = _rng("fish", "school")
+    for i in range(6):
+        a = rng.uniform(0, 2 * math.pi) + t * 0.6 * (1 if i % 2 else -1)
+        reach = 10 + 14 * (0.5 + 0.5 * math.sin(t * 1.3 + i))  # in close, then out a little
+        x = cx + int(reach * math.cos(a))
+        y = cy + int(0.35 * reach * math.sin(a)) + rng.randint(0, 3)
+        d = -1 if math.sin(a) > 0 else 1  # swimming round: heads follow the circle
+        pygame.draw.ellipse(surf, (34, 66, 96), (x - 4, y - 1, 8, 4))
+        pygame.draw.polygon(surf, (34, 66, 96), [(x - 3 * d, y + 1), (x - 7 * d, y - 2), (x - 7 * d, y + 3)])
+        surf.set_at((x + 2 * d, y), (210, 232, 244))
 
 
 def _messes(surf, world):
@@ -1147,7 +1162,7 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     for pid in ("plot#1", "plot#2", "plot#3"):
         if pid in objects:
             _plot(surf, _r(*S.FIXTURES[pid]), objects[pid].state, season)
-    _mailbox(surf, _r(*S.FIXTURES["mailbox"]), bool(world.mailbox))
+    _mailbox(surf, _r(*S.FIXTURES["mailbox"]))
     _consign(surf, _r(*S.FIXTURES["consign"]), bool(world.sale_box))
     if world.parcels:
         _parcel(surf, _r(*S.FIXTURES["parcel"]))
