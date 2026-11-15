@@ -59,7 +59,7 @@ class DurationTest(unittest.TestCase):
         self.assertLess(secs, C.RECIPES["萝卜炖排骨"].work + 15)  # only the prep keeps her busy
         self.assertNotIn("萝卜炖排骨", w.inventory)
         self.assertIn("萝卜炖排骨", w.look())  # "灶台上：萝卜炖排骨（正在炖……）"
-        res = run(w, "goto(庭院); water(); goto(沙滩); pick()")
+        res = run(w, "goto(庭院); water_plants(); goto(沙滩); pick_up()")
         self.assertTrue(ok(res), res)
         step(w, C.RECIPES["萝卜炖排骨"].wait)
         self.assertTrue(any("萝卜炖排骨炖好了" in e.text for e in w.news_since("")))
@@ -91,11 +91,11 @@ class DurationTest(unittest.TestCase):
         w.add_item("排骨")
         w.dirt["kitchen"] = 50
         t0 = w.clock.timestamp()
-        res = run(w, "call(); feed(); goto(厨房); cook(萝卜炖排骨); clean(); goto(庭院); water(); open(邮箱)")
+        res = run(w, "call_cat(); feed_cat(); goto(厨房); cook(萝卜炖排骨); clean(); goto(庭院); water_plants(); open(邮箱)")
         self.assertTrue(ok(res), res)
         for j in w.jobs:
             j["outcome"] = "ok"  # not today's random burnt pot
-        res = run(w, "goto(沙滩); pick(); fish(); fish(); goto(厨房); eat(萝卜炖排骨); goto(客厅); display()")
+        res = run(w, "goto(沙滩); pick_up(); fish(); fish(); goto(厨房); eat(萝卜炖排骨); goto(客厅); put_on_shelf()")
         self.assertTrue(ok(res), res)
         minutes = (w.clock.timestamp() - t0) / 60
         self.assertGreater(minutes, 12)

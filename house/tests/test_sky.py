@@ -43,8 +43,47 @@ class SkyTest(unittest.TestCase):
         res = run(w, "goto(沙滩); play_in_water()")
         self.assertTrue(res[-1].ok, res)
         self.assertIn("夕阳", res[-1].text)
-        self.assertIn("蛾眉月", run(new_world(when=(2026, 11, 14, 20)), "goto(沙滩); play_in_water()")[-1].text)
         self.assertIn("这件事要在沙滩做", run(new_world(), "play_in_water()")[0].text)
+
+    def wade(self, when, seed=0):
+        w = new_world(when=when)
+        w.rng.seed(seed)
+        res = run(w, "goto(沙滩); play_in_water()")
+        self.assertTrue(res[-1].ok, res)
+        return w, res[-1].text
+
+    def test_the_water_is_warm_on_a_sunny_afternoon(self):
+        from littlehouse import content as C
+        w, text = self.wade((2026, 7, 20, 15))  # a sunny summer day
+        self.assertEqual(w.weather(), "晴")
+        self.assertTrue(text.startswith(C.WATER_FEEL["summer"][0]), text)
+        w, text = self.wade((2026, 7, 20, 9))  # the same day in the morning
+        self.assertTrue(text.startswith(C.WATER_FEEL["summer"][1]), text)
+        w, text = self.wade((2026, 11, 24, 15))  # rain: never warm
+        self.assertEqual(w.weather(), "小雨")
+        self.assertTrue(text.startswith(C.WATER_FEEL_WEATHER["小雨"]), text)
+
+    def test_the_moonlight_names_no_phase_but_the_full_moon_gets_more(self):
+        from littlehouse import sky
+        phases = {p for p, _, _ in sky.PHASES} - {"满月"}
+        _, text = self.wade((2026, 11, 15, 21))  # a waxing moon, still up
+        self.assertIn("月光", text)
+        self.assertFalse([p for p in phases if p in text], text)
+        w, full = self.wade((2026, 11, 25, 22))
+        self.assertEqual((w.weather(), sky.moon_phase(w.now())), ("晴", "满月"))
+        self.assertIn("月亮圆圆的", full)
+        self.assertGreater(len(full), len(text))
+
+    def test_fish_come_by_sometimes(self):
+        from littlehouse import content as C
+        names = [who for who, _, _ in C.SHALLOW_FISH]
+        seen = sum(any(n in self.wade((2026, 7, 20, 15), seed)[1] for n in names) for seed in range(40))
+        self.assertTrue(5 < seen < 35, seen)
+        dark = sum(C.FISH_IN_THE_DARK in self.wade((2026, 11, 15, 21), seed)[1] for seed in range(40))
+        self.assertGreater(dark, 0)  # at night (not full moon) she cannot see what it was
+        for seed in range(20):  # winter: only what lives there in winter
+            text = self.wade((2027, 1, 12, 14), seed)[1]
+            self.assertNotIn("沙丁鱼", text)
 
     def test_fishing_in_everyday_life_needs_the_rod(self):
         from littlehouse import content as C

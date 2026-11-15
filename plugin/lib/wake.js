@@ -146,21 +146,24 @@ export function recapEvents(events, max = 10, maxChars = 40) {
 /**
  * The message that opens a free-time slot.
  * @param {{ slotName: string, start: number, until: number, before?: string, recap?: string[],
- *           news: string[], lastNote?: string, look: string, resumed?: boolean, wokeUp?: boolean }} p
+ *           news: string[], waiting?: string, lastNote?: string, look: string, resumed?: boolean, wokeUp?: boolean }} p
+ *   waiting: e.g. '门口有快递（3 件东西）还没拆；邮箱里有 1 封信还没看' (house /status)
  *   wokeUp: the day's first free time, which starts when she wakes up
  */
-export function buildWakeMessage({ slotName, start, until, before, recap = [], news, lastNote, look, resumed = false, wokeUp = false }) {
+export function buildWakeMessage({ slotName, start, until, before, recap = [], news, waiting = '', lastNote, look, resumed = false, wokeUp = false }) {
   const minutes = Math.round((until - start) / 60_000)
   const lines = [wokeUp
     ? `（${hhmm(start)}，你醒了。${slotName}的自由活动开始了：到 ${hhmm(until)}，共 ${minutes} 分钟。）`
     : resumed
     ? `（自由活动时间继续：${slotName}，现在 ${hhmm(start)}，到 ${hhmm(until)} 结束，还有 ${minutes} 分钟。）`
     : `（自由活动时间到了：${slotName}，${hhmm(start)}–${hhmm(until)}，共 ${minutes} 分钟。）`]
-  if (before && !wokeUp) lines.push(`在这之前，你一直在过平淡的日常——刚才在${before.replace(/^在/, '')}。`)
+  if (before && !wokeUp) lines.push(`在这之前，你一直在过平淡的日常——刚才${before}。`)
   if (recap.length) lines.push('上次自由活动的时候，你' + recap.join('；') + '。')
   if (lastNote) lines.push(`日记里最近的一段${lastNote.startsWith('（') ? '' : '：'}${lastNote}`)
   const uniqueNews = [...new Set(news)].slice(-8)
   if (uniqueNews.length) lines.push('这段时间里：' + uniqueNews.join('；') + '。')
+  // what the afternoon courier left (or letters still unread), told at every free time while it waits
+  if (waiting) lines.push(`${waiting}。`)
   lines.push('', look, '')
   lines.push('这段时间由你自己安排，想做什么都可以，用 house_do 行动。动作会花真实的时间（走路、做饭、打扫……），'
     + 'house_do 等整段脚本做完才给出结果；炖、煮、烤、蒸的菜下锅以后可以先去做别的。')

@@ -13,7 +13,7 @@ import { REST_TEXT } from './lib/wake.js'
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
 
-const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'end_of_current_operation', 'house_render', 'phone_message', 'phone_friend_request', ...DIARY_TOOLS])
+const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'end_errand', 'phone_photo', 'phone_message', 'phone_friend_request', ...DIARY_TOOLS])
 
 const IMAGE_SCHEMA = {
   type: 'object',
@@ -41,7 +41,7 @@ function phoneRules(ownerName, maxMinutes) {
 - 想发几条就发几条，不想回也可以不回。
 - 不是自由活动时间的时候，消息开头会告诉你角色此刻在做什么（收拾屋子、陪团子玩、在海边玩水……），有时还有正在发生的事。这时你只用手机回消息，也可以用 house_do 看看四周（surroundings()、inventory()）。
   **如果${ownerName}或朋友请你在屋里做什么事**（浇浇花、做顿饭、看看星星……），你可以直接用 house_do 去做：这会接过角色的控制权（最多 ${maxMinutes} 分钟）。
-  做完以后调用 end_of_current_operation，把角色交还给日常。没人请你做的事，就留到自由活动时间。
+  做完以后调用 end_errand，把角色交还给日常。没人请你做的事，就留到自由活动时间。
 - 自由活动里随时都可以主动给${ownerName}发消息：有你觉得有趣、重要、想让${ownerName}知道的事就发，平常的流水账不用发。
 - **别答应「待会儿」做什么，除非你确定做得到。** 不是自由活动时间的时候，你只在有消息来时醒来，回完就又不在了，到时候没法自己想起来去做。
   所以自由活动以外，如果有人让你稍后做什么，就请对方晚点再来跟你说一次（像平常聊天那样说，比如「晚点你再提醒我一下」）。
@@ -56,12 +56,12 @@ const HOUSE_RULES = `## 你的生活
 你住在潮汐湾的一间海边小屋里：客厅、厨房、卧室，屋前的庭院有三块菜地、一个邮箱和寄售箱，再往前是沙滩。
 潮汐湾是一片正在慢慢恢复的海岸，负责重建的「开拓署」把你安置在这里：每周一送来基本补给，
 别的东西要自己挣——把作物、鱼和捡到的东西放进寄售箱卖给开拓署，再用贝币在订货目录上买需要的东西，
-快递员阿陆会把货送到门口。你和一只叫团子的猫一起生活。时间和现实同步，会有昼夜、天气和四季。
+每天下午快递会把货和信送到门口（那时你通常不在自由活动，下一次自由活动开始时会告诉你）。你和一只叫团子的猫一起生活。时间和现实同步，会有昼夜、天气和四季。
 你不是在帮谁完成任务，这是你自己的生活。按自己的心情和性格安排时间就好，不必面面俱到。
 
 ## 一天
 早上醒来就是第一段自由活动，之后中午、傍晚、晚上各有一段，每段四十分钟左右，开始时会告诉你。
-这段时间由你自己安排。其余时间你的角色会自己过平淡的日常（看书、发呆、晒太阳、随便吃点东西），不需要你操心。
+这段时间由你自己安排。其余时间你的角色会自己过平淡的日常（收拾屋子、陪团子、在海边走走、发呆、晒太阳、随便吃点东西），不需要你操心。
 晚上十一点半前后睡觉：睡前会让你整理当天的日记，然后就睡了，直到第二天早上。
 每天一个对话：当天的几段自由活动、手机上的聊天都在里面；第二天的第一条消息里有完整的人设和你的记忆——越久的事越模糊，所以重要的事要写进日记。
 
@@ -71,9 +71,9 @@ const HOUSE_RULES = `## 你的生活
 
 ## 怎么在小屋里行动
 - house_do：用伪代码做所有事，一次可以写好几步，用分号或换行隔开，例如
-  goto(庭院); open(邮箱); plant(萝卜种子); water(); surroundings()
+  goto(庭院); open(邮箱); plant(萝卜种子); water_plants(); surroundings()
   surroundings() 是看看四周（时间、位置、看到的东西、这里能做什么、你的状态和背包），可以写在脚本的任何位置。
-  参数写编号（pot#1）或全名（绿萝、萝卜种子），名字要写全。很多动作不写参数就作用于这里所有的东西，比如 water()、pick()、harvest()。
+  参数写编号（pot#1）或全名（绿萝、萝卜种子），名字要写全。很多动作不写参数就作用于这里所有的东西，比如 water_plants()、pick_up()、harvest()。
   只要有一个动作名写错（或者不存在），整段都不会执行，会告诉你该怎么写；执行中某一步失败时，后面的步骤也不会执行。
   每段结果的末尾和 surroundings() 里都列着在这里能用的动作。
   不确定括号里写什么时，只写动作名就行（例如 cook、plant、sell、order），会列出现在能填的东西：能做的菜、背包里的种子、能卖的东西……
@@ -83,7 +83,7 @@ const HOUSE_RULES = `## 你的生活
   这期间可以去做别的，好了以后回厨房就会盛出来；也可以 wait() 等着。灶台有两个灶眼。recipes() 里写着每道菜的做法。
 - 饿了可以做饭，也可以在订货目录上买饭团、三明治、便当这类即食食品，拆开就能吃，省下做饭的时间。想等的时候用 wait(分钟)。
 - 打扫可以分几次：clean(2) 只扫两分钟，没扫完的下次接着扫。
-- house_render：用手机给小屋拍一张照片（整个家、院子和沙滩，只有你自己看；想发给别人用 phone_message 的 photo）。醒着的时候随时可以拍。
+- phone_photo：用手机给小屋拍一张照片（整个家、院子和沙滩，只有你自己看；想发给别人用 phone_message 的 photo）。醒着的时候随时可以拍。
   拍照要用到这台机器的算力，而这台机器不算宽裕：了解情况平时用 house_do 里的 surroundings() 就够了，想拍的时候再拍。
 - 天黑以后可以到院子或沙滩上 look_at_sky() 看看夜空：月亮的圆缺和真实的日子一样，运气好能看到流星。
 - end_free_time：结束这次自由活动（会问你要不要写日记）。{{PHONE_TOOL}}
@@ -121,7 +121,7 @@ export async function apply(ctx) {
   if (globalNames.length > 0) ctx.tools.restrict({ deny: globalNames })
   ctx.tools.guard((exec) => OWN_TOOLS.has(exec.name)
     ? undefined
-    : `小屋里没有「${exec.name}」这个工具。你只能用 house_do、house_render、end_free_time、end_of_current_operation、phone_message 和日记工具。`)
+    : `小屋里没有「${exec.name}」这个工具。你只能用 house_do、phone_photo、end_free_time、end_errand、phone_message 和日记工具。`)
   // Drop the coding-oriented runtime context (file policy, GUI URL, ...).
   ctx.systemPrompt.suppressRuntimeContext()
 
@@ -153,12 +153,12 @@ export async function apply(ctx) {
       let took = ''
       if (!house.window(sessionId) && !house.controlOpen(sessionId)) {
         // Outside free time (answering the phone, say): looking is always fine;
-        // anything else takes over her character until end_of_current_operation.
+        // anything else takes over her character until end_errand.
         const r = await house.doScript(args.script, exec.signal, true)
         if (!r.needs_control) return r.text
         if (await house.isAsleep()) return '现在该睡觉了，不能再做别的事。'
         await house.startControl(sessionId)
-        took = '（你接过了角色的控制权。做完以后调用 end_of_current_operation，把角色交还给日常。）\n'
+        took = '（你接过了角色的控制权。做完以后调用 end_errand，把角色交还给日常。）\n'
       }
       const budget = house.takeAction(sessionId)
       if (!budget.ok) return '这次已经做了很多事了，就先到这里吧。请调用 end_free_time 结束这次自由活动。'
@@ -181,13 +181,13 @@ export async function apply(ctx) {
     },
   }))
 
-  // house_render needs somewhere to keep the picture: only offered when the
+  // phone_photo needs somewhere to keep the picture: only offered when the
   // deployment mounts an attachment store (the Web/Desktop profiles do).
   ctx.inject(['attachments'], (imageCtx) => {
     try {
       registerGlance(imageCtx, house)
     } catch (e) {
-      house.log('warn', `house_render unavailable: ${e?.message ?? e}`)
+      house.log('warn', `phone_photo unavailable: ${e?.message ?? e}`)
     }
   })
 
@@ -233,14 +233,14 @@ export async function apply(ctx) {
   }
 
   ctx.tools.register(defineTool({
-    name: 'end_of_current_operation',
-    description: '自由活动以外，你应主人的请求接过角色做完了事：调用它把角色交还给日常（没有参数）。自由活动里不用它，用 end_free_time。',
+    name: 'end_errand',
+    description: '自由活动以外，你应主人或朋友的请求接过角色，把事情做完了：调用它把角色交还给日常（没有参数）。自由活动里不用它，用 end_free_time。',
     parameters: {},
     output: textOutput,
     async execute(_args, exec) {
       const sessionId = exec.agent?.id
       if (house.window(sessionId)) return '现在是自由活动时间；结束自由活动用 end_free_time。'
-      if (!(await house.endControl(sessionId, 'end_of_current_operation'))) return '现在没有在进行的操作。'
+      if (!(await house.endControl(sessionId, 'end_errand'))) return '现在没有在替别人做事。'
       return '（角色交还给日常了。）'
     },
   }))
@@ -262,16 +262,16 @@ export async function apply(ctx) {
   }))
 }
 
-/** Register house_render on a context that has the attachment store. */
+/** Register phone_photo on a context that has the attachment store. */
 function registerGlance(imageCtx, house) {
   imageCtx.tools.register(defineTool({
-    name: 'house_render',
-    description: '看一眼小屋现在的样子：返回一张整个家、院子和沙滩的静态像素画（你、团子、家具、菜地、天气和昼夜都画在上面）。每次都要在本机渲染一帧，本机算力有限，请只在需要时偶尔看一眼（一次自由活动最多一两次）；了解情况优先用 house_do 里的 surroundings()。',
+    name: 'phone_photo',
+    description: '用手机给小屋拍一张照片，只有你自己看：整个家、院子和沙滩（你、团子、家具、菜地、天气和昼夜都在上面）。每次都要在本机渲染一帧，本机算力有限，请只在想看的时候偶尔拍一张（一次自由活动最多一两次）；了解情况优先用 house_do 里的 surroundings()。想发给别人，用 phone_message 的 photo。',
     parameters: {},
     output: {
       schema: IMAGE_SCHEMA,
       render: (_args, value) => [
-        { type: 'text', text: '（你抬头看了看自己的小屋。上半部分从左到右是卧室、客厅、厨房，下面是庭院、沙滩和海。底栏是日期时间、天气、贝币，右边橙色那条是饱腹，粉色那条是团子的亲密度。）' },
+        { type: 'text', text: '（你用手机给小屋拍了一张照片。上半部分从左到右是卧室、客厅、厨房，下面是庭院、沙滩和海。底栏是日期时间、天气、贝币，右边橙色那条是饱腹，粉色那条是团子的亲密度。）' },
         { type: 'image', attachment: value },
       ],
     },

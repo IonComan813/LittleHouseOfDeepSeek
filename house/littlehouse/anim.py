@@ -4,7 +4,7 @@ Since M3 every action takes real time (tasks.py), so the picture needs no
 replay: ``current_pose`` reads the phase the runner is playing at this moment —
 walking along the route at ``content.WALK_TILES_PER_SEC``, or working at the
 stove with steam rising — and the renderer draws it. The live window and the
-still ``house_render`` frame use the same function, so both always show the
+still ``phone_photo`` frame use the same function, so both always show the
 true present. Outside free time she is settled into one of the everyday
 activities (``content.IDLE_ACTIVITIES``): tidying up, playing with the cat, asleep in bed...
 """
@@ -20,11 +20,11 @@ from .tasks import along
 EFFECT_SECONDS = 1.6  # one loop of an effect animation
 
 EFFECTS = {
-    "water": "water", "cook": "steam", "clean": "sparkle", "pick": "sparkle", "display": "sparkle",
+    "water_plants": "water", "cook": "steam", "clean": "sparkle", "pick_up": "sparkle", "put_on_shelf": "sparkle",
     "place": "sparkle", "stow": "sparkle", "plant": "dirt", "harvest": "pop", "fish": "fishing",
-    "pet": "hearts", "feed": "hearts", "call": "hearts", "play": "hearts", "tidy": "sparkle", "eat": "eat", "rest": "zzz",
-    "open": "paper", "read": "paper", "catalog": "paper", "order": "coin",
-    "sell": "coin", "say": "speech", "examine": "look", "stargaze": "look", "wade": "water",
+    "stroke_cat": "hearts", "feed_cat": "hearts", "call_cat": "hearts", "play": "hearts", "tidy": "sparkle", "eat": "eat", "rest": "zzz",
+    "open": "paper", "catalog": "paper", "order": "coin",
+    "sell": "coin", "examine": "look", "stargaze": "look", "wade": "water",
 }
 
 

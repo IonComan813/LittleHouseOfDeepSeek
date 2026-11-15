@@ -3,11 +3,11 @@
 A script is a sequence of calls separated by ``;`` (or fullwidth ``；``) or newlines::
 
     goto(厨房); surroundings()
-    water(绿萝)
-    pick(shell#3)
+    water_plants(绿萝)
+    pick_up(shell#3)
 
 Arguments are bare words (``厨房``, ``pot#1``), numbers, or quoted strings
-(``say("今天天气真好")``). A bare word without parentheses (``look``) is a call
+(``order("番茄种子", 2)``). A bare word without parentheses (``surroundings``) is a call
 with no arguments. ``//`` starts a comment. Nothing is ever ``eval``'d.
 
 Execution stops at the first failing statement so the agent can re-plan.

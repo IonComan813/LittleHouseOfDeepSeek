@@ -8,7 +8,7 @@ text. ``process()`` wraps both, so the runner (tasks.py) plays every action
 the same way, and the picture shows exactly the phase that is running.
 
 Many actions take an optional argument: without it they act on everything that
-fits here (``water()`` waters every plant/plot in the room), which saves the
+fits here (``water_plants()`` waters every plant/plot in the room), which saves the
 agent turns.
 """
 
@@ -24,7 +24,7 @@ from . import scene as S
 from . import sky
 from .clock import is_dark
 from .tasks import Interrupted, Phase, Proc, walk
-from .world import ActionError, Obj, World, _weighted
+from .world import ActionError, Obj, World, _weighted, courier_time
 
 
 
@@ -74,7 +74,7 @@ def process(w: World, name: str, args: list) -> Proc:
         spot = ACTION_SPOTS.get(name)
         if spot:
             w.stand_at(spot)
-        elif name in ("pet", "feed", "call") and w.pet["room"] == w.location:
+        elif name in ("stroke_cat", "feed_cat", "call_cat") and w.pet["room"] == w.location:
             ax, ay = S.ANCHORS[w.pet["room"]]
             w.stand_near((ax + 1, ay))
         yield from walk_from(w, start, name)
@@ -136,7 +136,7 @@ def _need_indoor(w: World) -> None:
 def _pet_here(w: World) -> dict:
     p = w.pet
     if p["room"] != w.location:
-        raise ActionError(f"{p['name']}在{C.ROOMS[p['room']].name}，不在这里。可以 goto({p['name']}) 走过去，或者在屋里 call() 叫它过来。")
+        raise ActionError(f"{p['name']}在{C.ROOMS[p['room']].name}，不在这里。可以 goto({p['name']}) 走过去，或者在屋里 call_cat() 叫它过来。")
     p["last_with"] = w.clock.timestamp()
     return p
 
@@ -221,7 +221,7 @@ INTERNAL["_settle"] = _settle
 # someone wakes her with a message (world.idle_story), never applied to the world.
 STORIES: dict[str, Callable[[World], str]] = {
     "play": _story_play,
-    "beach": lambda w: w.rng.choice(C.BEACH_PLAY) + sea_light(w),
+    "beach": lambda w: wade_text(w),
     "sea": lambda w: sea_light(w),
     "fish": lambda w: w.rng.choice(C.FISH_STORIES),
     "stargaze": lambda w: sky_view(w, w.rng)[0],
@@ -277,12 +277,6 @@ def _season_names(seasons) -> list[str]:
 @action("inventory()", "查看背包")
 def _inventory(w: World) -> str:
     return "背包：" + w.format_items(w.inventory)
-
-
-@action("say(内容)", "自言自语（会被记下来）", 1, 1)
-def _say(w: World, text: str) -> str:
-    w.log("say", f"自言自语：「{text}」")
-    return f"你小声说：「{text}」"
 
 
 # ---------------------------------------------------------------- self care
@@ -526,7 +520,7 @@ def _stow(w: World, ref: str) -> str:
     return f"你把{o.name}收进了背包。"
 
 
-@action("water(植物)", "浇水；不写参数就挨个浇这里所有的植物和菜地", 0, 1, proc=True)
+@action("water_plants(植物)", "浇水；不写参数就挨个浇这里所有的植物和菜地", 0, 1, proc=True)
 def _water(w: World, ref: str = "") -> Proc:
     start = w.tile()
     targets = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind in ("plant", "plot")]
@@ -546,7 +540,7 @@ def _water(w: World, ref: str = "") -> Proc:
         o.state["water"] = 100.0
         watered.append(o)
 
-    yield from visit(w, targets, "water", apply)
+    yield from visit(w, targets, "water_plants", apply)
     if not watered:
         return "你还没来得及浇水。"
     names = "、".join(o.name for o in watered)
@@ -565,8 +559,11 @@ def _water(w: World, ref: str = "") -> Proc:
 # ---------------------------------------------------------------- yard
 
 
-@action("open(邮箱/包裹)", "看邮箱里的信，或拆开门口的包裹", 1, 1)
+@action("open(邮箱/包裹/漂流瓶)", "打开邮箱取出信来读，拆开门口的包裹，或者打开漂流瓶读里面的纸条", 1, 1)
 def _open(w: World, ref: str) -> str:
+    name = str(ref).strip()
+    if w.inventory.get(name) and "readable" in C.ITEMS.get(name, C.Item(name)).tags:
+        return _read_bottle(w, name)
     o = w.resolve(ref)
     if o.id == "mailbox":
         if not w.mailbox:
@@ -600,8 +597,8 @@ def _catalog(w: World) -> str:
                     for n, p in C.CATALOG.items())
     have = [n for n in w.inventory if n in C.SELL_PRICES]
     sell = "、".join(f"{n} {C.SELL_PRICES[n]}" for n in have) or "（背包里暂时没有能卖的东西）"
-    return (f"订购（{C.CURRENCY}，第二天上午送到门口）：{buy}\n"
-            f"收购价（放进院子的寄售箱，傍晚 {C.PICKUP_HOUR} 点收走）：{sell}\n"
+    return (f"订购（{C.CURRENCY}，中午 {C.ORDER_CUTOFF_HOUR} 点以前下单当天下午送到门口，之后下单第二天下午送到）：{buy}\n"
+            f"收购价（放进院子的寄售箱，每天下午快递来的时候收走）：{sell}\n"
             f"钱包：{w.money} {C.CURRENCY}")
 
 
@@ -619,14 +616,14 @@ def _order(w: World, ref: str, n: float = 1) -> str:
         raise ActionError(f"钱不够：{name}×{count} 要 {cost} {C.CURRENCY}，你只有 {w.money}。")
     w.money -= cost
     now = w.now()
-    due = now if now.hour < C.DELIVERY_HOUR else now + timedelta(days=1)
+    due = now if now.hour < C.ORDER_CUTOFF_HOUR else now + timedelta(days=1)
     w.orders.append({"item": name, "n": count, "due": due.strftime("%Y-%m-%d")})
-    when = "今天上午" if due.date() == now.date() else "明天上午"
+    when = "今天下午" if due.date() == now.date() else "明天下午"
     w.log("trade", f"订购了{name}×{count}，花了 {cost} {C.CURRENCY}")
     return f"你订了{name}×{count}，花了 {cost} {C.CURRENCY}（还剩 {w.money}），{when}送到门口。"
 
 
-@action("sell(物品, 数量)", "把东西放进院子的寄售箱，傍晚收走后入账；不写数量就放全部", 1, 2)
+@action("sell(物品, 数量)", "把东西放进院子的寄售箱，下午快递来的时候收走、入账；不写数量就放全部", 1, 2)
 def _sell(w: World, ref: str, n: float = 0) -> str:
     _need_room(w, "yard")
     name = w.item_name(ref)
@@ -637,8 +634,8 @@ def _sell(w: World, ref: str, n: float = 0) -> str:
     w.take_item(name, count)
     w.sale_box[name] = w.sale_box.get(name, 0) + count
     w.log("trade", f"把{name}×{count}放进了寄售箱")
-    when = "今天傍晚" if w.now().hour < C.PICKUP_HOUR else "明天傍晚"
-    return f"你把{name}×{count}放进寄售箱，{when}收走后能入账 {price * count} {C.CURRENCY}。"
+    when = "今天下午" if w.now() < courier_time(w.now()) else "明天下午"
+    return f"你把{name}×{count}放进寄售箱，{when}快递来的时候收走，到时入账 {price * count} {C.CURRENCY}。"
 
 
 @action("plant(种子, 菜地)", "在菜地播种，如 plant(萝卜种子)；不写菜地就种在第一块空地", 1, 2)
@@ -701,7 +698,7 @@ def _harvest(w: World, ref: str = "") -> Proc:
 # ---------------------------------------------------------------- beach
 
 
-@action("pick(东西)", "捡起地上的小东西；不写参数就挨个捡这里所有的", 0, 1, proc=True)
+@action("pick_up(东西)", "捡起地上的小东西；不写参数就挨个捡这里所有的", 0, 1, proc=True)
 def _pick(w: World, ref: str = "") -> Proc:
     start = w.tile()
     finds = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind == "find"]
@@ -721,7 +718,7 @@ def _pick(w: World, ref: str = "") -> Proc:
         w.add_item(o.state["item"])
         names[o.state["item"]] = names.get(o.state["item"], 0) + 1
 
-    yield from visit(w, finds, "pick", apply)
+    yield from visit(w, finds, "pick_up", apply)
     if not names:
         return "你还没来得及捡。"
     text = w.format_items(names)
@@ -755,7 +752,7 @@ def _fish(w: World) -> Proc:
     if catch == "旧靴子":
         return "钩上来一只湿漉漉的旧靴子……"
     if catch == "漂流瓶":
-        return "钩上来一个漂流瓶！里面好像有纸条，可以 read(漂流瓶)。"
+        return "钩上来一个漂流瓶！里面好像有纸条，可以 open(漂流瓶) 读一读。"
     return f"钓到了一条{catch}！"
 
 
@@ -822,26 +819,63 @@ def sky_view(w: World, rng) -> tuple[str, str]:
 
 
 def sea_light(w: World) -> str:
-    """The light on the sea right now: the sun by the hour, the moon by its real phase."""
+    """The light on the sea right now: the sun by the hour; at night only what the
+    moonlight does (no phase names here; look_at_sky() is for that), more of it at full moon."""
     now = w.now()
     weather = w.weather()
     h = now.hour
     if weather in C.RAINY:
         return "雨点密密地落在海面上，看不到什么光。"
+    grey = weather in ("阴", "小雪")
     if 5 <= h < 8:
-        return "海面灰蒙蒙的，看不到朝阳。" if weather == "阴" else "朝阳从海面上升起来，海上铺开一条金红色的光带。"
+        return "海面灰蒙蒙的，看不到朝阳。" if grey else "朝阳从海面上升起来，海上铺开一条金红色的光带。"
     if 8 <= h < 16:
-        if weather == "阴":
-            return "天阴着，海面灰灰的。"
+        if grey:
+            return "雪花落进海里，一下就不见了，海面灰灰的。" if weather == "小雪" else "天阴着，海面灰灰的。"
         return "云缝里漏下来的阳光，在海面上一块一块地亮着。" if weather == "多云" else "太阳照在海面上，浪尖一闪一闪地发亮。"
     if 16 <= h < 19:
-        return "天阴着，傍晚的海面暗下来了。" if weather == "阴" else "夕阳快落进海里了，海面被染成一片橘红。"
-    phase = sky.moon_phase(now)
-    if weather == "阴" or phase == "新月" or not sky.moon_up(now):
+        return "天阴着，傍晚的海面暗下来了。" if grey else "夕阳快落进海里了，海面被染成一片橘红。"
+    if grey or not moonlit(now):
         return "没有月光，海面黑黑的，只有浪花泛着一点白。"
-    light = {"满月": "满月的光在海面上铺成一条亮亮的路。", "盈凸月": "月光在海面上碎成一片银色。", "亏凸月": "月光在海面上碎成一片银色。",
-             "上弦月": "半个月亮在海面上投下一道淡淡的银光。", "下弦月": "半个月亮在海面上投下一道淡淡的银光。"}
-    return light.get(phase, f"细细的{phase}在海面上只映出一点点光。")
+    if weather == "多云":
+        return "月亮躲在云后面，海面一会儿亮一会儿暗。"
+    if sky.moon_phase(now) == "满月":
+        return ("月亮圆圆的，亮得晃眼。月光在海面上铺成一条亮亮的路，一直铺到你脚边；"
+                "海水清清楚楚地映着月亮，湿沙上照出了你的影子。")
+    return "月光落在海面上，浪尖泛着一点点银光。"
+
+
+def moonlit(now) -> bool:
+    return sky.moon_phase(now) != "新月" and sky.moon_up(now)
+
+
+def bright_night(w: World) -> bool:
+    """A clear full-moon night: light enough to see into the water."""
+    now = w.now()
+    return w.weather() == "晴" and moonlit(now) and sky.moon_phase(now) == "满月"
+
+
+def wade_text(w: World) -> str:
+    """How playing in the water goes: how the water feels, one thing she does or feels
+    underfoot, sometimes a few small fish, then the light on the sea."""
+    now = w.now()
+    season = w.season()
+    weather = w.weather()
+    rng = w.rng
+    warm = weather == "晴" and C.WARM_WATER_HOURS[0] <= now.hour < C.WARM_WATER_HOURS[1]
+    feel = C.WATER_FEEL_WEATHER.get(weather) or C.WATER_FEEL[season][0 if warm else 1]
+    parts = [feel, rng.choice(C.BEACH_PLAY)]
+    dark = is_dark(now) and not bright_night(w)
+    if rng.random() < C.FISH_CHANCE[season]:
+        if dark:
+            parts.append(C.FISH_IN_THE_DARK)
+        else:
+            fish = [f for f in C.SHALLOW_FISH if season in f[1].split()]
+            who, _, moves = rng.choice(fish)
+            parts.append(f"{who}{rng.choice(moves)}。")
+    elif season == "winter" and not dark and rng.random() < 0.3:
+        parts.append(C.NO_FISH_WINTER)
+    return "".join(parts) + sea_light(w)
 
 
 @action("play_in_water()", "在海边玩水、踩浪（沙滩上，一两分钟）", 0, 0, proc=True)
@@ -855,14 +889,10 @@ def _wade(w: World) -> Proc:
     except Interrupted:
         return "你刚踩了两下水就上岸了。"
     w.log("beach", "在海边玩了一会儿水")
-    return w.rng.choice(C.BEACH_PLAY) + sea_light(w)
+    return wade_text(w)
 
 
-@action("read(东西)", "读漂流瓶里的纸条", 1, 1)
-def _read(w: World, ref: str) -> str:
-    name = w.item_name(ref)
-    if "readable" not in C.ITEMS.get(name, C.Item(name)).tags:
-        raise ActionError(f"{name}上没有可以读的东西。")
+def _read_bottle(w: World, name: str) -> str:
     count = w.resident.get("bottles_read", 0)
     note = C.BOTTLE_NOTES[count % len(C.BOTTLE_NOTES)]
     w.resident["bottles_read"] = count + 1
@@ -871,7 +901,7 @@ def _read(w: World, ref: str) -> str:
     return f"你展开纸条：{note}"
 
 
-@action("display(收藏品)", "把收藏品摆到客厅的收藏架上；不写参数就全部摆上", 0, 1)
+@action("put_on_shelf(收藏品)", "把收藏品摆到客厅的收藏架上；不写参数就全部摆上", 0, 1)
 def _display(w: World, ref: str = "") -> str:
     _need_room(w, "living_room")
     if ref:
@@ -896,7 +926,7 @@ def _display(w: World, ref: str = "") -> str:
 # ---------------------------------------------------------------- the cat
 
 
-@action("call()", "叫猫咪过来")
+@action("call_cat()", "在屋里叫猫咪过来")
 def _call(w: World) -> str:
     p = w.pet
     if p["room"] == w.location:
@@ -911,10 +941,10 @@ def _call(w: World) -> str:
     return f"{p['name']}从{came_from}小跑着过来了。"
 
 
-@action("feed(食物)", "喂猫（默认用猫粮，鱼也行）", 0, 1)
+@action("feed_cat(食物)", "喂猫（默认用猫粮，鱼也行）", 0, 1)
 def _feed(w: World, ref: str = "") -> str:
     p = _pet_here(w)
-    if str(ref).strip() in (p["name"], "猫", "小猫", "橘猫"):  # feed(团子) means "feed the cat"
+    if str(ref).strip() in (p["name"], "猫", "小猫", "橘猫"):  # feed_cat(团子) means "feed the cat"
         ref = ""
     if ref:
         food = w.item_name(ref)
@@ -939,11 +969,11 @@ def _feed(w: World, ref: str = "") -> str:
     return f"{p['name']}{'狼吞虎咽地' if was_hungry else '慢悠悠地'}吃完了{food}，蹭了蹭你的手。"
 
 
-@action("pet()", "摸摸猫咪", 0, 1)
+@action("stroke_cat()", "摸摸猫咪", 0, 1)
 def _pet(w: World, ref: str = "") -> str:
     p = _pet_here(w)
     if ref and str(ref).strip() not in (p["name"], "猫", "小猫", "橘猫"):
-        raise ActionError(f"pet() 是摸{p['name']}的。")
+        raise ActionError(f"stroke_cat() 是摸{p['name']}的。")
     if _minutes_since(w, p.get("last_pet", 0.0)) < 30:
         return f"{p['name']}已经被摸够了，甩甩尾巴走开了两步。"
     p["last_pet"] = w.clock.timestamp()
@@ -967,7 +997,7 @@ def _pet(w: World, ref: str = "") -> str:
 # ---------------------------------------------------------------- what can I do here / with what
 
 
-ALWAYS = ("goto", "surroundings", "examine", "inventory", "wait", "say", "help")
+ALWAYS = ("goto", "surroundings", "examine", "inventory", "wait", "help")
 
 
 def actions_here(w: World) -> list[str]:
@@ -975,7 +1005,7 @@ def actions_here(w: World) -> list[str]:
     room = C.ROOMS[w.location]
     names = [h.split("(")[0] for h in room.hints]
     if not room.outdoor:
-        names += ["call"] if w.pet["room"] != w.location else ["feed", "pet", "play_with_cat"]
+        names += ["call_cat"] if w.pet["room"] != w.location else ["feed_cat", "stroke_cat", "play_with_cat"]
         if w.items_with_tag("furniture"):
             names.append("place")
         if any(o.kind == "decor" for o in w.here()):
@@ -983,7 +1013,7 @@ def actions_here(w: World) -> list[str]:
     if w.items_with_tag("food") or w.items_with_tag("dish"):
         names.append("eat")
     if w.items_with_tag("readable"):
-        names.append("read")
+        names.append("open")
     if w.messes():
         names.insert(0, "tidy")
     if room.outdoor and is_dark(w.now()):
@@ -1005,8 +1035,6 @@ def options(w: World, name: str) -> str:
     if name == "examine":
         things = [o.name for o in w.here()]
         return head + f"这里有：{'、'.join(things) or '没什么特别的'}；也可以看背包里的东西：{w.format_items(w.inventory)}"
-    if name == "say":
-        return head + '例如 say("今天的海很安静")'
     if name == "eat":
         food = [n for n in w.inventory if C.ITEMS.get(n, C.Item(n)).fill > 0]
         return head + (f"背包里能吃的：{_bag(w, food)}" if food else "背包里没有能直接吃的。去厨房 cook 一道菜吧。")
@@ -1022,7 +1050,8 @@ def options(w: World, name: str) -> str:
         decor = [o.name for o in w.here() if o.kind == "decor"]
         return head + (f"这里摆着：{'、'.join(decor)}" if decor else "这里没有摆你自己的家具。")
     if name == "open":
-        return head + "在庭院里：open(邮箱) 看信，open(包裹) 拆门口的快递。"
+        bottles = w.items_with_tag("readable")
+        return head + "在庭院里：open(邮箱) 取信来读，open(包裹) 拆门口的快递" + (f"；背包里的{_bag(w, bottles)}可以 open(漂流瓶) 读纸条。" if bottles else "。")
     if name == "order":
         return head + "目录：" + "、".join(f"{n} {p}" for n, p in C.CATALOG.items()) + f"\n钱包：{w.money} {C.CURRENCY}。例如 order(五花肉, 1)"
     if name == "sell":
@@ -1032,8 +1061,6 @@ def options(w: World, name: str) -> str:
         seeds = w.items_with_tag("seed")
         plots = [o.name for o in w.objects.values() if o.kind == "plot" and not o.state.get("seed")]
         return head + (f"背包里的种子：{_bag(w, seeds)}；空着的菜地：{'、'.join(plots) or '没有'}" if seeds else "背包里没有种子，可以订购。")
-    if name == "read":
-        return head + (f"能读的：{_bag(w, w.items_with_tag('readable'))}" if w.items_with_tag("readable") else "背包里没有能读的东西。")
     return head.rstrip()
 
 
@@ -1157,11 +1184,11 @@ def _put_right(w: World, m: Obj) -> None:
 
 # A few words on each action, for the menu after every script.
 SHORT = {
-    "surroundings": "看看四周", "help": "全部动作", "goto": "走到某处", "examine": "仔细看", "inventory": "看背包", "say": "自言自语",
+    "surroundings": "看看四周", "help": "全部动作", "goto": "走到某处", "examine": "仔细看", "inventory": "看背包",
     "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
-    "place": "摆家具", "stow": "收家具", "water": "浇水", "open": "看信 / 拆包裹", "catalog": "看订货目录", "order": "订货",
-    "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick": "捡东西", "fish": "钓鱼", "read": "读纸条",
-    "display": "摆上收藏架", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call": "叫猫过来", "feed": "喂猫", "pet": "摸猫", "play_with_cat": "陪猫玩", "tidy": "收拾乱子",
+    "place": "摆家具", "stow": "收家具", "water_plants": "浇水", "open": "取信 / 拆包裹 / 开漂流瓶", "catalog": "看订货目录", "order": "订货",
+    "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick_up": "捡东西", "fish": "钓鱼",
+    "put_on_shelf": "摆上收藏架", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call_cat": "叫猫过来", "feed_cat": "喂猫", "stroke_cat": "摸猫", "play_with_cat": "陪猫玩", "tidy": "收拾猫弄的乱子",
 }
 
 

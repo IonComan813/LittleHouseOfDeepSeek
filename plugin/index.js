@@ -415,6 +415,7 @@ export default class LittleHouse extends Service {
         before: session.before,
         recap: fresh && !(await this.memoryText()) ? recap : [], // in an ongoing session she has it already
         news: news.map((n) => n.text),
+        waiting: session.waiting,
         look: look.text,
         resumed,
         wokeUp: plan.name === this.slots[0]?.name && localDay(new Date(plan.start)) === localDay(now),
@@ -515,7 +516,7 @@ export default class LittleHouse extends Service {
     this.log('info', `she took over her character (session ${sessionId})`)
   }
 
-  /** Back to the everyday routine (end_of_current_operation, end of her turn, or the time limit). */
+  /** Back to the everyday routine (end_errand, end of her turn, or the time limit). */
   async endControl(sessionId, reason, release = true) {
     const c = this.controls.get(sessionId)
     if (!c) return false

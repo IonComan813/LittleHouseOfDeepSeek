@@ -52,7 +52,7 @@ python scripts\install.py
 │  preset `little-house`（cordis.patch.yml）— 生活会话只挂这些行：             │
 │   · agent-scope.js：简短人设 + 小屋规则（complete 系统提示词）、house_do（自由  │
 │     活动以外只能看；主人请她做事时接管角色）/ end_free_time /                 │
-│     end_of_current_operation / house_render / phone_message；                │
+│     end_errand / phone_photo / phone_message；                               │
 │     全局工具 deny + tools.guard 白名单                                        │
 │   · diary-scope.js：diary_write / diary_edit / diary_read（醒着时随时可用）     │
 │   · compaction                                                              │
@@ -63,7 +63,7 @@ python scripts\install.py
 │ 小屋进程（house/，Python ≥3.10；世界只用标准库，画面用 pygame-ce）            │
 │  tasks.py    实时执行器：动作按游戏时钟一步步播放（走路、做饭……），可打断       │
 │  content.py  内容表：地点、物品、作物、菜谱、鱼、天气、价格、信、随机事件         │
-│  world.py    世界状态与被动模拟（按小时步进补算，最多 14 天）、存档 v3 + 迁移     │
+│  world.py    世界状态与被动模拟（按小时步进补算，最多 14 天）、存档 v5 + 迁移     │
 │  actions.py  伪代码动作（做饭、种菜、钓鱼、买卖、猫……）+ 每个动作的动画节拍      │
 │  script.py   伪代码解析与执行（不 eval；遇错即停）                              │
 │  server.py   HTTP 线程 + 主线程上的窗口；发现文件 world/house.json              │
@@ -75,14 +75,14 @@ python scripts\install.py
 要点：
 
 - **她只能用伪代码生活。** 生活会话里看不到 shell、文件、网络等任何 DSH 自带工具（fail-closed），
-  只有 `house_*`、`phone_*`、`diary_*` 和结束用的两个工具。伪代码一次可以写多步，省 token：`goto(庭院); open(包裹); plant(萝卜种子); water()`。
+  只有 `house_*`、`phone_*`、`diary_*` 和结束用的两个工具。伪代码一次可以写多步，省 token：`goto(庭院); open(包裹); plant(萝卜种子); water_plants()`。
 - **做事要花时间。** 走路按路程（和画面上一样），炒菜要一直守着，炖汤先忙一分半钟、再自己炖三分钟，
   打扫一半走开下次接着扫；`house_do` 等这一串做完才给出结果。一圈想做的事大约二十分钟。
 - **世界会自己运转。** 时间与现实 1:1；她会饿，植物会干，房间会落灰，团子会饿、脾气每天不同，
-  开拓署每周一送补给，快递员阿陆每天送货、傍晚收走寄售箱。很多结果带随机性
+  开拓署每周一送补给，快递每天下午来送货、收走寄售箱（她通常不在，下一次自由活动开始时告诉她）。很多结果带随机性
   （打扫时的发现、做饭失手、收成浮动、每天的小事件）。
 - **画面是只读的，渲染只有一个进程。** 画的就是此刻的真实状态（走到半路、在灶台边、在海边玩水）。
-  `house_render` 只渲染一帧给她看（约 600 token）；
+  `phone_photo`（用手机给小屋拍照）只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
 - **日记。** 醒着的时候随时能写、改、翻以前的；结束自由活动时会问她要不要写。每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。
 - **夜空。** 天黑后可以在院子或沙滩看星星：月相按真实日期算，偶尔有流星（真实的流星雨之夜会有很多），夏天有萤火虫和夜光藻。
@@ -105,7 +105,7 @@ cd house; python -m littlehouse --repl     # 在终端里用伪代码"过日子"
 ## 开发
 
 ```bash
-cd house && python -m unittest discover -s tests   # 98 个（无 pygame 时跳过渲染测试）
+cd house && python -m unittest discover -s tests   # 105 个（无 pygame 时跳过渲染测试）
 cd plugin && npm test                               # 作息表、唤醒消息、日记、QQ 消息格式、WebSocket
 ```
 

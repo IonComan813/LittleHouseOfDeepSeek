@@ -25,15 +25,15 @@ ROOMS: dict[str, Room] = {
     r.id: r
     for r in (
         Room("living_room", "客厅", "朝南的小客厅，木地板，有一张红色布艺沙发和一扇大窗；圆木桌上放着开拓署的订货目录。", ("kitchen", "bedroom", "yard"),
-             hints=("catalog()", "order(物品, 数量)", "display(收藏品)", "place(家具)", "clean()")),
+             hints=("catalog()", "order(物品, 数量)", "put_on_shelf(收藏品)", "place(家具)", "clean()")),
         Room("kitchen", "厨房", "小小的厨房，铺着粉白相间的格子地砖；靠墙是灶台、带水槽的台面和一台白色冰箱，中间有一张两人用的木桌。", ("living_room",),
              hints=("recipes()", "cook(菜名)", "eat(食物)", "clean()")),
         Room("bedroom", "卧室", "木地板的卧室，有一张床、一个书架和一个木衣柜。", ("living_room",),
              hints=("place(家具)", "clean()")),
         Room("yard", "庭院", "屋前的小草地院子，有三块菜地、一个邮箱和开拓署的寄售箱，东边长着一棵树，角落里有几丛灌木，院子和沙滩之间隔着一道矮木篱笆。往前走就是沙滩。", ("living_room", "beach"), outdoor=True,
-             hints=("open(邮箱)", "open(包裹)", "sell(物品, 数量)", "plant(种子, 菜地)", "water()", "harvest()")),
+             hints=("open(邮箱)", "open(包裹)", "sell(物品, 数量)", "plant(种子, 菜地)", "water_plants()", "harvest()")),
         Room("beach", "沙滩", "细细的白沙滩，海浪会把贝壳冲上岸，岸边有一块适合钓鱼的礁石。", ("yard",), outdoor=True,
-             hints=("pick(东西)", "fish()", "play_in_water()")),
+             hints=("pick_up(东西)", "fish()", "play_in_water()")),
     )
 }
 
@@ -288,14 +288,16 @@ RAINY = {"小雨", "雷阵雨"}
 #
 # 小屋在「潮汐湾」：一片正在慢慢恢复的海岸。开拓署（负责这片海岸重建的机构）把一些
 # 定居者安置在这里，每周一寄来基本补给；其余的东西要自己挣：把作物、鱼和捡到的
-# 小东西放进院子里的寄售箱，傍晚快递员阿陆会收走，按开拓署的收购价付「贝币」。
-# 想要别的东西，就在客厅的订货目录上下单，阿陆第二天上午送到门口。
+# 小东西放进院子里的寄售箱，每天下午快递来的时候收走，按开拓署的收购价付「贝币」。
+# 想要别的东西，就在客厅的订货目录上下单，快递下午送到门口。快递员没有名字，也不和她
+# 打交道：每天下午随机一个时间来（她这时通常不在自由活动），之后自由活动开始时提醒她。
 
 CURRENCY = "贝币"
 START_MONEY = 300
-COURIER = "快递员阿陆"
-DELIVERY_HOUR = 9  # orders and the weekly supply arrive after this hour
-PICKUP_HOUR = 18  # the consignment box is emptied after this hour
+COURIER_WINDOW = ((14, 0), (16, 30))  # the courier comes once a day at a random time in here:
+# orders, the weekly supply and letters are left at the door, and the consignment box is emptied
+ORDER_CUTOFF_HOUR = 12  # orders placed before noon come that afternoon, later ones the next afternoon
+EVENT_HOUR = 7  # the day's small event (fog, gulls, driftwood…) happens in the early morning
 SUPPLY_WEEKDAY = 0  # Monday
 
 # Prices are in 贝币, one 贝币 buying about what one yuan does. The bureau pays
@@ -323,18 +325,18 @@ WEEKLY_SUPPLY = {"大米": 5, "鸡蛋": 6, "猫粮": 7, "牛奶": 2}
 
 WELCOME_LETTER = (
     "【开拓署 · 欢迎信】欢迎来到潮汐湾！这间小屋和院子从今天起就是你的了。"
-    "每周一上午，我们会把基本补给（大米、鸡蛋、牛奶、猫粮）送到你门口。"
-    "其他需要的东西请在客厅的订货目录上下单（catalog() 查看，order() 下单），快递员阿陆第二天上午送达。"
+    "每周一下午，我们会把基本补给（大米、鸡蛋、牛奶、猫粮）送到你门口。"
+    "其他需要的东西请在客厅的订货目录上下单（catalog() 查看，order() 下单）：中午以前下单的当天下午送到，之后下单的第二天下午送到。"
     "院子里的寄售箱是开拓署的收购点：把作物、鱼或者海边捡到的东西放进去（sell()），"
-    "傍晚六点阿陆会收走，货款直接记到你的账上。祝你在这里住得开心。"
+    "每天下午快递来的时候会一起收走，货款直接记到你的账上。祝你在这里住得开心。"
 )
 SUPPLY_LETTER = "【开拓署】本周补给已送达门口，请查收。如有需要请随时订货。"
 LETTERS = (
-    "【阿陆的便条】今天送货路上看见海豚了！就在你家沙滩外面一点点。",
+    "【开拓署通知】有渔民报告在潮汐湾外看到了海豚群，如在海边看到，请勿靠近打扰。",
     "【开拓署通知】码头修缮进度过半，下个季度会通一班渡船。",
     "【邻岛的来信】你好呀，我是灯塔岛的守塔人。听说潮汐湾有新的定居者，送你一句问候。夜里如果看见灯光闪三下，那是我在打招呼。",
     "【开拓署通知】近期海况良好，礁石附近鲈鱼较多，请注意安全。",
-    "【阿陆的便条】你家的猫上次朝我哈气了。下次我带小鱼干来贿赂它。",
+    "【邻岛的来信】又是我，灯塔岛的守塔人。这几天风大，夜里的灯我多擦了两遍。你那边的海还好吗？",
 )
 
 # --------------------------------------------------------------------------- surprises
@@ -449,11 +451,11 @@ WALK_TILES_PER_SEC = 1.0  # the picture walks at exactly this speed; ~10 s betwe
 # A tuple is (first target, each further target) for actions that work on several things at once.
 ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
     "surroundings": 0, "help": 0, "inventory": 0, "recipes": 0,
-    "examine": 5, "say": 5, "call": 10,
+    "examine": 5, "call_cat": 10,
     "catalog": 30, "order": 20, "sell": 20,
-    "open": 30, "read": 30, "display": 30,
-    "feed": 30, "pet": 30,
-    "water": (15, 10), "pick": (10, 8), "harvest": (40, 30),
+    "open": 30, "put_on_shelf": 30,
+    "feed_cat": 30, "stroke_cat": 30,
+    "water_plants": (15, 10), "pick_up": (10, 8), "harvest": (40, 30),
     "plant": 60, "place": 60, "stow": 40,
 }
 EAT_SECONDS = {"dish": 120, "packaged": 60, "other": 45}  # a cooked meal, something ready-made, a snack
@@ -525,14 +527,54 @@ FISH_STORIES = (
     "刚换了鱼饵，正等着下一口。",
 )
 
-# play_in_water() and the beach in the everyday life: one of these, at random (plus the light on the sea).
+# play_in_water() and the beach in the everyday life (actions.wade_text): how the water
+# feels, one thing she does or feels underfoot, sometimes a few fish, then the light on the sea.
+
+# How the water feels, by season: (a sunny day from noon to dusk, any other time).
+WATER_FEEL = {
+    "spring": ("太阳晒了大半天，浅水有一点点温。", "海水有点凉，你一踩进去就轻轻吸了口气。"),
+    "summer": ("晒了大半天的浅水温温的，泡着脚很舒服。", "海水凉丝丝的，踩进去很舒服。"),
+    "autumn": ("太阳晒了大半天，浅水还留着一点温度。", "海水有点凉了，踩久了脚趾冰冰的。"),
+    "winter": ("晒了一下午，浅水没有早上那么冰了，可还是凉。", "海水冰冰的，你一踩进去就缩了一下脚。"),
+}
+WATER_FEEL_WEATHER = {
+    "小雨": "下着小雨，身上本来就湿了，海水倒不觉得冷。",
+    "小雪": "飘着小雪，海水冰得脚都有点麻了。",
+}
+WARM_WATER_HOURS = (12, 19)  # noon to dusk; only on a sunny day
+
+# One of these: what she does in the water, or what she feels underfoot.
 BEACH_PLAY = (
     "一个浪打过来，裙摆湿了一截，你笑着往后跳。",
     "你追着退下去的浪跑，又被下一个浪追回来。",
     "你光着脚踩在湿沙上，留下一串脚印，很快又被浪抹平了。",
     "你用脚尖在沙滩上画了一条鲸鱼，浪一来就只剩个尾巴。",
-    "浅水里有几条小鱼，一靠近就散开了。",
     "海风很大，你的头发被吹得乱糟糟的。",
+    "脚陷进了软软的淤泥里，拔出来的时候「啵」的一声。",
+    "浪退下去的时候，沙子从脚趾缝里被一点点带走，痒痒的。",
+    "你踩到一块光滑的鹅卵石，凉凉的，像踩在一颗糖上。",
+    "一缕海草缠上了脚踝，滑溜溜的，你抬脚甩了好几下。",
+    "脚底踩到几片碎贝壳，有点硌，你换了个地方站。",
 )
+
+# Small fish in the shallows: (who, seasons, what they do — one at random).
+SHALLOW_FISH: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("一群半透明的小鱼苗", "spring summer autumn",
+     ("游过来，围着你的脚踝打转", "游过来，你一动就呼地散开，过一会儿又聚了回来", "游过来，轻轻啄你的脚趾，痒痒的")),
+    ("一小群银亮的沙丁鱼", "summer autumn",
+     ("从你腿边游过，忽然一起转身，银光一闪", "在浪里忽左忽右地游，像一片会动的银箔")),
+    ("几条小鲻鱼", "spring summer autumn",
+     ("贴着水面游过来，有一条忽然跳出水面，又「扑通」落了回去", "在你脚边绕了一圈，慢悠悠地游远了")),
+    ("一条带黑条纹的小虾虎鱼", "spring summer autumn winter",
+     ("趴在沙底一动不动，你一动，它就嗖地钻进了沙里", "在你脚边的沙底上一顿一顿地往前挪")),
+    ("一只弹涂鱼", "spring summer autumn",
+     ("在岸边的湿泥上一蹦一蹦，瞪着两只鼓鼓的眼睛看你",)),
+    ("几只透明的小虾", "spring summer autumn winter",
+     ("在你脚背上弹来弹去", "一碰就往后一弹，躲进了海草里")),
+)
+FISH_CHANCE = {"spring": 0.4, "summer": 0.5, "autumn": 0.4, "winter": 0.2}
+NO_FISH_WINTER = "水太凉了，浅水里看不到鱼。"  # sometimes said in winter when no fish came
+FISH_IN_THE_DARK = "黑暗里有什么滑溜溜的小东西擦过你的小腿，看不清是什么。"
+
 NIGHT_HOURS = (23, 7)  # asleep from 23:00 to 07:00 outside free time
 OFF_HOURS_HUNGER_CAP = 60.0  # she grabs a bite on her own; still peckish when free time starts

@@ -18,8 +18,8 @@ if "lived" in sys.argv:
     for n in ("萝卜种子", "菠菜种子"): w.add_item(n, 2)
     for n in ("台灯", "小地毯", "花瓶"): w.add_item(n)
     w.money += 200
-    for line in ["goto(客厅); place(小地毯); place(花瓶); place(台灯)", "goto(庭院); plant(萝卜种子, 菜地1); plant(菠菜种子, 菜地2); water()",
-                 "goto(沙滩)", "pick()", "goto(客厅); display()", "goto(厨房)"]:
+    for line in ["goto(客厅); place(小地毯); place(花瓶); place(台灯)", "goto(庭院); plant(萝卜种子, 菜地1); plant(菠菜种子, 菜地2); water_plants()",
+                 "goto(沙滩)", "pick_up()", "goto(客厅); put_on_shelf()", "goto(厨房)"]:
         for r in run(w, line):
             if not r.ok: print("!", r.call, r.text)
 open(out, "wb").write(render.render_png(w, scale=2))

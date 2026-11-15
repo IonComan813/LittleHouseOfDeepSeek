@@ -69,12 +69,19 @@ test('buildWakeMessage', () => {
   assert.doesNotMatch(morning, /在床上睡觉/)
   assert.match(first, /日常事务/)
   const later = buildWakeMessage({
-    slotName: '中午', start: at(12, 0), until: at(12, 40), before: '窝在沙发上看书',
+    slotName: '中午', start: at(12, 0), until: at(12, 40), before: '坐在客厅的大窗边发呆',
     news: ['邮箱里来了包裹', '邮箱里来了包裹', '菜地1里的萝卜成熟了'], lastNote: '捡了贝壳。', look: 'LOOK',
   })
-  assert.match(later, /在这之前，你一直在过平淡的日常——刚才在窝在沙发上看书。/)
+  assert.match(later, /在这之前，你一直在过平淡的日常——刚才坐在客厅的大窗边发呆。/)
   assert.match(later, /日记里最近的一段：捡了贝壳。/)
   assert.match(later, /这段时间里：邮箱里来了包裹；菜地1里的萝卜成熟了。/)
+  const morning2 = buildWakeMessage({ slotName: '早上', start: at(8, 0), until: at(8, 40), before: '在床上睡觉', news: [], look: 'L' })
+  assert.match(morning2, /刚才在床上睡觉。/)
+  assert.doesNotMatch(later, /还没拆/)
+  const evening = buildWakeMessage({
+    slotName: '傍晚', start: at(17, 40), until: at(18, 20), news: [], waiting: '门口有快递（3 件东西）还没拆；邮箱里有 1 封信还没看', look: 'L',
+  })
+  assert.match(evening, /\n门口有快递（3 件东西）还没拆；邮箱里有 1 封信还没看。\n/)
   const resumed = buildWakeMessage({ slotName: '傍晚', start: at(18, 0), until: at(18, 20), news: [], look: 'L', resumed: true })
   assert.match(resumed, /继续.*还有 20 分钟/)
 })

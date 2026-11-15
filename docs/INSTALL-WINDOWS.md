@@ -14,7 +14,7 @@ python --version
 
 > Windows Server 上没有应用商店版 Python 的"假 python"问题；如果提示找不到命令，就是 PATH 没加上。
 
-然后装画面需要的 pygame-ce（不装也能运行，只是没有像素画面，她也不能 house_render）：
+然后装画面需要的 pygame-ce（不装也能运行，只是没有像素画面，她也不能 phone_photo 拍照）：
 
 ```powershell
 python -m pip install pygame-ce
@@ -50,7 +50,7 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 - 每天早上、中午、傍晚、晚上各有一段 40 分钟的**自由活动**，开始时间在时段内随机（早上 7:30–8:30、中午 11:30–12:30、傍晚 17:30–18:30、晚上 21:30–22:30）。
   她早上醒来就是第一段自由活动；23:30–24:00 睡觉（睡前整理当天的日记），睡着时 QQ 消息不会交给她。
   到点后会话列表里出现 **「小屋生活 · 日期」**（每天一个），点进去就能看到她做了什么。
-- 自由活动以外她自己过平淡的日常（看书、发呆、睡觉……），画面上看得到。
+- 自由活动以外她自己过平淡的日常（收拾屋子、陪团子、发呆、睡觉……），画面上看得到。
 
 她的日记写在 `%USERPROFILE%\.dsh\little-house\diary\日期.md`（每天一个文件）。
 
@@ -62,7 +62,7 @@ profile 都在 `%USERPROFILE%\.dsh\profiles\` 下面。
 - 小屋没在运行：直接启动小屋并打开窗口（之后 DSH 启动时会连上这个小屋）。
 
 窗口是**只读**的：能看她走来走去、浇水、钓鱼、摸猫，但不接受任何键鼠操作；**关掉窗口不影响小屋**，她照样生活。
-窗口太大可以用 `view.bat --scale 1`。只有窗口开着时才持续渲染；关着时不画任何东西（她 `house_render` 时只渲染一帧）。
+窗口太大可以用 `view.bat --scale 1`。只有窗口开着时才持续渲染；关着时不画任何东西（她 `phone_photo` 拍照时只渲染一帧）。
 
 想让 DSH 一启动就把窗口打开，在配置里把 `house.window` 设为 `true`。
 
@@ -148,7 +148,7 @@ python scripts\install.py --uninstall
 | 一直没有「小屋生活」会话 | 看 `%USERPROFILE%\.dsh\little-house\plugin-state.json` 是否生成；没有的话插件没加载，重新运行安装脚本并确认重启了 DSH |
 | 有会话但她什么都没做 | 在会话里看报错；多半是小屋进程没起来（检查 `python --version`，或在配置里写 python 的完整路径） |
 | 端口 8770 被占用 | 配置里把 `house.port` 改成别的 |
-| 她的工具里没有 house_render | 小屋进程的 Python 里没装 pygame-ce，或 `house.python` 指向了另一个 Python |
+| 她的工具里没有 phone_photo | 小屋进程的 Python 里没装 pygame-ce，或 `house.python` 指向了另一个 Python |
 | 想立刻看到一次自由活动 | 临时把 `wake.firstWakeDelaySeconds` 改成 `10`（`wake.testMinutes` 是这段多长）再重启 DSH |
 | QQ 没反应 | `plugin.log` 里没有 `QQ: connected`：检查 NapCat 的 WebSocket 服务端是否启用、端口和 token 是否一致；有 connected 但不回：私聊要在 `ownerQQ` / `friends` 里 |
 | DSH 关了但 python 还在跑 | 正常：DSH 被强制关闭时来不及通知小屋退出。下次 DSH 启动会直接连上它；想关掉就在任务管理器结束那个 python 进程（存档每次行动后都会写盘） |

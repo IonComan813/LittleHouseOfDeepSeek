@@ -173,6 +173,7 @@ class House:
                 "idle_note": w.idle_story() if idle else "",
                 "location": w.location,
                 "location_name": C.ROOMS[w.location].name,
+                "waiting": w.waiting_text(),  # a parcel at the door, letters in the mailbox
                 "asleep": w.resident.get("asleep"),
                 "overtime": bool(w.resident.get("overtime")),
                 "unfinished": w.unfinished() if w.free_open() else [],
