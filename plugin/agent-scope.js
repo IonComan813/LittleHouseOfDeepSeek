@@ -13,7 +13,7 @@ import { REST_TEXT } from './lib/wake.js'
 export const name = 'little-house-agent-scope'
 export const inject = ['tools', 'systemPrompt', 'littleHouse']
 
-const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'end_errand', 'phone_photo', 'phone_message', 'phone_friend_request', ...DIARY_TOOLS])
+const OWN_TOOLS = new Set(['house_do', 'end_free_time', 'end_errand', 'house_photo', 'phone_message', 'phone_friend_request', ...DIARY_TOOLS])
 
 const IMAGE_SCHEMA = {
   type: 'object',
@@ -83,7 +83,7 @@ const HOUSE_RULES = `## 你的生活
   这期间可以去做别的，好了以后回厨房就会盛出来；也可以 wait() 等着。灶台有两个灶眼。recipes() 里写着每道菜的做法。
 - 饿了可以做饭，也可以在订货目录上买饭团、三明治、便当这类即食食品，拆开就能吃，省下做饭的时间。想等的时候用 wait(分钟)。
 - 打扫可以分几次：clean(2) 只扫两分钟，没扫完的下次接着扫。
-- phone_photo：用手机给小屋拍一张照片（整个家、院子和沙滩，只有你自己看；想发给别人用 phone_message 的 photo）。醒着的时候随时可以拍。
+- house_photo：用手机给小屋拍一张照片（整个家、院子和沙滩，只有你自己看；想发给别人用 phone_message 的 photo）。醒着的时候随时可以拍。
   拍照要用到这台机器的算力，而这台机器不算宽裕：了解情况平时用 house_do 里的 surroundings() 就够了，想拍的时候再拍。
 - 天黑以后可以到院子或沙滩上 look_at_sky() 看看夜空：月亮的圆缺和真实的日子一样，运气好能看到流星。
 - end_free_time：结束这次自由活动（会问你要不要写日记）。{{PHONE_TOOL}}
@@ -121,7 +121,7 @@ export async function apply(ctx) {
   if (globalNames.length > 0) ctx.tools.restrict({ deny: globalNames })
   ctx.tools.guard((exec) => OWN_TOOLS.has(exec.name)
     ? undefined
-    : `小屋里没有「${exec.name}」这个工具。你只能用 house_do、phone_photo、end_free_time、end_errand、phone_message 和日记工具。`)
+    : `小屋里没有「${exec.name}」这个工具。你只能用 house_do、house_photo、end_free_time、end_errand、phone_message 和日记工具。`)
   // Drop the coding-oriented runtime context (file policy, GUI URL, ...).
   ctx.systemPrompt.suppressRuntimeContext()
 
@@ -181,13 +181,13 @@ export async function apply(ctx) {
     },
   }))
 
-  // phone_photo needs somewhere to keep the picture: only offered when the
+  // house_photo needs somewhere to keep the picture: only offered when the
   // deployment mounts an attachment store (the Web/Desktop profiles do).
   ctx.inject(['attachments'], (imageCtx) => {
     try {
       registerGlance(imageCtx, house)
     } catch (e) {
-      house.log('warn', `phone_photo unavailable: ${e?.message ?? e}`)
+      house.log('warn', `house_photo unavailable: ${e?.message ?? e}`)
     }
   })
 
@@ -262,10 +262,10 @@ export async function apply(ctx) {
   }))
 }
 
-/** Register phone_photo on a context that has the attachment store. */
+/** Register house_photo on a context that has the attachment store. */
 function registerGlance(imageCtx, house) {
   imageCtx.tools.register(defineTool({
-    name: 'phone_photo',
+    name: 'house_photo',
     description: '用手机给小屋拍一张照片，只有你自己看：整个家、院子和沙滩（你、团子、家具、菜地、天气和昼夜都在上面）。每次都要在本机渲染一帧，本机算力有限，请只在想看的时候偶尔拍一张（一次自由活动最多一两次）；了解情况优先用 house_do 里的 surroundings()。想发给别人，用 phone_message 的 photo。',
     parameters: {},
     output: {

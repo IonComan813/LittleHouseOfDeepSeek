@@ -506,10 +506,10 @@ class Idle:
 IDLE_ACTIVITIES: tuple[Idle, ...] = (
     Idle("在床上睡觉", "bedroom", "bed", None, "night"),
     Idle("在收拾屋子、擦擦桌子", "", None, "sparkle", "day", 2),  # the tidiest room: real cleaning waits for her
-    Idle("在陪团子玩", "", None, "hearts", "day", 3, story="play"),
-    Idle("在海边玩水、踩浪", "beach", None, "water", "dry", 2, story="beach"),
+    Idle("在陪团子玩", "", None, "hearts", "day", 3, story="play_with_cat"),
+    Idle("在海边玩水、踩浪", "beach", None, "water", "dry", 2, story="play_in_water"),
     Idle("在礁石边钓鱼", "beach", "rock", "fishing", "dry", 2, story="fish"),
-    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, story="stargaze"),
+    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, story="look_at_sky"),
     Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 1),
     Idle("在厨房的木桌边慢慢喝茶", "kitchen", "table", "eat", "day", 2),
     Idle("在床上睡午觉", "bedroom", "bed", "zzz", "noon", 1),

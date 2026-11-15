@@ -534,7 +534,7 @@ class World:
             return
         act = self.idle_activity()
         key = self.now().strftime("%Y-%m-%d %H ") + act.text  # one activity per hour
-        following = act.story == "play" and self.pet["room"] != self.location  # the cat wandered off: go after it
+        following = act.story == "play_with_cat" and self.pet["room"] != self.location  # the cat wandered off: go after it
         if self.resident.get("idle_key") == key and self.resident.get("idle") == act.text and not following:
             return
         room = self.idle_room(act)
@@ -553,7 +553,7 @@ class World:
         if act.room:
             return act.room
         indoor = [r for r, room in C.ROOMS.items() if not room.outdoor]
-        if act.story == "play":
+        if act.story == "play_with_cat":
             return self.pet["room"] if self.pet["room"] in indoor else None
         return min(indoor, key=lambda r: self.dirt.get(r, 0.0))  # tidying: the tidiest room
 
@@ -561,7 +561,7 @@ class World:
         """How the everyday thing she is doing is going — rolled the first time someone
         asks (a message wakes her), then kept for the rest of that activity."""
         act = self.current_idle()
-        if act is None or not act.story or (act.story == "play" and self.pet["room"] != self.location):
+        if act is None or not act.story or (act.story == "play_with_cat" and self.pet["room"] != self.location):
             return ""
         key = self.resident.get("idle_key", "")
         kept = self.resident.get("idle_story")

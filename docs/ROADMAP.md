@@ -21,7 +21,7 @@
 ## 改名、玩水、快递（2026-11-15，只跑了单元测试，没跑真实模型）
 
 - **动作改名**（看名字就懂，不和手机、名词混）：`call` → `call_cat`、`feed` → `feed_cat`、`pet` → `stroke_cat`、`pick` → `pick_up`、`water` → `water_plants`、`display` → `put_on_shelf`；去掉 `say`（自言自语）；`read(漂流瓶)` 并进 `open`（`open(邮箱)` 取信来读、`open(包裹)` 拆快递、`open(漂流瓶)` 读纸条）。
-- **工具改名**：`house_render` → `phone_photo`（用手机拍照）、`end_of_current_operation` → `end_errand`。
+- **工具改名**：`house_render` → `house_photo`（用手机给整个小屋拍一张；不叫 phone_photo，免得她以为能随便拍别的）、`end_of_current_operation` → `end_errand`。
 - **玩水**：水温（晴天中午到傍晚是温的）、玩水或脚下的感觉、有时小鱼游过来（什么鱼、怎么游都随机）、海面上的光；晚上不说月相，只说月光，满月多写几句。日常里的「在海边玩水」用同一段。
 - **快递**：去掉「阿陆」，不和她打交道；每天 14:00–16:30 随机来一次，送货、送信、收寄售箱；门口有没拆的包裹、没看的信时，自由活动开始时单独说一句。存档 v5（迁移：快递从 `last_morning_day` 接着算）。
 - 规则里日常的例子去掉了「看书」；开场消息的「刚才在坐在……」改成「刚才坐在……」。

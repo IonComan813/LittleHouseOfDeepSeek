@@ -254,11 +254,11 @@ POST 需要 `Content-Type: application/json`，body 上限 16 KB。
 
 | 方式 | 什么时候渲染 | 画面 |
 | --- | --- | --- |
-| 静态「拍照」 | 只在她 `phone_photo`、`phone_message(photo: true)` 或 `GET /screenshot` 时渲染一帧 | 此刻的真实状态：走到一半就画在半路，在灶台边炒菜就有热气 |
+| 静态「拍照」 | 只在她 `house_photo`、`phone_message(photo: true)` 或 `GET /screenshot` 时渲染一帧 | 此刻的真实状态：走到一半就画在半路，在灶台边炒菜就有热气 |
 | 动画窗口 | 只在窗口打开时（`view.bat`、`POST /window`、配置 `house.window`） | 同上，每一帧都是当时的状态；无人走动时降到 4 fps |
 
 M3 以后动作本身就花真实时间，所以画面不再需要「回放」：`anim.current_pose(world)` 读执行器当前的阶段
 （走路就按 1 格 / 秒沿路线插值，做事就画对应的特效），自由活动以外画她正在做的日常（看书、睡觉……）。
 灶台上有菜在炖时会一直冒热气。
 
-`phone_photo` 给模型的是 1280×872 的 PNG（DeepSeek 计约 600 token）。工具说明里提示她本机算力有限、偶尔看一眼即可。
+`house_photo` 给模型的是 1280×872 的 PNG（DeepSeek 计约 600 token）。工具说明里提示她本机算力有限、偶尔看一眼即可。

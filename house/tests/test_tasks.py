@@ -163,7 +163,7 @@ class EverydayLifeTest(unittest.TestCase):
         self.assertGreaterEqual(w.dirt["kitchen"], 80)  # (dust keeps settling)
         self.assertEqual(w.idle_story(), "")  # nothing to tell about tidying up
         w2 = new_world(when=(2026, 10, 15, 14), free=False)
-        act = next(a for a in C.IDLE_ACTIVITIES if a.story == "play")
+        act = next(a for a in C.IDLE_ACTIVITIES if a.story == "play_with_cat")
         w2.idle_activity = lambda dt=None: act
         affection = w2.pet["affection"]
         for _ in range(40):

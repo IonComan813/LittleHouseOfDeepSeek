@@ -52,7 +52,7 @@ python scripts\install.py
 │  preset `little-house`（cordis.patch.yml）— 生活会话只挂这些行：             │
 │   · agent-scope.js：简短人设 + 小屋规则（complete 系统提示词）、house_do（自由  │
 │     活动以外只能看；主人请她做事时接管角色）/ end_free_time /                 │
-│     end_errand / phone_photo / phone_message；                               │
+│     end_errand / house_photo / phone_message；                               │
 │     全局工具 deny + tools.guard 白名单                                        │
 │   · diary-scope.js：diary_write / diary_edit / diary_read（醒着时随时可用）     │
 │   · compaction                                                              │
@@ -82,7 +82,7 @@ python scripts\install.py
   开拓署每周一送补给，快递每天下午来送货、收走寄售箱（她通常不在，下一次自由活动开始时告诉她）。很多结果带随机性
   （打扫时的发现、做饭失手、收成浮动、每天的小事件）。
 - **画面是只读的，渲染只有一个进程。** 画的就是此刻的真实状态（走到半路、在灶台边、在海边玩水）。
-  `phone_photo`（用手机给小屋拍照）只渲染一帧给她看（约 600 token）；
+  `house_photo`（用手机给小屋拍照）只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
 - **日记。** 醒着的时候随时能写、改、翻以前的；结束自由活动时会问她要不要写。每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。
 - **夜空。** 天黑后可以在院子或沙滩看星星：月相按真实日期算，偶尔有流星（真实的流星雨之夜会有很多），夏天有萤火虫和夜光藻。

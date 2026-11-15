@@ -38,7 +38,7 @@
 测试：`house/` 105 个（`python -m unittest discover -s tests`），`plugin/` 29 个（`npm test`）。
 
 她现在能用的工具（生活会话，preset `little-house`）：
-`house_do(script)`、`phone_photo`（用手机给小屋拍照，自己看）、`end_free_time`、`end_errand`、
+`house_do(script)`、`house_photo`（用手机给小屋拍照，自己看）、`end_free_time`、`end_errand`、
 `phone_message(text, photo?, to?)`、`phone_friend_request(qq, accept)`、`diary_write` / `diary_edit(time, text)` / `diary_read(day?)`。
 
 ## 3. 关键设计与踩过的坑（改代码前务必看）
@@ -115,7 +115,7 @@
 - 手机：`content.PHONE`，一直在背包里，`take_item` 拒绝拿走它；老存档加载时补上。
 - 看夜空：`sky.py`（真实月相、月出、流星雨极大夜）+ `actions.sky_view()`（没有副作用的夜空描述）+ `look_at_sky()`；`content.SKY_EVENTS` 是随机小事。
   海边：`play_in_water()`，结果带 `actions.sea_light()`（清早朝阳、白天阳光、傍晚夕阳、晚上按真实月相的月光、雨 / 阴天）。
-- 动作名：看名字就懂，多个词用下划线连起来（用户要求的）：`call_cat`、`feed_cat`、`stroke_cat`、`play_with_cat`、`pick_up`、`water_plants`、`put_on_shelf`、`play_in_water`、`look_at_sky`；没有 `say`；`open` 管邮箱、包裹和漂流瓶。工具：`phone_photo`、`end_errand`。
+- 动作名：看名字就懂，多个词用下划线连起来（用户要求的）：`call_cat`、`feed_cat`、`stroke_cat`、`play_with_cat`、`pick_up`、`water_plants`、`put_on_shelf`、`play_in_water`、`look_at_sky`；没有 `say`；`open` 管邮箱、包裹和漂流瓶。工具：`house_photo`、`end_errand`。
 - **日常**（`content.IDLE_ACTIVITIES`，`world._routine`）：每小时一件，**只是个样子，不改变世界、不记录**；不安排答不上细节的事（看书）。
   有消息叫醒她时 `world.idle_story()` 才临时生成一个小结果（`actions.STORIES`：团子的反应、海边玩水 + 海面上的光、钓鱼（不会真钓到）、
   沙滩散步 / 夜里看海的海面、夜空），同一件事里不变。收拾屋子去最干净的房间（真正脏的留给她）；陪团子玩跟着猫走；钓鱼要有鱼竿、不打雷；
@@ -180,7 +180,7 @@
 ```
 plugin/            DSH bundle（纯 ESM JS，无构建）
   index.js         宿主服务 littleHouse：小屋进程、作息、当天会话、自由活动窗口 / 加时 / 接管、睡觉、记忆整理、会话全文
-  agent-scope.js   生活会话的规则（简短人设 + 规则）和工具（house_do、phone_photo、end_*、phone_*）
+  agent-scope.js   生活会话的规则（简短人设 + 规则）和工具（house_do、house_photo、end_*、phone_*）
   diary-scope.js   diary_write / diary_edit / diary_read
   memory-scope.js  记忆整理会话（不带人设、没有工具）
   qq.js            QQ：收消息、好友请求、睡着时挡掉、phone_message、记录

@@ -220,11 +220,11 @@ INTERNAL["_settle"] = _settle
 # Stories for the everyday things (content.IDLE_ACTIVITIES): rolled only when
 # someone wakes her with a message (world.idle_story), never applied to the world.
 STORIES: dict[str, Callable[[World], str]] = {
-    "play": _story_play,
-    "beach": lambda w: wade_text(w),
+    "play_with_cat": _story_play,
+    "play_in_water": lambda w: wade_text(w),
     "sea": lambda w: sea_light(w),
     "fish": lambda w: w.rng.choice(C.FISH_STORIES),
-    "stargaze": lambda w: sky_view(w, w.rng)[0],
+    "look_at_sky": lambda w: sky_view(w, w.rng)[0],
 }
 
 
@@ -763,9 +763,9 @@ def _stargaze(w: World) -> Proc:
     now = w.now()
     if not is_dark(now):
         raise ActionError("天还亮着，看不到星星。天黑以后（晚上七点以后）再来吧。")
-    yield from walk_to(w, None, "stargaze")
+    yield from walk_to(w, None, "look_at_sky")
     try:
-        yield work(w.rng.uniform(*C.STARGAZE_SECONDS), "stargaze", None, "看星星")
+        yield work(w.rng.uniform(*C.STARGAZE_SECONDS), "look_at_sky", None, "看星星")
     except Interrupted:
         return "你刚抬头看了一会儿，就停下了。"
     text, note = sky_view(w, w.rng)
@@ -883,9 +883,9 @@ def _wade(w: World) -> Proc:
     _need_room(w, "beach")
     if w.weather() == "雷阵雨":
         raise ActionError("在打雷，别下水了。")
-    yield from walk_to(w, None, "wade")
+    yield from walk_to(w, None, "play_in_water")
     try:
-        yield work(w.rng.uniform(*C.WADE_SECONDS), "wade", None, "玩水")
+        yield work(w.rng.uniform(*C.WADE_SECONDS), "play_in_water", None, "玩水")
     except Interrupted:
         return "你刚踩了两下水就上岸了。"
     w.log("beach", "在海边玩了一会儿水")
@@ -1079,9 +1079,9 @@ def _play(w: World, ref: str = "") -> Proc:
     start = w.tile()
     ax, ay = S.ANCHORS[p["room"]]
     w.stand_near((ax + 1, ay))
-    yield from walk_from(w, start, "play")
+    yield from walk_from(w, start, "play_with_cat")
     try:
-        yield work(w.rng.uniform(*C.PLAY_SECONDS), "play", None, f"陪{p['name']}玩")
+        yield work(w.rng.uniform(*C.PLAY_SECONDS), "play_with_cat", None, f"陪{p['name']}玩")
     except Interrupted:
         return f"你刚逗了{p['name']}两下就停下了。"
     mood, interest = _play_mood(w, toy)
