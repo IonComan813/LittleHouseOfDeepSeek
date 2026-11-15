@@ -38,3 +38,11 @@ LPC base assets: http://lpc.opengameart.org/static/lpc-style-guide/assets.html
 Everything else in the picture (walls, floors, the fence, the fridge, the mailbox, the
 rug and desk, spinach / scallions / pumpkins / strawberries, effects, weather and the HUD)
 is drawn by code in `render.py`.
+
+## Bottom-bar glyphs (`../fonts/hud_glyphs.png`)
+
+A few dozen Chinese characters for the picture's bottom bar (weather, seasons, 贝币, 饱腹值, 团子亲密度),
+pre-rendered once by `tools/hud_glyphs.py` from the 12 px bitmap strike of
+**WenQuanYi Zen Hei Sharp (文泉驿点阵正黑)** — © 2007–2009 Qianqian Fang and The WenQuanYi Project Board of
+Trustees (and the other contributors listed with the font), **GPL-2 with font embedding exception**
+(http://wenq.org/). Not under the project's Apache-2.0 licence. `hud_glyphs.txt` lists the characters in order.

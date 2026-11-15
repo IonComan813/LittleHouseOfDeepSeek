@@ -65,3 +65,19 @@ def period_of(dt: datetime) -> str:
 
 def is_dark(dt: datetime) -> bool:
     return dt.hour < 6 or dt.hour >= 19
+
+
+def sun(hour: int) -> str:
+    """The light outside, one table for the picture and the words: dawn / day / dusk / night."""
+    if 5 <= hour < 7:
+        return "dawn"
+    if 7 <= hour < 17:
+        return "day"
+    if 17 <= hour < 19:
+        return "dusk"
+    return "night"
+
+
+def lights_on(hour: int) -> bool:
+    """The house lights: on from dusk until she goes to bed (the picture draws them)."""
+    return 17 <= hour < 24

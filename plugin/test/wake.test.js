@@ -69,10 +69,10 @@ test('buildWakeMessage', () => {
   assert.doesNotMatch(morning, /在床上睡觉/)
   assert.match(first, /日常事务/)
   const later = buildWakeMessage({
-    slotName: '中午', start: at(12, 0), until: at(12, 40), before: '坐在客厅的大窗边发呆',
+    slotName: '中午', start: at(12, 0), until: at(12, 40), before: '在客厅的大窗边发呆',
     news: ['邮箱里来了包裹', '邮箱里来了包裹', '菜地1里的萝卜成熟了'], lastNote: '捡了贝壳。', look: 'LOOK',
   })
-  assert.match(later, /在这之前，你一直在过平淡的日常——刚才坐在客厅的大窗边发呆。/)
+  assert.match(later, /在这之前，你一直在过平淡的日常——刚才在客厅的大窗边发呆。/)
   assert.match(later, /日记里最近的一段：捡了贝壳。/)
   assert.match(later, /这段时间里：邮箱里来了包裹；菜地1里的萝卜成熟了。/)
   const morning2 = buildWakeMessage({ slotName: '早上', start: at(8, 0), until: at(8, 40), before: '在床上睡觉', news: [], look: 'L' })

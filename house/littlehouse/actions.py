@@ -22,7 +22,7 @@ from typing import Callable
 from . import content as C
 from . import scene as S
 from . import sky
-from .clock import is_dark
+from .clock import is_dark, sun
 from .tasks import Interrupted, Phase, Proc, walk
 from .world import ActionError, Obj, World, _weighted, courier_time
 
@@ -231,6 +231,8 @@ STORIES: dict[str, Callable[[World], str]] = {
 @action("examine(东西)", "仔细看某样东西（也可以是背包里的物品）", 1, 1)
 def _examine(w: World, ref: str) -> str:
     ref = str(ref)
+    if ref.strip() == C.BACKPACK:
+        return C.BACKPACK_DESC + w.bag_text()
     try:
         o = w.resolve(ref)
     except ActionError as here_error:
@@ -827,13 +829,14 @@ def sea_light(w: World) -> str:
     if weather in C.RAINY:
         return "雨点密密地落在海面上，看不到什么光。"
     grey = weather in ("阴", "小雪")
-    if 5 <= h < 8:
+    light = sun(h)  # the same hours the picture uses for its sky
+    if light == "dawn":
         return "海面灰蒙蒙的，看不到朝阳。" if grey else "朝阳从海面上升起来，海上铺开一条金红色的光带。"
-    if 8 <= h < 16:
+    if light == "day":
         if grey:
             return "雪花落进海里，一下就不见了，海面灰灰的。" if weather == "小雪" else "天阴着，海面灰灰的。"
         return "云缝里漏下来的阳光，在海面上一块一块地亮着。" if weather == "多云" else "太阳照在海面上，浪尖一闪一闪地发亮。"
-    if 16 <= h < 19:
+    if light == "dusk":
         return "天阴着，傍晚的海面暗下来了。" if grey else "夕阳快落进海里了，海面被染成一片橘红。"
     if grey or not moonlit(now):
         return "没有月光，海面黑黑的，只有浪花泛着一点白。"
@@ -849,10 +852,9 @@ def moonlit(now) -> bool:
     return sky.moon_phase(now) != "新月" and sky.moon_up(now)
 
 
-def bright_night(w: World) -> bool:
-    """A clear full-moon night: light enough to see into the water."""
-    now = w.now()
-    return w.weather() == "晴" and moonlit(now) and sky.moon_phase(now) == "满月"
+def moonlit_water(w: World) -> bool:
+    """A clear night with the moon up: light enough to see what swims by."""
+    return w.weather() == "晴" and moonlit(w.now())
 
 
 def wade_text(w: World) -> str:
@@ -865,14 +867,15 @@ def wade_text(w: World) -> str:
     warm = weather == "晴" and C.WARM_WATER_HOURS[0] <= now.hour < C.WARM_WATER_HOURS[1]
     feel = C.WATER_FEEL_WEATHER.get(weather) or C.WATER_FEEL[season][0 if warm else 1]
     parts = [feel, rng.choice(C.BEACH_PLAY)]
-    dark = is_dark(now) and not bright_night(w)
+    night = is_dark(now)
+    dark = night and not moonlit_water(w)
     if rng.random() < C.FISH_CHANCE[season]:
         if dark:
-            parts.append(C.FISH_IN_THE_DARK)
+            parts.append(C.FISH_IN_THE_DARK)  # the only fish text the picture leaves out
         else:
             fish = [f for f in C.SHALLOW_FISH if season in f[1].split()]
             who, _, moves = rng.choice(fish)
-            parts.append(f"{who}{rng.choice(moves)}。")
+            parts.append(f"{'月光下，' if night else ''}{who}{rng.choice(moves)}。")
     elif season == "winter" and not dark and rng.random() < 0.3:
         parts.append(C.NO_FISH_WINTER)
     return "".join(parts) + sea_light(w)

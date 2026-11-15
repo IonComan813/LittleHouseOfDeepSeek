@@ -110,6 +110,23 @@ export async function lastEntryNote(dir, now = new Date(), today = localDay(now)
 }
 
 /**
+ * The diary she opens the day with: the newest day before ``today`` that has
+ * one (normally yesterday), whole; if longer than ``maxChars``, its end (the
+ * evening's tidy-up is the part that matters most), marked as cut.
+ * @returns {Promise<{ day: string, text: string, cut: boolean } | undefined>}
+ */
+export async function previousDiary(dir, today, maxChars = 6000) {
+  for (const day of await listDays(dir)) {
+    if (day >= today) continue
+    const text = ((await readDay(dir, day)) ?? '').trim()
+    if (!text) continue
+    if (text.length <= maxChars) return { day, text, cut: false }
+    return { day, text: text.slice(text.length - maxChars).replace(/^[^\n]*\n/, ''), cut: true }
+  }
+  return undefined
+}
+
+/**
  * Change or delete one entry of a day, found by its time ("08:35"; the last
  * entry with that time). Empty text deletes it.
  * @returns {Promise<{ ok: boolean, times: string[] }>} times = the day's entry times

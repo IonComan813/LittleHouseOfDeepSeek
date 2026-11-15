@@ -22,7 +22,7 @@ from typing import Any, Callable
 
 from . import content as C
 from . import scene as S
-from .clock import SEASON_ZH, Clock, is_dark, period_of, season_of
+from .clock import SEASON_ZH, Clock, is_dark, lights_on, period_of, season_of
 
 SAVE_VERSION = 5
 MAX_CATCHUP_HOURS = 24 * 14  # beyond two weeks away, older time is skipped
@@ -344,6 +344,12 @@ class World:
             parts.append(f"邮箱里有 {len(self.mailbox)} 封信还没看")
         return "；".join(parts)
 
+    def pet_dozing(self) -> bool:
+        """The cat naps (picture and text alike): every third hour when it is fond of her and
+        not hungry, and whenever she is asleep."""
+        p = self.pet
+        return self.resident.get("asleep") is True or (p["hunger"] < 80 and p["affection"] >= 50 and self.now().hour % 3 == 0)
+
     def pet_temper(self, dt: datetime | None = None) -> str:
         """The cat's mood for the day: rolled once per date, stable all day."""
         rng = random.Random(_day(dt or self.now()) + "temper")
@@ -535,7 +541,7 @@ class World:
             return
         room = self.idle_room(act)
         if room is None:  # e.g. the cat is outside: just sit by the window this hour
-            act = next(a for a in C.IDLE_ACTIVITIES if a.text == "坐在客厅的大窗边发呆")
+            act = next(a for a in C.IDLE_ACTIVITIES if a.text == "在客厅的大窗边发呆")
             room = act.room
         from .tasks import Call
 
@@ -723,10 +729,11 @@ class World:
         objs = [self.describe_obj(o) for o in self.here()]
         if self.pet["room"] == self.location:
             p = self.pet
-            mood = "饿得直叫" if p["hunger"] >= 80 else "在打盹" if p["affection"] >= 50 else "在角落里看着你"
+            mood = ("饿得直叫" if p["hunger"] >= 80 else "在打盹" if self.pet_dozing()
+                    else "蹲在一旁看着你" if p["affection"] >= 50 else "在角落里看着你")
             temper = {"黏人": "，今天好像特别黏人", "傲娇": "，今天有点爱答不理", "烦躁": "，今天脾气不太好"}.get(self.pet_temper(), "")
             objs.append(f"橘猫{p['name']}（{mood}{temper}）")
-        dark = "，屋里有点暗" if is_dark(now) and not room.outdoor else ""
+        dark = ("" if room.outdoor or not is_dark(now) else "，屋里开着灯" if lights_on(now.hour) else "，屋里没开灯，黑黑的")
         lines = [
             f"时间：{now:%Y-%m-%d %H:%M}（{period_of(now)}，{SEASON_ZH[season_of(now)]}季），天气：{self.weather()}{dark}",
             f"位置：{room.name} —— {room.description}",

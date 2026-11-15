@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { appendEntry, lastEntry, lastEntryNote, listDays, readDay, resolveDay } from '../lib/diary.js'
+import { appendEntry, lastEntry, lastEntryNote, listDays, previousDiary, readDay, resolveDay } from '../lib/diary.js'
 
 test('diary entries accumulate in one file per day', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'lh-diary-'))
@@ -56,4 +56,22 @@ test('editEntry changes or deletes one entry by its time', async () => {
   text = await readDay(dir, '2026-11-14')
   assert.doesNotMatch(text, /12:30|中午做了饭/)
   assert.equal((await editEntry(dir, '2026-11-14', '09:00', 'x')).ok, false)
+})
+
+test('previousDiary: the newest day before today, whole, or its end when long', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'diary-prev-'))
+  assert.equal(await previousDiary(dir, '2026-11-15'), undefined)
+  await appendEntry(dir, new Date('2026-11-12T09:00'), '小屋', '种了萝卜。', '2026-11-12')
+  await appendEntry(dir, new Date('2026-11-15T08:00'), '小屋', '今天的。', '2026-11-15')
+  let prev = await previousDiary(dir, '2026-11-15')
+  assert.equal(prev.day, '2026-11-12') // no diary on the 13th and 14th: the last one there is
+  assert.match(prev.text, /种了萝卜/)
+  assert.doesNotMatch(prev.text, /今天的/)
+  await appendEntry(dir, new Date('2026-11-14T21:00'), '小屋', '明天想去钓鱼。'.repeat(50), '2026-11-14')
+  await appendEntry(dir, new Date('2026-11-14T23:40'), '小屋', '睡前：答应阿青明天拍海的照片。', '2026-11-14')
+  prev = await previousDiary(dir, '2026-11-15', 200)
+  assert.equal(prev.day, '2026-11-14')
+  assert.ok(prev.cut)
+  assert.ok(prev.text.length <= 200)
+  assert.match(prev.text, /答应阿青/) // the end is kept
 })

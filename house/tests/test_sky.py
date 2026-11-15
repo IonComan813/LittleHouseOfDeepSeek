@@ -79,8 +79,12 @@ class SkyTest(unittest.TestCase):
         names = [who for who, _, _ in C.SHALLOW_FISH]
         seen = sum(any(n in self.wade((2026, 7, 20, 15), seed)[1] for n in names) for seed in range(40))
         self.assertTrue(5 < seen < 35, seen)
-        dark = sum(C.FISH_IN_THE_DARK in self.wade((2026, 11, 15, 21), seed)[1] for seed in range(40))
-        self.assertGreater(dark, 0)  # at night (not full moon) she cannot see what it was
+        moonlit = [self.wade((2026, 11, 15, 21), seed)[1] for seed in range(40)]  # clear, the moon is up
+        self.assertTrue(any("月光下，" in t and C.fish_seen(t) for t in moonlit))
+        self.assertFalse(any(C.FISH_IN_THE_DARK in t for t in moonlit))
+        dark = [self.wade((2026, 11, 9, 21), seed)[1] for seed in range(40)]  # new moon: she cannot see what it was
+        self.assertTrue(any(C.FISH_IN_THE_DARK in t for t in dark))
+        self.assertFalse(any(C.fish_seen(t) for t in dark))
         for seed in range(20):  # winter: only what lives there in winter
             text = self.wade((2027, 1, 12, 14), seed)[1]
             self.assertNotIn("沙丁鱼", text)
@@ -92,3 +96,19 @@ class SkyTest(unittest.TestCase):
         self.assertEqual(w.idle_room(act), "beach")
         del w.inventory["鱼竿"]
         self.assertIsNone(w.idle_room(act))
+
+
+class WordsMatchThePictureTest(unittest.TestCase):
+    def test_the_sea_light_follows_the_pictures_hours(self):
+        from littlehouse.actions import sea_light
+        w = new_world(when=(2026, 7, 20, 16))  # sunny; the picture's sky is still day at 16:xx
+        self.assertIn("太阳照在海面上", sea_light(w))
+        w = new_world(when=(2026, 7, 20, 17))
+        self.assertIn("夕阳", sea_light(w))
+
+    def test_the_cat_naps_in_words_and_picture_alike(self):
+        for hour in range(9, 15):
+            w = new_world(when=(2026, 7, 20, hour))
+            w.pet["affection"] = 80
+            w.pet["room"] = w.location
+            self.assertEqual("在打盹" in w.look(), w.pet_dozing(), hour)

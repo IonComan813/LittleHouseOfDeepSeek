@@ -260,6 +260,13 @@ class FarmTest(unittest.TestCase):
         res = run(w, "goto(庭院); plant(草莓种子)")
         self.assertIn("不太适合", res[-1].text)
 
+    def test_the_backpack_is_a_bag_of_holding(self):
+        w = new_world()
+        text = run(w, "examine(背包)")[0].text
+        self.assertIn("次元袋", text)
+        self.assertIn("手机", text)  # and what is in it
+        self.assertIn("次元袋", C.WELCOME_LETTER)
+
     def test_welcome_letter(self):
         w = new_world()
         res = run(w, "goto(庭院); open(邮箱)")

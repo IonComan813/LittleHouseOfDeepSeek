@@ -69,6 +69,7 @@ EXTRAS: dict[str, Rect] = {
 # Places she stands that are not things (nothing drawn there).
 STANDS: dict[str, tuple[int, int]] = {
     "shore": (22, 22),  # playing in the water: the last row of sand, at the waves
+    "window": (19, 3),  # under the big living-room window, between the sofa and the shelf
 }
 BUSHES = [(1, 13), (17, 13), (30, 17), (38, 15)]
 

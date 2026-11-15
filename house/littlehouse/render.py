@@ -23,7 +23,7 @@ from . import content as C  # noqa: E402
 from . import scene as S  # noqa: E402
 from . import sprites as SP  # noqa: E402
 from .anim import Pose, current_pose  # noqa: E402
-from .clock import season_of  # noqa: E402
+from .clock import lights_on, season_of, sun  # noqa: E402
 
 T = S.TILE
 W, H = S.COLS * T, S.ROWS * T
@@ -269,18 +269,12 @@ def _sea(surf, rect, t):
             x0, y0 = rng.randrange(rect.left, rect.right), rng.randrange(rect.top + 6, rect.bottom)
             x = int((x0 + t * 6) % rect.width)
             pygame.draw.line(surf, (190, 226, 240), (x, y0), (x + 4, y0))
-        for x in range(rect.left, rect.right, 3):  # foam where the waves come in
-            off = int(2 * math.sin(x / 9 + t * 1.5))
-            surf.set_at((x, rect.top + 2 + off), PAL["x"])
         return
     for i in range(rect.height):
         k = i / rect.height
         color = (int(110 - 40 * k), int(176 - 50 * k), int(214 - 30 * k))
         pygame.draw.line(surf, color, (rect.left, rect.top + i), (rect.right, rect.top + i))
-    # foam along the shore and drifting wave highlights
-    for x in range(rect.left, rect.right, 2):
-        off = int(2 * math.sin(x / 9 + t * 1.5))
-        surf.set_at((x, rect.top + 1 + off), PAL["x"])
+    # drifting wave highlights
     rng = _rng("waves")
     for _ in range(26):
         x0, y0 = rng.randrange(rect.left, rect.right), rng.randrange(rect.top + 6, rect.bottom)
@@ -289,13 +283,14 @@ def _sea(surf, rect, t):
 
 
 def _sky(hour, weather):
-    if 7 <= hour < 17:
+    light = sun(hour)
+    if light == "day":
         sky = (150, 200, 236)
-    elif 17 <= hour < 19 or 5 <= hour < 7:
+    elif light in ("dawn", "dusk"):
         sky = (240, 170, 140)
     else:
         sky = (40, 52, 96)
-    if weather in ("阴", "小雨", "雷阵雨", "小雪") and 7 <= hour < 17:
+    if weather in ("阴", "小雨", "雷阵雨", "小雪") and light == "day":
         sky = (170, 180, 190)
     return sky
 
@@ -845,16 +840,15 @@ def _walls(surf, hour, weather):
 
 
 def _darkness(hour):
-    """(outdoor alpha, indoor alpha, lamps on)."""
-    if 7 <= hour < 17:
-        return 0, 0, False
-    if 17 <= hour < 19:
-        return 40, 20, True
-    if 19 <= hour < 24:
-        return 120, 45, True
-    if 5 <= hour < 7:
-        return 80, 90, False
-    return 150, 150, False  # she sleeps with the lights off
+    """(outdoor alpha, indoor alpha, lamps on) — clock.sun / clock.lights_on, as the words say."""
+    light, lamps = sun(hour), lights_on(hour)
+    if light == "day":
+        return 0, 0, lamps
+    if light == "dusk":
+        return 40, 20, lamps
+    if light == "dawn":
+        return 80, 90, lamps
+    return (120, 45, lamps) if lamps else (150, 150, lamps)  # she sleeps with the lights off
 
 
 def _overlay(surf, rect, color, alpha):
@@ -898,23 +892,61 @@ def _digits(surf, text, x, y, color, scale=2):
     return x
 
 
-def _weather_icon(surf, weather, x, y):
-    if weather == "晴":
-        pygame.draw.circle(surf, PAL["y"], (x + 6, y + 6), 5)
-        return
-    cloud = PAL["E"] if weather != "多云" else PAL["x"]
-    if weather == "多云":
-        pygame.draw.circle(surf, PAL["y"], (x + 9, y + 4), 4)
-    for cx, cy, rr in ((x + 4, y + 7, 4), (x + 8, y + 5, 4), (x + 11, y + 8, 3)):
-        pygame.draw.circle(surf, cloud, (cx, cy), rr)
-    if weather in ("小雨", "雷阵雨"):
-        for dx in (3, 7, 11):
-            pygame.draw.line(surf, PAL["B"], (x + dx, y + 11), (x + dx - 1, y + 14))
-    if weather == "雷阵雨":
-        pygame.draw.lines(surf, PAL["y"], False, [(x + 8, y + 10), (x + 6, y + 13), (x + 9, y + 13), (x + 7, y + 16)])
-    if weather == "小雪":
-        for dx in (3, 7, 11):
-            surf.set_at((x + dx, y + 13), PAL["x"])
+# Chinese in the bottom bar: a few dozen characters pre-rendered from a 12 px pixel
+# font into assets/fonts/hud_glyphs.png (tools/hud_glyphs.py; regenerate after
+# adding text here). A character missing from the sheet falls back to a system font.
+HUD_TEXT = ("晴", "多云", "阴", "小雨", "雷阵雨", "小雪", "春夏秋冬", C.CURRENCY, "饱腹值", C.PET_NAME + "亲密度")
+HUD_GLYPH = (12, 13)  # cell size in the sheet
+SEASON_ZH = {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
+_glyphs: dict[str, pygame.Surface] | None = None
+_fallback_font: list = []
+
+
+def _load_glyphs() -> dict[str, pygame.Surface]:
+    global _glyphs
+    if _glyphs is None:
+        _glyphs = {}
+        base = os.path.join(os.path.dirname(__file__), "assets", "fonts")
+        try:
+            with open(os.path.join(base, "hud_glyphs.txt"), encoding="utf-8") as f:
+                chars = f.read().strip()
+            sheet = pygame.image.load(os.path.join(base, "hud_glyphs.png"))
+            cw, ch = HUD_GLYPH
+            for i, c in enumerate(chars):
+                _glyphs[c] = sheet.subsurface((i * cw, 0, cw, ch)).copy()
+        except (OSError, pygame.error):
+            pass
+    return _glyphs
+
+
+def _glyph(c: str) -> pygame.Surface | None:
+    g = _load_glyphs().get(c)
+    if g is not None:
+        return g
+    if not _fallback_font:  # e.g. a renamed cat: whatever CJK font the system has
+        pygame.font.init()
+        _fallback_font.append(pygame.font.SysFont("microsoftyahei,simsun,simhei,wenquanyizenheisharp,notosanscjksc", 12))
+    try:
+        return _fallback_font[0].render(c, False, (255, 255, 255))
+    except pygame.error:
+        return None
+
+
+def _text(surf, text, x, y, color):
+    """Bar text: digits in the pixel digits, Chinese from the glyph sheet; returns the x after it."""
+    for c in text:
+        if c in DIGITS:
+            x = _digits(surf, c, x, y + 2, color)
+            continue
+        g = _glyph(c)
+        if g is None:
+            x += HUD_GLYPH[0]
+            continue
+        g = g.copy()
+        g.fill((*color, 255), special_flags=pygame.BLEND_RGBA_MULT)
+        surf.blit(g, (x, y))
+        x += g.get_width()
+    return x
 
 
 def _bar(surf, x, y, value, color):
@@ -929,19 +961,20 @@ def _hud(surf, world, now, weather):
     y = H + 5
     x = _digits(surf, now.strftime("%m-%d"), 6, y, PAL["c"])
     x = _digits(surf, now.strftime("%H:%M"), x + 8, y, PAL["x"])
-    _weather_icon(surf, weather, x + 8, H + 2)
-    season_color = {"spring": PAL["p"], "summer": PAL["g"], "autumn": PAL["o"], "winter": PAL["x"]}[season_of(now)]
-    pygame.draw.circle(surf, season_color, (x + 32, H + 10), 4)
-    # money
-    mx = x + 50
-    pygame.draw.circle(surf, PAL["y"], (mx + 4, H + 10), 4)
-    pygame.draw.circle(surf, PAL["o"], (mx + 4, H + 10), 4, 1)
-    _digits(surf, str(world.money), mx + 12, y, PAL["y"])
+    ty = H + 4  # Chinese glyphs are 13 px tall
+    x = _text(surf, weather, x + 10, ty, PAL["x"])
+    x = _text(surf, SEASON_ZH[season_of(now)], x + 8, ty, PAL["x"])
+    x = _digits(surf, str(world.money), x + 14, y, PAL["y"])
+    _text(surf, C.CURRENCY, x + 4, ty, PAL["y"])
     # how full she is, and the cat's affection
-    bx = W - 150
-    _bar(surf, bx, H + 7, 100 - world.resident["hunger"], PAL["o"])
-    pygame.draw.circle(surf, PAL["p"], (bx + 52, H + 10), 3)
-    _bar(surf, bx + 58, H + 7, world.pet["affection"], PAL["p"])
+    right = W - 6
+    bar_x = right - 34
+    lx = bar_x - 4 - 5 * HUD_GLYPH[0]
+    _text(surf, C.PET_NAME + "亲密度", lx, ty, PAL["p"])
+    _bar(surf, bar_x, H + 8, world.pet["affection"], PAL["p"])
+    bar2 = lx - 14 - 34
+    _text(surf, "饱腹值", bar2 - 4 - 3 * HUD_GLYPH[0], ty, PAL["o"])
+    _bar(surf, bar2, H + 8, 100 - world.resident["hunger"], PAL["o"])
 
 
 # --------------------------------------------------------------------------- action effects
@@ -1179,7 +1212,7 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     cx, cy = S.ANCHORS[pet["room"]]
     if pet["room"] == world.location and abs(cx - pose.x) < 1.5 and abs(cy - pose.y) < 1:
         cx += 3
-    cat_sleeps = asleep or (pet["affection"] >= 50 and hour % 3 == 0)
+    cat_sleeps = asleep or world.pet_dozing()
     cat_img = SP.cat("sleep" if cat_sleeps else "sit")
     if cat_img is not None:
         surf.blit(cat_img, (cx * T, cy * T + T - 30))

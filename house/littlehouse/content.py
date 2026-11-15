@@ -106,6 +106,10 @@ def _items(*specs: tuple) -> dict[str, Item]:
 # Her phone: always in the bag, never used up, sold or put down. QQ messages (and
 # later the web) go through it; the DSH plugin offers the tools.
 PHONE = "手机"
+# Her backpack is the inventory itself (not an item in it): examine(背包) tells what it is.
+BACKPACK = "背包"
+BACKPACK_DESC = ("开拓署配发的旧背包，据说是一位冒险者在一座年代久远的山洞里找到的，施过魔法——是个次元袋："
+                 "放多少东西进去都装得下，背着也不觉得重。家具、整袋的大米都能收进去。")
 
 ITEMS: dict[str, Item] = _items(
     # staples (weekly supply, or the catalog)
@@ -325,6 +329,8 @@ WEEKLY_SUPPLY = {"大米": 5, "鸡蛋": 6, "猫粮": 7, "牛奶": 2}
 
 WELCOME_LETTER = (
     "【开拓署 · 欢迎信】欢迎来到潮汐湾！这间小屋和院子从今天起就是你的了。"
+    "我们给你配了一部手机、一根鱼竿和一个背包。这个背包有点来历：是一位冒险者在一座年代久远的山洞里找到的，"
+    "施过魔法，是个次元袋——放多少东西都装得下，背着也不觉得重，买来的家具也可以先收在里面。"
     "每周一下午，我们会把基本补给（大米、鸡蛋、牛奶、猫粮）送到你门口。"
     "其他需要的东西请在客厅的订货目录上下单（catalog() 查看，order() 下单）：中午以前下单的当天下午送到，之后下单的第二天下午送到。"
     "院子里的寄售箱是开拓署的收购点：把作物、鱼或者海边捡到的东西放进去（sell()），"
@@ -502,8 +508,8 @@ IDLE_ACTIVITIES: tuple[Idle, ...] = (
     Idle("在陪团子玩", "", None, "hearts", "day", 3, story="play_with_cat"),
     Idle("在海边玩水、踩浪", "beach", "shore", "wade", "dry", 2, story="play_in_water"),
     Idle("在礁石边钓鱼", "beach", "rock", "fishing", "dry", 2, story="fish"),
-    Idle("坐在院子里看星星", "yard", None, "look", "clear_night", 3, story="look_at_sky"),
-    Idle("坐在客厅的大窗边发呆", "living_room", None, "look", "day", 1),
+    Idle("在院子里看星星", "yard", None, "look", "clear_night", 3, story="look_at_sky"),
+    Idle("在客厅的大窗边发呆", "living_room", "window", "look", "day", 1),
     Idle("在厨房的木桌边慢慢喝茶", "kitchen", "table", "eat", "day", 2),
     Idle("在床上睡午觉", "bedroom", "bed", "zzz", "noon", 1),
     Idle("在院子里的树下晒太阳", "yard", "tree", None, "dry", 2),
