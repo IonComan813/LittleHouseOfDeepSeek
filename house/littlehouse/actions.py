@@ -253,7 +253,7 @@ def _examine(w: World, ref: str) -> str:
     if o.id == "parcel":
         return look + f"里面是：{w.format_items(w.parcels)}。"
     if o.id == "consign":
-        return look + ("里面放着：" + w.format_items(w.sale_box) + "，傍晚收走。" if w.sale_box else "里面是空的。")
+        return look + ("里面放着：" + w.format_items(w.sale_box) + "，下午快递来的时候收走。" if w.sale_box else "里面是空的。")
     if o.kind == "plant":
         return f"{look}{w.describe_obj(o)}，土壤湿度大约 {o.state.get('water', 0):.0f}%。"
     if o.kind == "plot" and o.state.get("seed"):

@@ -52,6 +52,7 @@ class RenderTest(unittest.TestCase):
         from littlehouse import scene as S
 
         w = world_at(2026, 10, 16, 10)
+        w.resident["free_until"] = w.clock.timestamp() + 3600  # in free time: the everyday routine would walk her off
         run(w, "goto(厨房); examine(灶台)")
         x, y = S.resident_tile(w.location, w.resident.get("focus"), {})
         sx, sy, sw, sh = S.FIXTURES["stove"]
