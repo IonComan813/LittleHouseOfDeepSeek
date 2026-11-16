@@ -34,7 +34,7 @@ const PHONE_TOOL = `
 function phoneRules(ownerName, stickers = []) {
   return `## 手机
 你的背包里一直有一部手机。${ownerName}和${ownerName}的朋友们随时可能用 QQ 给你发消息（在你睡着以后手机静音，不会收到别人的消息）。
-消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」或「……${ownerName}的朋友阿青：……」；你看得到对方发来的图片，[表情:名称] 是 QQ 表情。你能发的图片目前只有小屋的照片（photo=true）；你无法发送也无法接收文件。
+消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」或「……${ownerName}的朋友阿青：……」；你可以收发图片：看得到对方发来的图片（包括表情包），也可以发小屋的照片（photo=true）和你的表情包（见下）；[表情:名称] 是 QQ 表情。你无法发送也无法接收文件。
 - 回消息、发消息都要调用 phone_message 工具：text 就是发出去的话，to 写发给谁（不写就是${ownerName}；回朋友就写朋友的名字）。直接输出的文字不会发到 QQ 上。
   像平时用手机聊天一样：口语、简短，不用 Markdown；想分几条发就用空行隔开；
   可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，取决于语境选择发送或只发送文字消息。photo=true 会附一张小屋现在的照片。${stickers.length ? `\n  也可以发表情包：写 [表情包:名字]，它会单独发成一条，名字要写全。你的表情包有：${stickers.join('、')}。` : ''}
