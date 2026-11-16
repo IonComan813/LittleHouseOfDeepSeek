@@ -252,10 +252,13 @@ class World:
         rate = (BEACH_FINDS_PER_RAINY_DAY if rain else BEACH_FINDS_PER_DAY) * days
         if self.rng.random() < rate and self._count_finds() < MAX_BEACH_FINDS:
             self._spawn_find(_weighted(self.rng, C.BEACH_FINDS))
+        for o in [o for o in self.objects.values() if o.kind == "find" and "flotsam" in C.ITEMS.get(o.state.get("item", ""), C.Item("")).tags]:
+            if at.timestamp() - o.state.get("at", 0) > C.FLOTSAM_HOURS * 3600:  # the tide takes it back
+                del self.objects[o.id]
         if notice(at, "wreck") is not None:  # the wrecked boat's cargo washes up for a few days
             wreck = [(n, w) for n, w in C.WRECK_FINDS if not self.exists(n)]
             if wreck and self.rng.random() < C.WRECK_FINDS_PER_DAY * days and self._count_finds() < MAX_BEACH_FINDS + 3:
-                self._spawn_find(_weighted(self.rng, wreck))
+                self._spawn_find(_weighted(self.rng, wreck), at)
 
         for room in self.dirt:
             self.dirt[room] = min(100.0, self.dirt[room] + DIRT_PER_DAY * days)
@@ -374,8 +377,16 @@ class World:
             self.parcels[item] = self.parcels.get(item, 0) + n
         if delivered:
             self.log("mail", "快递把包裹放在了门口", actor="world", at=at)
+        week = d.strftime("%G-W%V")
+        if C.DOLL in (self.resident.get("outbox") or []):  # the children come for the doll, and leave a cake
+            self.resident["outbox"].remove(C.DOLL)
+            gifts = self.resident.setdefault("mailbox_gifts", {})
+            gifts[C.CAKE] = gifts.get(C.CAKE, 0) + 1
+            self.mailbox.append(C.CAKE_NOTE)
+            self.resident["doll_week"] = week
+            self.log("mail", "渔村的孩子们拿走了布娃娃，在邮箱里放了一个小蛋糕", actor="world", at=at)
         day, kind, detail = weekly_letter(d)
-        if day.date() == d.date():
+        if day.date() == d.date() and not (kind == "prank" and self.resident.get("doll_week") == week):
             self.mailbox.append(letter_text(kind, detail))
             self.log("mail", "邮箱里多了一封信", actor="world", at=at)
         if self.sale_box:
@@ -390,8 +401,11 @@ class World:
         parts = []
         if self.parcels:
             parts.append(f"门口有快递（{sum(self.parcels.values())} 件东西）还没拆")
-        if self.mailbox:
-            parts.append(f"邮箱里有 {len(self.mailbox)} 封信还没看")
+        gifts = self.resident.get("mailbox_gifts") or {}
+        if self.mailbox or gifts:
+            what = [f"{len(self.mailbox)} 封信"] if self.mailbox else []
+            what += [self.format_items(gifts)] if gifts else []
+            parts.append(f"邮箱里有{'和'.join(what)}还没拿")
         return "；".join(parts)
 
     def pet_dozing(self) -> bool:
@@ -426,8 +440,8 @@ class World:
     def _count_finds(self) -> int:
         return sum(1 for o in self.objects.values() if o.kind == "find")
 
-    def _spawn_find(self, item: str) -> Obj:
-        o = Obj(self.new_id("find"), item, "find", "beach", {"item": item})
+    def _spawn_find(self, item: str, at: datetime | None = None) -> Obj:
+        o = Obj(self.new_id("find"), item, "find", "beach", {"item": item, "at": (at or self.now()).timestamp()})
         self.objects[o.id] = o
         return o
 
@@ -534,7 +548,7 @@ class World:
         passed a moment ago: that is when the plugin asks what is unfinished)."""
         return self.resident.get("free_until", 0.0) > 0
 
-    def set_free(self, until: float, overtime: bool = False) -> str:
+    def set_free(self, until: float, overtime: bool = False, errand: bool = False) -> str:
         """Start (until > now) or end (until <= now) free time. Returns what she was doing before.
 
         ``overtime``: the free time is over, but she may finish what she started
@@ -545,6 +559,7 @@ class World:
         if starting or until <= now:
             self.resident["cooked"] = []  # what she cooks in this free time
         self.resident["overtime"] = bool(overtime and until > now)
+        self.resident["errand"] = bool(errand and until > now)  # doing what someone asked: no time limit
         self.resident["free_until"] = float(until) if until > now else 0.0
         if self.runner.routine:
             self.runner.interrupt("自由活动开始了")
@@ -786,7 +801,10 @@ class World:
             off = "，但不太适应这个季节" if self.season() not in crop.seasons else ""
             return f"{o.name}[{o.id}]（{crop.name}{stage}，土{wet}{off}）"
         if o.id == "mailbox":
-            return f"邮箱[mailbox]（{f'有 {len(self.mailbox)} 封信' if self.mailbox else '空的'}）"
+            inside = ([f"{len(self.mailbox)} 封信"] if self.mailbox else []) + [
+                self.format_items(self.resident.get("mailbox_gifts") or {})] * bool(self.resident.get("mailbox_gifts"))
+            inside += [f"你放的{n}" for n in self.resident.get("outbox") or []]
+            return f"邮箱[mailbox]（{'有' + '、'.join(inside) if inside else '空的'}）"
         if o.id == "parcel":
             return f"包裹[parcel]（放在门口，{sum(self.parcels.values())} 件东西）"
         if o.id == "consign":
@@ -858,6 +876,8 @@ class World:
             return ""
         if self.resident.get("overtime"):
             return f"现在 {self.now():%H:%M}，自由活动时间已经到了，在做完开了头的事"
+        if self.resident.get("errand"):
+            return f"现在 {self.now():%H:%M}，不是自由活动时间，你在做别人请你做的事"
         until = self.resident["free_until"]
         left = max(0, round((until - self.clock.timestamp()) / 60))
         return f"现在 {self.now():%H:%M}，自由活动还剩 {left} 分钟（到 {datetime.fromtimestamp(until):%H:%M}）"

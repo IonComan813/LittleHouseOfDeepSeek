@@ -188,7 +188,7 @@ export function buildNudge({ left, look }) {
 export const REST_TEXT = '（这次自由活动结束了。接下来你的角色会自己去做一些日常事务，直到下一次自由活动时间。）'
 /** end_free_time asks once before ending (nothing is required). */
 export function endAsk(phone) {
-  return '结束之前：这次有想写进日记的吗？（diary_write）' + (phone ? '有想让主人知道的有趣或重要的事，也可以用手机发给他（phone_message）；流水账就不用发。' : '')
+  return '结束之前：日记要不要再改动或者补充一下？（diary_write / diary_edit）' + (phone ? '有想让主人知道的有趣或重要的事，也可以用手机发给他（phone_message）；流水账就不用发。' : '')
     + '都不需要的话，再调用一次 end_free_time 就好。'
 }
 /** The message sent when free time runs out while she is idle and has not written her diary. */

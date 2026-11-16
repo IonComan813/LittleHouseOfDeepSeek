@@ -82,9 +82,6 @@ export default class LittleHouse extends Service {
       from: Schema.string().default(DEFAULT_SLEEP.from).description('最早几点睡觉 HH:MM'),
       to: Schema.string().default(DEFAULT_SLEEP.to).description('最晚几点睡觉 HH:MM（睡前会让她整理当天的日记；睡着以后手机静音，第一段自由活动开始时醒来）'),
     }).default({}),
-    control: Schema.object({
-      maxMinutes: Schema.number().min(1).default(30).description('自由活动以外，主人请她在屋里做事时，她最多接管角色多久'),
-    }).default({}),
     session: Schema.object({
       agentPreset: Schema.string().default('little-house'),
       title: Schema.string().default('小屋生活'),
@@ -525,20 +522,20 @@ export default class LittleHouse extends Service {
 
   /** She takes over her character (the owner asked her to do something in the house). */
   async startControl(sessionId) {
-    const until = Date.now() + this.config.control.maxMinutes * 60_000
+    // No time limit: it ends with end_errand, when her turn ends, at bedtime or when free time starts.
+    // The house still wants an end time; half a day is "until she hands it back".
+    const until = Date.now() + 12 * 3600_000
     const skew = await this.clockSkew()
-    await this.house.request('POST', '/session', { free_until: (until + skew) / 1000, asleep: false })
-    const timer = setTimeout(() => void this.endControl(sessionId, 'time is up'), until - Date.now())
-    this.controls.set(sessionId, { until, timer })
+    await this.house.request('POST', '/session', { free_until: (until + skew) / 1000, asleep: false, errand: true })
+    this.controls.set(sessionId, { until })
     this.budgets.set(sessionId, { actions: 0, max: this.config.wake.maxActionsPerWake })
     this.log('info', `she took over her character (session ${sessionId})`)
   }
 
-  /** Back to the everyday routine (end_errand, end of her turn, or the time limit). */
+  /** Back to the everyday routine (end_errand, the end of her turn, bedtime or free time). */
   async endControl(sessionId, reason, release = true) {
     const c = this.controls.get(sessionId)
     if (!c) return false
-    clearTimeout(c.timer)
     this.controls.delete(sessionId)
     if (release) {
       try {

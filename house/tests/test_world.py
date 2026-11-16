@@ -763,20 +763,59 @@ class WeeklyLetterTest(unittest.TestCase):
         self.assertNotEqual(notice(datetime(*normal), "fish"), fish)
         self.assertGreater(catches((day.year, day.month, day.day, 10)), 1.5 * catches(normal) + 1)
 
-    def test_the_wreck_washes_things_up_and_unique_ones_once(self):
+    def test_the_wreck_washes_things_up_for_three_days(self):
+        from datetime import datetime, timedelta
+        from littlehouse.world import notice
         day, _ = self.find_week("wreck")
+        self.assertEqual(notice(day + timedelta(days=2), "wreck"), "")
+        self.assertIsNone(notice(day + timedelta(days=3), "wreck"))
         w = new_world(when=(day.year, day.month, day.day, 0))
+        w.add_item("鱼竿")
         seen = []
-        for _ in range(5):
-            advance(w, 24)
-            for o in [o for o in w.objects.values() if o.kind == "find"]:
-                seen.append(o.state["item"])
-                w.add_item(o.state["item"])  # picked up
-                del w.objects[o.id]
-        wreck = {n for n, _ in C.WRECK_FINDS}
-        self.assertTrue(wreck & set(seen), seen)
-        for unique in ("黄铜罗盘", "船钟", "航海日志"):
-            self.assertLessEqual(seen.count(unique), 1)
+        for _ in range(3 * 4):
+            advance(w, 6)
+            res = run(w, "goto(沙滩); pick_up()") if any(o.kind == "find" for o in w.objects.values()) else []
+            for r in res:
+                seen.append(r.text)
+        text = "".join(seen)
+        self.assertTrue(any(n in text for n, _ in C.WRECK_FINDS), text)
+        self.assertNotIn("捡起了缆绳结", text)
+        self.assertNotIn("捡起了木箱板", text)
+        self.assertFalse(w.inventory.get("缆绳结") or w.inventory.get("木箱板"))
+
+    def test_rope_and_boards_go_back_with_the_tide(self):
+        w = new_world()
+        o = w._spawn_find("缆绳结")
+        res = run(w, "goto(沙滩); pick_up(缆绳结)")
+        self.assertIn("潮水会把它们带回海里", res[-1].text)
+        advance(w, C.FLOTSAM_HOURS + 1)
+        self.assertNotIn(o.id, w.objects)
+
+    def test_a_doll_for_the_children_brings_a_cake_and_no_prank(self):
+        from datetime import timedelta
+        day, _ = self.find_week("prank")
+        monday = day - timedelta(days=day.weekday())
+        w = new_world(when=(monday.year, monday.month, monday.day, 10))
+        w.mailbox.clear()
+        w.add_item("布娃娃")
+        res = run(w, "goto(庭院); put_in_mailbox(布娃娃)")
+        self.assertTrue(ok(res), res)
+        self.assertFalse(run(w, "put_in_mailbox(鸡蛋)")[0].ok)
+        advance(w, 8)  # 18:00: the children have been
+        self.assertIn("小蛋糕", w.waiting_text())
+        text = run(w, "open(邮箱)")[0].text
+        self.assertIn("谢谢你的布娃娃", text)
+        self.assertEqual(w.inventory.get("小蛋糕"), 1)
+        advance(w, 24 * 6)  # the rest of the week: the prank letter does not come
+        self.assertFalse([m for m in w.mailbox if "歪歪扭扭" in m], w.mailbox)
+
+    def test_the_lighthouse_says_hello_at_night(self):
+        seen = 0
+        for seed in range(80):
+            w = new_world(when=(2026, 7, 20, 22))
+            w.rng.seed(seed)
+            seen += "灯光一连闪了三下" in run(w, "goto(庭院); look_at_sky()")[-1].text
+        self.assertGreater(seen, 0)
 
     def test_dolphins_far_out_in_words_and_picture(self):
         from datetime import datetime, timedelta

@@ -570,6 +570,20 @@ def _water(w: World, ref: str = "") -> Proc:
 # ---------------------------------------------------------------- yard
 
 
+@action("put_in_mailbox(物品)", "把送给渔村孩子们的礼物（布娃娃）放进邮箱，他们下午来的时候会拿走", 1, 1)
+def _put_in_mailbox(w: World, ref: str) -> str:
+    _need_room(w, "yard")
+    name = w.item_name(ref)
+    if "gift" not in C.ITEMS.get(name, C.Item(name)).tags:
+        raise ActionError(f"邮箱是收信的，{name}就不用放进去了。")
+    w.take_item(name)
+    w.stand_at("mailbox")
+    w.resident.setdefault("outbox", []).append(name)
+    w.log("mail", f"在邮箱里放了一个{name}，送给渔村的孩子们")
+    when = "今天下午" if w.now() < courier_time(w.now()) else "明天下午"
+    return f"你把{name}放进了邮箱。渔村的孩子们大概{when}会来拿。"
+
+
 @action("open(邮箱/包裹/漂流瓶)", "打开邮箱取出信来读，拆开门口的包裹，或者打开漂流瓶读里面的纸条", 1, 1)
 def _open(w: World, ref: str) -> str:
     name = str(ref).strip()
@@ -577,13 +591,20 @@ def _open(w: World, ref: str) -> str:
         return _read_bottle(w, name)
     o = w.resolve(ref)
     if o.id == "mailbox":
-        if not w.mailbox:
-            return "邮箱是空的。"
+        gifts = w.resident.pop("mailbox_gifts", None) or {}
+        for name, n in gifts.items():
+            w.add_item(name, n)
+        waiting = w.resident.get("outbox") or []
+        still = f"你放的{'、'.join(waiting)}还在里面，等孩子们来拿。" if waiting else ""
+        if not w.mailbox and not gifts:
+            return "邮箱里没有信。" + still
         letters = list(w.mailbox)
         w.mailbox.clear()
         for letter in letters:
             w.log("mail", f"读了一封信：{letter}")
-        return "你从邮箱里取出了信：\n" + "\n".join(letters)
+        got = f"邮箱里还有{w.format_items(gifts)}，你收进了背包。" if gifts else ""
+        text = ("你从邮箱里取出了信：\n" + "\n".join(letters) + "\n") if letters else ""
+        return text + got + still
     if o.id == "parcel":
         got = dict(w.parcels)
         for name, n in got.items():
@@ -713,11 +734,15 @@ def _harvest(w: World, ref: str = "") -> Proc:
 def _pick(w: World, ref: str = "") -> Proc:
     start = w.tile()
     finds = [w.resolve(ref)] if ref else [o for o in w.here() if o.kind == "find"]
-    if not finds:
-        raise ActionError("这里没有可以捡的东西。")
     for o in finds:
         if o.kind != "find":
             raise ActionError(f"{o.name}拿不起来。")
+    useless = [o for o in finds if "flotsam" in C.ITEMS.get(o.state.get("item", ""), C.Item("")).tags]
+    left_alone = (f"{'、'.join(o.name for o in useless)}你用不上，就留在沙滩上了，潮水会把它们带回海里。"
+                  if useless else "")
+    finds = [o for o in finds if o not in useless]
+    if not finds:
+        raise ActionError(left_alone or "这里没有可以捡的东西。")
     w.stand_near(start)
     if not ref:  # walk along the beach from left to right, not back and forth
         pos = S.find_spots([o.id for o in w.objects.values() if o.kind == "find"])
@@ -734,7 +759,7 @@ def _pick(w: World, ref: str = "") -> Proc:
         return "你还没来得及捡。"
     text = w.format_items(names)
     w.log("collect", f"在{C.ROOMS[w.location].name}捡到了{text}")
-    return f"你捡起了{text}。"
+    return f"你捡起了{text}。{left_alone}"
 
 
 @action("fish()", f"在沙滩的礁石上钓鱼（需要鱼竿；每一竿等 {C.FISH_SECONDS[0] // 60}–{C.FISH_SECONDS[1] // 60} 分钟）", proc=True)
@@ -1231,7 +1256,7 @@ SHORT = {
     "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water_plants": "浇水", "open": "取信 / 拆包裹 / 开漂流瓶", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick_up": "捡东西", "fish": "钓鱼",
-    "put_on_shelf": "摆上收藏架", "discard": "丢弃（拿不回来）", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call_cat": "叫猫过来", "feed_cat": "喂猫", "stroke_cat": "摸猫", "play_with_cat": "陪猫玩", "tidy_mess": "收拾猫弄的乱子",
+    "put_on_shelf": "摆上收藏架", "discard": "丢弃（拿不回来）", "put_in_mailbox": "把礼物放进邮箱", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call_cat": "叫猫过来", "feed_cat": "喂猫", "stroke_cat": "摸猫", "play_with_cat": "陪猫玩", "tidy_mess": "收拾猫弄的乱子",
 }
 
 

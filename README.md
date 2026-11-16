@@ -85,7 +85,7 @@ python scripts\install.py
   `house_photo`（用手机给小屋拍照）只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
 - **日记。** 醒着的时候随时能写、改、翻以前的；结束自由活动时会问她要不要写。每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。
-- **每周来信。** 隔壁灯塔岛的守塔人、附近渔村的渔民和孩子们每周来一封信，信里说的事会真的发生：出事的货船漂来的东西冲上沙滩、远处海面上的海豚和鲸鱼（画面上也看得见）、某种鱼变多，或者只是孩子们的恶作剧。
+- **每周来信。** 隔壁灯塔岛的守塔人、附近渔村的渔民和孩子们每周来一封信，信里说的事当天和之后两天会真的发生：出事的货船漂来的东西冲上沙滩、远处海面上的海豚和鲸鱼（画面上也看得见）、某种鱼变多，或者只是孩子们的恶作剧（在邮箱里放个布娃娃送给他们，那个礼拜就不捣乱，还会回一个蛋糕）。
 - **夜空。** 天黑后可以在院子或沙滩看星星：月相按真实日期算，偶尔有流星（真实的流星雨之夜会有很多），夏天有萤火虫和夜光藻。
 - **记忆。** 她记得的就是昨天的日记：每天第一条消息里放前一天的日记全文，更早的要她自己用 `diary_read` 翻。睡前会提醒她把想做的事、重要的事写进去。
   所以小屋里的日子对她一直是新鲜的。也可以打开可选的长期记忆（`memory.enabled`：换天后整理成「最近的日子 / 想做的事 / 记得的事 / 认识的人」，会淡忘）。
@@ -95,6 +95,35 @@ python scripts\install.py
 - **成本。** DeepSeek-V4.1-Flash 实测一次唤醒约 1.2～2 万 token，约八成是缓存命中。
 
 更多：[伪代码与接口](docs/PROTOCOL.md) · [路线图与实测记录](docs/ROADMAP.md) · [交接文档](docs/HANDOFF.md)
+
+## 她能用的工具和动作
+
+**工具**（生活会话里只有这些，DSH 自带的 shell、文件、网络等工具她都看不到）：
+
+| 工具 | 做什么 |
+| --- | --- |
+| `house_do(script)` | 在小屋里行动：参数是一段伪代码，一次可以写好几步（下面的动作） |
+| `house_photo` | 用手机给小屋拍一张照片，自己看（整个家、院子和沙滩） |
+| `end_free_time` | 结束这次自由活动（这次还没写过日记时，第一次只问一句要不要再改动日记） |
+| `end_errand` | 自由活动以外替别人做完事后，把角色交还给日常 |
+| `phone_message(text, photo?, to?)` | 用手机发 QQ 消息：`text` 是发出去的话，`to` 发给谁（不写是主人），`photo` 附一张小屋的照片 |
+| `phone_friend_request(qq, accept)` | 接受或拒绝 QQ 好友请求（先问过主人） |
+| `diary_write(entry)` / `diary_edit(time, text)` / `diary_read(day?)` | 写一段日记 / 改或删今天的某一段 / 翻某天的日记 |
+
+**动作**（写在 `house_do` 的伪代码里，例如 `goto(庭院); open(邮箱); water_plants()`）：
+
+| 分类 | 动作 |
+| --- | --- |
+| 随时 | `surroundings()` 看看四周 · `inventory()` 看背包 · `examine(东西)` 仔细看 · `goto(地点)` 走过去（也可以 `goto(团子)`） · `wait(分钟)` 等一会儿 · `discard(物品, 数量)` 丢掉（拿不回来） · `help()` 全部动作 |
+| 吃饭做饭 | `eat(食物)` 吃 · `recipes()` 看菜谱 · `cook(菜名)` 做菜 |
+| 家务 | `clean(分钟)` 打扫 · `tidy_mess(乱子)` 收拾团子闯的祸 · `water_plants(植物)` 浇水 · `place(家具)` 摆家具 · `stow(家具/收藏品)` 收回背包 |
+| 院子 | `open(邮箱/包裹/漂流瓶)` 取信、拆快递、读漂流瓶 · `put_in_mailbox(物品)` 把给孩子们的布娃娃放进邮箱 · `plant(种子, 菜地)` 播种 · `harvest(菜地)` 收获 · `sell(物品, 数量)` 放进寄售箱 |
+| 买东西 | `catalog()` 看订货目录 · `order(物品, 数量)` 下单 |
+| 海边 | `pick_up(东西)` 捡东西 · `fish()` 钓鱼 · `play_in_water()` 玩水踩浪 · `look_at_sky()` 看夜空（天黑以后，院子里也行） |
+| 收藏 | `put_on_shelf(收藏品)` 摆上客厅的收藏架（最多 16 件） |
+| 团子 | `call_cat()` 叫过来 · `feed_cat(食物)` 喂 · `stroke_cat()` 摸 · `play_with_cat(玩具)` 陪它玩 |
+
+详细的规则（时长、参数、写错时的提示）见 [PROTOCOL](docs/PROTOCOL.md)。
 
 ## 自己去小屋里看看
 
@@ -106,7 +135,7 @@ cd house; python -m littlehouse --repl     # 在终端里用伪代码"过日子"
 ## 开发
 
 ```bash
-cd house && python -m unittest discover -s tests   # 116 个（无 pygame 时跳过渲染测试）
+cd house && python -m unittest discover -s tests   # 119 个（无 pygame 时跳过渲染测试）
 cd plugin && npm test                               # 作息表、唤醒消息、日记、QQ 消息格式、WebSocket
 ```
 

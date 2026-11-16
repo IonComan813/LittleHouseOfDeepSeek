@@ -159,11 +159,14 @@ ITEMS: dict[str, Item] = _items(
     # washed up from the wrecked cargo boat (the lighthouse keeper's letter); "unique": only one in the world
     ("鱼罐头", "food packaged", 25, "铁皮罐头，标签被海水泡掉了一半，里面是红烧鱼。拉开就能吃。", "1罐"),
     ("玻璃浮球", "collectible", 0, "渔网上用的绿色玻璃浮球，里面封着一个小气泡。"),
-    ("缆绳结", "collectible", 0, "打着水手结的一截粗缆绳，摸起来硬硬的。"),
-    ("木箱板", "collectible", 0, "一块货箱的木板，上面印着半个看不清的货运编号。"),
-    ("黄铜罗盘", "collectible unique", 0, "巴掌大的黄铜罗盘，指针还会轻轻地转，背面刻着一艘小帆船。"),
-    ("船钟", "collectible unique", 0, "小小的黄铜船钟，绳子断了，摇一下声音又亮又远。"),
-    ("航海日志", "collectible unique", 0, "被海水泡得发皱的航海日志，大部分字都晕开了，只认得出几个日期和一句「今天风平浪静」。"),
+    ("缆绳结", "flotsam", 0, "打着水手结的一截粗缆绳，又湿又重。"),  # flotsam: cannot be picked up
+    ("木箱板", "flotsam", 0, "一块货箱的木板，上面印着半个看不清的货运编号。"),
+    ("黄铜罗盘", "collectible", 0, "巴掌大的黄铜罗盘，指针还会轻轻地转，背面刻着一艘小帆船。"),
+    ("船钟", "collectible", 0, "小小的黄铜船钟，绳子断了，摇一下声音又亮又远。"),
+    ("航海日志", "collectible", 0, "一本久经使用的航海日志，封皮磨得发白，里面密密麻麻写满了看不懂的异国文字。"),
+    # the children's: a doll she can give them (catalog), the cake they give back
+    ("布娃娃", "gift collectible", 0, "布做的小娃娃，扎着两条辫子，穿着一条蓝裙子。", "1个"),
+    ("小蛋糕", "food packaged", 30, "渔村孩子们家里做的小蛋糕，上面歪歪扭扭地挤着一条奶油鱼。", "1个"),
     # cat toys (play_with_cat(玩具); they are not used up)
     ("逗猫棒", "toy", 0, "细竹竿上拴着一串羽毛和一个小铃铛。", "1根"),
     ("小铃铛球", "toy", 0, "镂空的塑料球，里面有个会响的小铃铛。", "1个"),
@@ -319,7 +322,7 @@ SELL_PRICES: dict[str, int] = {
     "小黄鱼": 6, "沙丁鱼": 3, "鲈鱼": 18, "比目鱼": 22, "章鱼": 25,
     "白色扇贝壳": 1, "小蛤蜊壳": 1, "带花纹的贝壳": 3, "粉色海螺": 6, "光滑的鹅卵石": 1, "绿色海玻璃": 5,
     "浮木": 5, "玻璃弹珠": 2,
-    "玻璃浮球": 8, "缆绳结": 2, "木箱板": 2, "黄铜罗盘": 30, "船钟": 35, "航海日志": 12,
+    "玻璃浮球": 8, "黄铜罗盘": 30, "船钟": 35, "航海日志": 12,
 }
 
 # The bureau's order catalog: item -> price (per unit, see ITEMS[...].unit).
@@ -330,7 +333,7 @@ CATALOG: dict[str, int] = {
     "饭团": 6, "三明治": 9, "面包": 5, "即食便当": 16, "酸奶": 4, "苏打饼干": 5,
     "五花肉": 9, "排骨": 15, "猪肉馅": 7,
     "番茄": 2, "萝卜": 2, "生菜": 3, "菠菜": 3, "南瓜": 6, "土豆": 2, "黄瓜": 2, "白菜": 4, "葱": 2, "草莓": 10,
-    "逗猫棒": 9, "小铃铛球": 5, "猫薄荷玩偶": 12, "毛线球": 4,
+    "逗猫棒": 9, "小铃铛球": 5, "猫薄荷玩偶": 12, "毛线球": 4, "布娃娃": 15,
     "花瓶": 35, "盆栽": 49, "台灯": 59, "小地毯": 79, "挂画": 99, "扶手椅": 139, "落地钟": 168, "小书桌": 199,
 }
 
@@ -352,11 +355,13 @@ SUPPLY_LETTER = "【开拓署】本周补给已送达门口，请查收。如有
 # Besides Monday's supply note, one letter a week, on a random day of that week
 # (world.weekly_letter), brought by the afternoon courier. What it tells about
 # really happens for LETTER_DAYS days from that day (world.notice):
-#   wreck    — the lighthouse keeper: a cargo boat ran onto the reef; things wash up (WRECK_FINDS)
+#   wreck    — the lighthouse keeper: a cargo boat ran onto the reef; things wash up (WRECK_FINDS;
+#              rope and crate boards are no use to her: the tide takes them back, FLOTSAM)
 #   sighting — fishermen saw dolphins or a whale; at times they are seen far out (text and picture)
 #   fish     — fishermen say one kind of fish is plentiful; it bites FISH_BOOST times as often
-#   prank    — the fishing village's children send a prank (nothing changes in the world)
-LETTER_DAYS = 5
+#   prank    — the fishing village's children send a prank (nothing changes in the world). Not in a
+#              week she has left them a doll in the mailbox (world.doll_week): they leave a cake instead
+LETTER_DAYS = 3  # the day the letter comes and the two days after
 WEEKLY_LETTER_KINDS: list[tuple[str, int]] = [("wreck", 2), ("sighting", 3), ("fish", 3), ("prank", 2)]
 WRECK_LETTER = ("【灯塔岛的来信】你好，我是隔壁灯塔岛的守塔人。前天夜里起了大浪，一条运货的小船撞上了外面的礁石——"
                 "船上的人都平安，可货散了一海。这几天要是有什么东西漂到你那边的沙滩上，捡到就留着用吧。"
@@ -364,16 +369,20 @@ WRECK_LETTER = ("【灯塔岛的来信】你好，我是隔壁灯塔岛的守塔
 SIGHTING_LETTER = ("【渔民的消息】附近渔村的渔民说，这几天在潮汐湾外面看到了{what}。在海边的时候说不定能远远看见——"
                    "它们离岸很远，看看就好，别想着游过去。")
 FISH_LETTER = "【渔民的消息】附近渔村的渔民说，这几天礁石附近的{fish}特别多，下竿很容易上钩。"
+DOLL_HINT = "（背面还有一行小字：「要是你在邮箱里放一个布娃娃送给我们，我们就不捣乱啦！」）"
 PRANK_LETTERS = (
     "【一封歪歪扭扭的信】信封上画着一条咧嘴笑的鱼。你一拆开，一个弹簧纸做的鬼脸「嘣」地弹到你鼻子跟前！"
-    "鬼脸的舌头上写着：「吓到了吧！——渔村的孩子们」",
+    "鬼脸的舌头上写着：「吓到了吧！——渔村的孩子们」" + DOLL_HINT,
     "【一封歪歪扭扭的信】信封鼓鼓囊囊的。你往手心里一倒，一只毛茸茸的大虫子掉了出来——仔细一看，是毛线和纸做的。"
-    "里面的纸条上写着：「哈哈哈，是假的！——渔村的孩子们」",
-    "【一封歪歪扭扭的信】信纸上只有一行字：「请把信翻过来。」翻过来，还是：「请把信翻过来。」"
-    "你翻了三次才反应过来，最下面一行小字：「上当了吧！——渔村的孩子们」",
-    "【一封歪歪扭扭的信】信封一打开，一股浓浓的咸鱼味扑面而来——里面夹着一片晒干的小鱼。"
-    "纸条上画着一个吐舌头的笑脸：「送给你家的猫！——渔村的孩子们」",
+    "里面的纸条上写着：「哈哈哈，是假的！——渔村的孩子们」" + DOLL_HINT,
+    "【一封歪歪扭扭的信】信纸上抹了一层胶水，粘满了彩色的碎纸屑，你一拿起来就粘了满手。"
+    "你甩了好几下、又搓了搓，总算弄干净了。信上写着：「粘住了吧！——渔村的孩子们」" + DOLL_HINT,
 )
+# A doll in the mailbox (put_in_mailbox): the children take it when the courier comes that day
+# (or the next, if she puts it in later) and leave a cake and a note; no prank that week.
+DOLL = "布娃娃"
+CAKE = "小蛋糕"
+CAKE_NOTE = "【渔村孩子们的纸条】谢谢你的布娃娃！我们给它起了名字。这是我们家做的蛋糕，给你吃！这个礼拜我们不捣乱了。"
 FISH_BOOST = 3.0
 SIGHTINGS = ("海豚", "海豚", "鲸鱼")  # what the fishermen saw (dolphins more often)
 SIGHTING_WHAT = {"海豚": "一群海豚", "鲸鱼": "一头鲸鱼"}
@@ -384,9 +393,10 @@ SIGHTING_TEXT = {  # when they are in sight (world.sea_animal): play_in_water, a
 SIGHTING_CHANCE = 0.5  # each daylight hour of those days, whether they are in sight
 WRECK_FINDS_PER_DAY = 3.0
 WRECK_FINDS: list[tuple[str, int]] = [
-    ("鱼罐头", 20), ("大米", 10), ("玻璃浮球", 25), ("缆绳结", 20), ("木箱板", 15),
-    ("黄铜罗盘", 4), ("船钟", 3), ("航海日志", 3),
+    ("鱼罐头", 20), ("大米", 10), ("玻璃浮球", 25), ("缆绳结", 15), ("木箱板", 15),
+    ("黄铜罗盘", 4), ("船钟", 3), ("航海日志", 4),
 ]
+FLOTSAM_HOURS = 6  # rope and crate boards she cannot use: the tide takes them back after this
 SHELF_SIZE = 16  # the two open shelves in the living room hold this many collectibles (the picture draws them all)
 
 
@@ -517,7 +527,7 @@ ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
     "open": 30, "put_on_shelf": 30,
     "feed_cat": 30, "stroke_cat": 30,
     "water_plants": (15, 10), "pick_up": (10, 8), "harvest": (40, 30),
-    "plant": 60, "place": 60, "stow": 40, "discard": 5,
+    "plant": 60, "place": 60, "stow": 40, "discard": 5, "put_in_mailbox": 20,
 }
 EAT_SECONDS = {"dish": 120, "packaged": 60, "other": 45}  # a cooked meal, something ready-made, a snack
 
@@ -539,6 +549,7 @@ SKY_EVENTS: tuple[tuple[str, float, str], ...] = (
     ("一只夜鸟从树梢上扑棱棱飞走了，叫了两声。", 0.10, "yard"),
     ("月亮周围有一圈淡淡的光晕，听说这样第二天可能会变天。", 0.30, "cloudy moon"),
     ("{pet}不知什么时候跟了出来，蹲在你脚边，也仰着头看。", 0.20, "pet"),
+    ("远处灯塔岛的方向，灯光一连闪了三下——听说那是守塔人在跟潮汐湾的人打招呼。", 0.15, "clear"),
 )
 MAX_WAIT_MINUTES = 30
 

@@ -314,7 +314,7 @@ def make_handler(house: House, token: str, on_shutdown=None, display: Display | 
                         house.world.resident["asleep"] = None if body["asleep"] is None else bool(body["asleep"])
                         if house.world.runner.routine:
                             house.world.runner.interrupt("睡觉" if body["asleep"] else "醒了")
-                    before = house.world.set_free(until, overtime=bool(body.get("overtime")))
+                    before = house.world.set_free(until, overtime=bool(body.get("overtime")), errand=bool(body.get("errand")))
                     house.world.update()
                     house.world.save(house.save_path)
                 self._send(200, {"ok": True, "before": before, **house.status()})

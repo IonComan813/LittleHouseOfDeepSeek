@@ -129,6 +129,9 @@ FIND_LOOKS = {
     "白色扇贝壳": ("fan", "x"), "小蛤蜊壳": ("fan", "C"), "带花纹的贝壳": ("fan", "S"),
     "粉色海螺": ("conch", "p"), "光滑的鹅卵石": ("pebble", "E"), "绿色海玻璃": ("pebble", "q"),
     "漂流瓶": ("bottle", "B"), "浮木": ("wood", "W"),
+    # from the wrecked cargo boat
+    "鱼罐头": ("pebble", "x"), "大米": ("pebble", "C"), "玻璃浮球": ("pebble", "q"), "缆绳结": ("wood", "t"),
+    "木箱板": ("wood", "W"), "黄铜罗盘": ("pebble", "y"), "船钟": ("conch", "y"), "航海日志": ("pebble", "d"),
 }
 SHELF_DOTS = "xpSqECBW"
 
