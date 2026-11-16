@@ -23,7 +23,6 @@
 - **检查并做好默认的系统提示词和人设**（用户稍后亲自看；`plugin/agent-scope.js` 的规则、`plugin/persona/default.md`）。
 - 可选：长期记忆（M4）默认关着，需要时再打开、做一次长时间的压力测试。
 - **别的图片**：表情包做了（`plugin/stickers/`、`~/.dsh/little-house/stickers/`）。还可以让她转发别人发给她的图片（最近几张收到的图），以后上网（M6）看到的图片也走同一条路。
-- 自带表情包的来源和许可要补进 `plugin/stickers/README.md`。
 
 ## 表情包、自由活动在替别人做完事后才计时（2026-11-16，只跑了单元测试和假 NapCat）
 

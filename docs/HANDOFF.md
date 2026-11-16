@@ -1,6 +1,7 @@
 # 交接文档（给下一个接手的开发会话）
 
-> 2026-11-13 写于 M2.5；2026-11-14 在 M3 之后重写；2026-11-14 深夜在 M4 记忆、M5 手机 QQ、作息、夜空之后再次整体重写，之后随每次对话更新（那个会话里用户要求的）。
+> 2026-11-13 写于 M2.5；2026-11-14 在 M3 之后重写；2026-11-14 深夜在 M4 记忆、M5 手机 QQ、作息、夜空之后再次整体重写；
+> 2026-11-16 在 M7 一大批内容（改名、每周来信、记忆改成昨天的日记、表情包……）之后更新，准备换会话（用户要求的）。
 > 先读这份，再读 `README.md`（架构图）、`docs/PROTOCOL.md`（伪代码、一天的安排、QQ、记忆、HTTP 接口、文件——**现状以它为准**）、
 > `docs/ROADMAP.md`（每一步的实测记录）。
 
@@ -13,6 +14,10 @@
 - **每次用真实模型测试，都把完整日志给用户一份**（插件发给她的消息、她的思考、每段脚本和完整结果、手机消息、日记、结束）：
   `tools/fulllog.py` 导出成 Markdown，用 SendUserFile 发。记忆整理也一样（整理会话的输入和输出、`memory/memory.md`）。
 - **交接文档只在用户明确要求时更新**（这一版就是）；PROTOCOL / README / ROADMAP / INSTALL-WINDOWS 随代码一起改。
+- **不要用「建议任务」卡片（spawn_task）**：发现范围外的问题，直接在回复里说，或者下一条回复里顺手处理（用户明说的）。
+- **系统提示词和人设由用户亲自改**：`plugin/agent-scope.js` 的 `HOUSE_RULES` / `phoneRules` 和 `plugin/persona/default.md` 是用户 2026-11-16 改好发回来的版本。
+  改规则时保留用户的措辞，只改必要的句子，并在汇报里说清楚改了哪几句。用户想看现在的提示词时，按 `HOUSE_RULES` + `phoneRules('主人', 表情包名单)` 拼出来给他。
+- 最近几轮用户说**先不跑真实模型测试**：只跑单元测试（必要时用假 NapCat）。
 - **设计时长要省着用**：用户嫌时间偏长时会说（做饭、收拾乱子都压过一次）。新动作先给短的。
 - 运行环境：**Windows Server 2025 Datacenter 24H2**，mstsc（RDP）登录桌面；**DSH 桌面版 0.2.2-rc.2**，作为应用运行（不是服务）。
   profile 多半叫 `desktop`（安装脚本优先选它），里面还装了别的插件。**NapCat** 已经在本机登录 QQ。用户在中国（东八区）。
@@ -32,8 +37,8 @@
 | 一天 | 7:30–8:30 醒来 = 第一段自由活动，中午、傍晚、晚上各一段（40 分钟）；23:30–24:00 睡觉（睡前整理日记）；0 点换天 |
 | 会话 | **每天一个会话**：当天的自由活动、手机 QQ、睡前都在里面；第一条消息带完整人设 + **昨天的日记全文**；系统提示词只有人设第一段 + 规则 |
 | 记忆 | **默认只有昨天的日记**（用户 2026-11-15 定的：她只记得最近的事，小屋生活对她保持新鲜；睡前提醒她把想做的、重要的写进日记）。M4 长期记忆（每晚 0:10 整理 → `memory.json`，按天淡忘）还在，`memory.enabled` 默认关，没做过长期压力测试 |
-| M5 QQ | 插件直连 NapCat；手机道具；私聊（主人 + 账号的好友）；好友请求；图片、QQ 表情；语音 / 文件挡掉；睡着时挡掉；群聊暂时关（代码注释保留） |
-| M7 | 18 道家常菜、物价、猫玩具和乱子、看夜空 `look_at_sky()`（真实月相、流星雨）、在海边玩水 `play_in_water()`（水温、脚下、小鱼、海面上的光；月光不说月相，满月多写）、快递每天下午来一次（没有名字、不和她打交道）、日常活动（叫醒时才生成小结果） |
+| M5 QQ | 插件直连 NapCat；手机道具；私聊（主人 + 账号的好友）；好友请求；收图片、QQ 表情、**表情包**（`plugin/stickers/` 27 张 + 主人自己的）；发出去的图片只有小屋照片和表情包；语音 / 文件挡掉；睡着时挡掉；群聊暂时关（代码注释保留） |
+| M7 | 18 道家常菜、物价、猫玩具和乱子、看夜空 `look_at_sky()`（真实月相、流星雨、灯塔闪三下）、在海边玩水 `play_in_water()`（水温、脚下、小鱼、远处的海豚 / 鲸鱼、海面上的光；月光不说月相，满月多写）、快递每天下午来一次（没有名字、不和她打交道）、**每周来信**（守塔人 / 渔民 / 孩子们，信里的事真的发生 3 天）、布娃娃换蛋糕、收藏架 16 件、`discard`、团子自己的事、底栏中文、日常活动（叫醒时才生成小结果） |
 
 测试：`house/` 119 个（`python -m unittest discover -s tests`），`plugin/` 34 个（`npm test`）。
 
@@ -72,14 +77,17 @@
 - `intro(agent)`：会话的第一条消息前面加「（日期，新的一天。）## 你是谁（完整人设）## 昨天的日记」（`rememberedText()` → `lib/diary.js previousDiary`；长期记忆打开时是「## 你的记忆」）。人设文件里的 `<!-- -->` 注释不给她；
   `personaBrief()`（第一段）放系统提示词。
 - 作息：`dayTimes()` = 当天醒来时间（第一个时段的开始）和睡觉时间（`sleep.from–to` 随机，存在 `plugin-state.json` 的 `beds`）。
-  `isAsleep()` = 醒来之前或睡觉之后。`goToBed()`：结束所有窗口和接管，告诉小屋 `asleep: true`，发「该睡觉了，看看今天的日记」。
+  `isAsleep()` = 醒来之前或睡觉之后。`goToBed()`：结束所有窗口和接管，告诉小屋 `asleep: true`，发「该睡觉了，看看今天的日记」（明天记得的就是今天的日记）；
+  **正在替别人做事时**，这条消息开头先让她用手机跟那个人说一声要睡了（做好了 / 明天做）。
   醒来就是早上那段自由活动（`buildWakeMessage({ wokeUp: true })`，`asleep: false`）。
 - **自由活动窗口**（`windows`，按会话 id）：`openWindow` → 到点 `timeUp`。**`timeUp` 先问小屋 `/status`**：正在做事，或有开了头的事
   （`unfinished`：灶上的菜、这次做好没吃的菜、猫弄的乱子）就**加时**（最多 30 分钟，`POST /session {overtime: true}`），小屋只接受做完这些的动作；
-  否则结束。`end_free_time` 第一次调用如果还没写日记，只**问**（日记、要不要给主人发消息），再调一次就结束——**不强制写日记**。
+  否则结束。`end_free_time` 第一次调用**总是先问**（要不要再改动或补充日记、要不要给主人发消息），再调一次就结束——**不强制写日记**。
   她提前停下、时间还多时 2 分钟后再叫她（最多 2 次）；加时里她停下就结束。
 - **自由活动以外**：`house_do` 先用 `look_only` 试（`surroundings` / `inventory` / `help` 马上回答）；要做别的，小屋回 `needs_control`，
-  插件就让她**接管角色**（`startControl`，不限时，小屋 `errand: true`），做完 `end_errand()`；忘了的话这一轮结束时自动交还。睡前那一轮不能接管。
+  插件就让她**接管角色**（`startControl`，不限时，小屋 `errand: true`），做完 `end_errand()`；忘了的话这一轮结束时（`onIdle`）自动交还。睡前那一轮不能接管。
+  `lastCaller`（最近一条 QQ 消息的发送人）= 替谁做事。**自由活动到点时她正在替别人做事**：`wake()` 不插进去，存成 `pendingWake`，等这一轮结束、交还角色后再开始，
+  从那时起计满原来的分钟数，开始消息里说「在这之前，你在做阿青请你做的事」。
 - QQ 消息来时（`phoneBuzz`），自由活动以外的开头是「（23:10，不是自由活动时间。你的角色此刻在客厅，陪团子玩（团子……）。手机响了，是 QQ 消息：）」。
 
 ### 手机和 QQ（`plugin/qq.js`、`lib/onebot*.js`）
@@ -87,7 +95,9 @@
 - 正向连接 NapCat 的「WebSocket 服务端」（`qq.url` + `accessToken`），断线指数退避重连；动作按 `echo` 对应回复。
 - 谁的私聊交给她：主人（`ownerQQ`）+ `others`（默认 `friends` = **NapCat 登录的那个账号的好友**，`sub_type === 'friend'`；`listed` / `none`）。
   别人显示成「主人的朋友<备注或昵称>」（好友请求里还不是朋友，不这么叫）。给她发过消息的人记在 `qq-contacts.json`，`phone_message(to: 名字)` 用。
-- **她直接写的文字不会发出去**，回消息只能用 `phone_message`（空行分条、`[表情:名称]` ↔ QQ face、去 Markdown）。
+- **她直接写的文字不会发出去**，回消息只能用 `phone_message`（单个换行留在同一条、空行分条、`[表情:名称]` ↔ QQ face、去 Markdown）。
+- **表情包**（`lib/stickers.js`）：`plugin/stickers/`（随插件，`qq.builtinStickers`）+ `<stateDir>/stickers/`（主人的，同名盖过自带的），文件名就是名字；
+  名单在 `agent-scope.js` 启动时读进规则。`[表情包:名字]` 在原位置单独发一条 OneBot image（`sub_type: 1`）；名字写错整条不发。来源：网上流传的 meme，原作者不明，见 `plugin/stickers/README.md`。
 - 语音 / 视频 / 文件 / 合并转发 / 卡片在桥这里挡掉（`readMessage().dropped`），只记录；只有这些内容的消息不叫醒她。
 - 睡着时一律不交给她，自动回 `qq.sleepReply`（同一聊天半小时一次）。
 - 好友请求（`post_type: request`）：告诉她是谁、验证消息，规则让她先问主人，再 `phone_friend_request`（`set_friend_add_request`）。
@@ -114,12 +124,19 @@
   目录上有的、菜谱上的菜名。别的房间里有的东西说在哪。新东西不用再维护对照表。状态类提示（先 goto(厨房)、还缺原料……）照旧。
 - 手机：`content.PHONE`，一直在背包里，`take_item` 拒绝拿走它；老存档加载时补上。
 - 看夜空：`sky.py`（真实月相、月出、流星雨极大夜）+ `actions.sky_view()`（没有副作用的夜空描述）+ `look_at_sky()`；`content.SKY_EVENTS` 是随机小事。
-  海边：`play_in_water()`，结果带 `actions.sea_light()`（清早朝阳、白天阳光、傍晚夕阳、晚上按真实月相的月光、雨 / 阴天）。
+  海边：`play_in_water()` = `actions.wade_text()`：水温（晴天 12–19 点是温的）+ 玩水或脚下 + 有时小鱼（看得见时画面上也画）+ 远处的海豚 / 鲸鱼 + `sea_light()`
+  （晚上不说月相，只说月光；满月多写）。结果在开始玩水时就定下，画面才能和文字一致。
 - 动作名：看名字就懂，多个词用下划线连起来（用户要求的）：`call_cat`、`feed_cat`、`stroke_cat`、`play_with_cat`、`tidy_mess`、`pick_up`、`water_plants`、`put_on_shelf`、`play_in_water`、`look_at_sky`、`discard`、`put_in_mailbox`；没有 `say`；`open` 管邮箱、包裹和漂流瓶。工具：`house_photo`、`end_errand`。
 - **日常**（`content.IDLE_ACTIVITIES`，`world._routine`）：每小时一件，**只是个样子，不改变世界、不记录**；不安排答不上细节的事（看书）。
   有消息叫醒她时 `world.idle_story()` 才临时生成一个小结果（`actions.STORIES`：团子的反应、海边玩水 + 海面上的光、钓鱼（不会真钓到）、
   沙滩散步 / 夜里看海的海面、夜空），同一件事里不变。收拾屋子去最干净的房间（真正脏的留给她）；陪团子玩跟着猫走；钓鱼要有鱼竿、不打雷；
   午觉只在 12–16 点。日常里的收拾、陪猫、玩水、钓鱼、看星星，她在自由活动里也能自己做；发呆、喝茶、午觉、晒太阳、散步、看海没有对应动作。
+- **每周来信**：`world.weekly_letter(日期)` 按那周的周一算（谁问都一样，**不存档**），`world.notice(日期, 种类)` 判断信里的事这天是否在发生（`content.LETTER_DAYS` = 3 天）。
+  快递来时（`_courier`）放信；布娃娃（`resident.outbox`）被孩子们拿走 → `resident.mailbox_gifts` 里放蛋糕、`resident.doll_week`，那周不送恶作剧信。
+  船货里的缆绳结、木箱板是 `flotsam`：捡不起来，6 小时后消失。`unique` 标记（世界上只出现一件）的机制还在，现在没有东西用。
+- **文字和画面共用的判断**（用户明确要求图文一致，新加的东西也照这样做）：`clock.sun()`（朝阳 / 白天 / 夕阳 / 夜）、`clock.lights_on()`、`world.pet_dozing()`、
+  `world.pet_activity()`（团子每 20 分钟一件事）、`world.sea_animal()`（远处的海豚 / 鲸鱼）、`content.fish_seen()`（文字里有看得见的鱼才画）、`scene.STANDS`（玩水站在浪边、发呆站在大窗下）。
+- 收藏架最多 `content.SHELF_SIZE` = 16 件（画面正好画 16 件）。日记一天最多 3000 字（`lib/diary.js MAX_DAY_CHARS`，超过才提示）。
 - 加时：`world.free_open()`（插件还没关掉窗口）、`unfinished()`、`overtime_problem()`；`set_free(until, overtime)`；`resident.cooked` 记这次做的菜。
 - 存档 `world/world.json` 当前 v5，`World.load_json` 里有迁移；**改存档结构要加迁移并写测试**。
 - **画面和文字描述同一个世界**（用户明确要求）：唯一来源是 `content.APPEARANCE`；改画面时同步（`tests/test_consistency.py`）。
@@ -131,16 +148,18 @@
 - `render.render(world, t, pose)`；窗口在 `display.py`，跑在小屋进程**主线程**，开关走 `POST /window`。
   **不要在小屋进程里设置 `SDL_VIDEODRIVER=dummy`**（会让后来打开的真窗口失效）。容器里用 Xvfb 验证过真窗口能开、能动。
 - LPC 素材在 `house/littlehouse/assets/lpc/`，`sprites.py` 运行时切图；**素材缺失时退回代码绘制**；**加新素材必须在 `CREDITS.md` 写清来源、许可、作者**。
+- 底栏的中文是预先渲染的字图（`assets/fonts/hud_glyphs.png`，文泉驿点阵正黑 12px，GPL-2 + 字体例外，`CREDITS.md`）；**底栏加新字要跑 `tools/hud_glyphs.py`**，缺字时退回系统字体。
 - 墙和地板还是代码画的。用户的看法：地板不用换（一眼认得出）；墙最弱，但只是好不好看的问题，排得很后。
 
 ## 4. 下一步
 
-1. **请用户在 Windows 上实际跑起来**：`git pull` 这个分支、完全重启 DSH；按 `docs/INSTALL-WINDOWS.md` 第 6 节开 NapCat 的 WebSocket 服务端、填 `qq` 配置。
-   看一整天：早上醒来、QQ、好友请求、睡前、`memory/memory.md`、`plugin.log`。以前用过 dsh-onebot 的话别让它连同一个账号。
-2. 还没在真实模型上碰到过的：早上醒来作为当天第一条消息（单元测试覆盖）、夜里来的好友请求早上告诉她、「别答应待会儿」那条规则、0:10 定时整理（整理本身测过）。
-3. **M6 上网**：用手机上网（RSS、小说带书签、网页正文；只读、站点白名单、防 SSRF），看到的东西她可以写进日记 → 进记忆。
-4. 群聊（用户说以后再做；代码已注释保留）。
-5. M8 设置界面（额度、记忆查看、开关）；墙面素材（可选）。
+1. **M6 上网和读书**（用户确认的下一步）：用手机上网（RSS、网页正文、小说带书签；只读、站点白名单、防 SSRF），看到的东西她可以写进日记。
+   开始前先跟用户确认：看哪些站（服务器在国内）、小说从哪来、每次读多少字。
+2. **请用户在 Windows 上实际跑起来**：`git pull` 这个分支、完全重启 DSH；按 `docs/INSTALL-WINDOWS.md` 第 6 节开 NapCat 的 WebSocket 服务端、填 `qq` 配置。
+   以前用过 dsh-onebot 的话别让它连同一个账号。
+3. **还没在真实模型 / 真实 QQ 上跑过的**（2026-11-15、16 两天的改动都只跑了单元测试）：每天开头的昨天的日记和睡前提醒、日记 3000 字上限、
+   每周来信和布娃娃、替别人做事时到了睡觉 / 自由活动时间、表情包发到真实 QQ（webp 能不能正常显示）、用户改过的系统提示词。合适的时候跑一次，把完整日志给用户。
+4. ROADMAP「以后再做」：转发收到的图片；长期记忆的压力测试；群聊（代码已注释保留）；M8 设置界面；墙面素材（可选）。
 
 ## 5. 用户做过的决定（备查）
 
@@ -158,19 +177,24 @@
 - 日常：不安排答不上来的事（看书）；只是个样子，没人问就不发生；有人问才临时生成结果；打扫不去真正脏的房间；有在海边玩水、钓鱼；不给植物「擦叶子」。
 - 动作名要一看就懂：`play_with_cat`、`play_in_water`、`look_at_sky`。
 - 时长：做饭分「必须守着」和「下锅后能走开」；一圈想做的事约 20 分钟；`tidy_mess` 每处 5–15 秒。
-- 画面：LPC 素材；去掉鲸鳍耳；地板不用换。
+- 画面：LPC 素材；去掉鲸鳍耳；地板不用换；没有邮箱小旗；海边没有白点；底栏全用中文（天气、季节、贝币、饱腹值、团子亲密度）。
+- 来信：每周一封、和世界联动、只发生 3 天；一次性的、和世界不挂钩的信不要；恶作剧不能需要她事后处理（粘手的纸屑在信里就甩干净了）。
+- 收藏品可以重复；收藏架 16 件，放不下留背包；`discard` 丢掉的去「能妥善安放它们的异次元」，拿不回来。背包就是物品栏（开拓署给的次元袋）。
+- 漂流瓶纸条不请她做事。快递员没有名字、不和她打交道。
+- 系统提示词不拆成「开头完整、之后精简」（会话全文每次都发，拆了不省 token，还会让缓存失效）。
 
 ## 6. 容器里的测试环境
 
 新会话的 scratchpad 路径会变，里面的东西会丢；**要长期保留的工具都放在仓库的 `tools/`**。
 
 - 云环境「LittleHouseOfDeepSeek」有**启动脚本**：新容器建好时在 `/opt/lh` 装 DSH 0.2.2-rc.2（`/opt/lh/dsh`）和带 pygame-ce、zstandard 的 venv（`/opt/lh/venv`）。
-  （2026-11-14 加的，下一个新会话才第一次真正跑；如果 `/opt/lh` 不在，就照 `tools/devenv.sh` 开头的注释手动装，约 1 分钟。）
+  （2026-11-15、16 的会话里 `/opt/lh` 都在；如果不在，就照 `tools/devenv.sh` 开头的注释手动装，约 1 分钟。）
+  没有 pygame 的 `python` 跑测试会跳过 5 个画面测试；用 `/opt/lh/venv/bin/python -m unittest discover -s tests` 才是全部。
 - `tools/devenv.sh <工作目录> [分钟] [qq]`：建测试 profile `lhtest`、写 overlay，打印启动命令。分钟 > 0 时启动 5 秒后来一段临时自由活动；`qq` 连假 NapCat（主人 QQ 123）。
   启动命令里加 `TZ=Asia/Shanghai` 就是用户的时区（测晚上的事很方便：容器是 UTC）。
 - `tools/fake-napcat.mjs`：假 NapCat（ws 3001，控制口 3002）。`POST /private {user_id, text, image, voice, nickname}`、`POST /request {user_id, nickname, comment}`、`GET /outbox`。
 - `tools/fulllog.py <DSH_HOME> <out.md> [开场消息里的一段文字] [--diary 目录]`：导出完整日志（找最新的、第一条消息含那段文字的会话；当天会话用 `"## 你是谁"`）。
-- `tools/shot.py <out.png>`：渲染一张截图。
+- `tools/shot.py <out.png> [YYYY-mm-dd-HH] [lived]`：渲染一张截图。`tools/readme_shots.py`：重新生成 README 的三张图。`tools/hud_glyphs.py`：重新生成底栏的中文字图。
 - 想造「没做完的事」：DSH 停着时往 `world/world.json` 的 `jobs` 里塞一锅还没好的菜。想测记忆整理：把某天的 `transcripts/`、`diary/` 复制成更早的日期再重启。
 - **DeepSeek API key** 在云环境的网络密钥里（代理注入，`DEEPSEEK_API_KEY=proxy-injected` 只是占位）。失效的话用 `request_credential` 重新申请，不要让用户贴进聊天。
 - 等日志里的某一行时注意：`plugin.log` 里有以前的同名行，等待条件要带时间戳或只看新行。
@@ -184,14 +208,16 @@ plugin/            DSH bundle（纯 ESM JS，无构建）
   agent-scope.js   生活会话的规则（简短人设 + 规则）和工具（house_do、house_photo、end_*、phone_*）
   diary-scope.js   diary_write / diary_edit / diary_read
   memory-scope.js  记忆整理会话（不带人设、没有工具）
-  qq.js            QQ：收消息、好友请求、睡着时挡掉、phone_message、记录
-  lib/             wake.js（作息、消息文本）、slots.js、diary.js、memory.js、onebot.js（消息格式）、onebot-client.js、ws-client.js、qq-faces.js、house-process.js
-  persona/         示例人设（第一段 = 简短版）
+  qq.js            QQ：收消息、好友请求、睡着时挡掉、phone_message（含表情包）、记录
+  stickers/        自带的表情包（文件名 = 名字；来源见里面的 README）
+  lib/             wake.js（作息、消息文本）、slots.js、diary.js、memory.js、stickers.js、onebot.js（消息格式）、onebot-client.js、ws-client.js、qq-faces.js、house-process.js
+  persona/         人设（用户的「大肥鱼」；第一段 = 系统提示词开头那句）
   cordis.patch.yml 三行：little-house 服务、little-house preset、little-house-memory preset
 house/littlehouse/ 小屋：content（一切数值、日常、夜空小事）/ world（状态、日常、加时、灶台）/ actions（动作、提示、日常小结果）/
                    sky（月相、流星雨）/ tasks（执行器）/ script（解析、结果格式）/ server（HTTP）/ scene / anim / render / sprites / display / repl / clock
+house/littlehouse/assets/  lpc/（LPC 素材 + CREDITS.md）、fonts/（底栏的中文字图）
 house/tests/       unittest（world / tasks / anim / render / consistency / sky）
-tools/             devenv.sh、fake-napcat.mjs、fulllog.py、shot.py（只用于开发）
+tools/             devenv.sh、fake-napcat.mjs、fulllog.py、shot.py、readme_shots.py、hud_glyphs.py（只用于开发）
 scripts/install.py 装进 / 卸出 DSH profile
 docs/              INSTALL-WINDOWS / PROTOCOL / ROADMAP / HANDOFF + 截图
 ```
