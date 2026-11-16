@@ -75,3 +75,17 @@ test('previousDiary: the newest day before today, whole, or its end when long', 
   assert.ok(prev.text.length <= 200)
   assert.match(prev.text, /答应阿青/) // the end is kept
 })
+
+test('a day holds 3000 characters: going over saves nothing and says so', async () => {
+  const { DayFullError, MAX_DAY_CHARS, editEntry } = await import('../lib/diary.js')
+  const dir = await mkdtemp(join(tmpdir(), 'diary-full-'))
+  const day = '2026-11-16'
+  await appendEntry(dir, new Date('2026-11-16T08:00'), '小屋', '海'.repeat(1900), day)
+  await appendEntry(dir, new Date('2026-11-16T12:00'), '小屋', '鱼'.repeat(1000), day) // 2900: fine, no word about it
+  await assert.rejects(appendEntry(dir, new Date('2026-11-16T18:00'), '小屋', '猫'.repeat(200), day), (e) => e instanceof DayFullError && /3000/.test(e.message))
+  const text = await readFile(join(dir, `${day}.md`), 'utf8')
+  assert.doesNotMatch(text, /猫/)
+  await assert.rejects(editEntry(dir, day, '12:00', '鱼'.repeat(1200)), DayFullError)
+  assert.equal((await editEntry(dir, day, '12:00', '鱼'.repeat(500))).ok, true) // shorter is always fine
+  assert.equal(MAX_DAY_CHARS, 3000)
+})

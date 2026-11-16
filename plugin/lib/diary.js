@@ -18,6 +18,23 @@ import { localDay } from './wake.js'
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 export const MAX_ENTRY_CHARS = 2000
+export const MAX_DAY_CHARS = 3000 // a day's entries together (headings not counted); she is told only when she goes over
+
+/** Characters in a day's entries (without the "#"/"###" heading lines). */
+export function dayChars(src) {
+  return String(src ?? '').split('\n').filter((l) => !l.startsWith('#')).join('').replace(/\s/g, '').length
+}
+
+/** Thrown when a write would take the day past MAX_DAY_CHARS: nothing is saved. */
+export class DayFullError extends Error {
+  constructor(have, adding) {
+    super(`今天的日记已经有 ${have} 字，这样一来就超过 ${MAX_DAY_CHARS} 字了，所以没有保存。`
+      + `请把这段写短一些，或者先用 diary_edit 精简前面的内容，再写一次。`)
+    this.name = 'DayFullError'
+    this.have = have
+    this.adding = adding
+  }
+}
 export const MAX_READ_CHARS = 8000
 
 /** @param {string} dir @param {string} day */
@@ -35,8 +52,10 @@ export async function appendEntry(dir, at, source, text, day = localDay(at)) {
   const file = dayFile(dir, day)
   let heading = ''
   try {
-    await readFile(file, 'utf8')
-  } catch {
+    const have = dayChars(await readFile(file, 'utf8'))
+    if (have + dayChars(body) > MAX_DAY_CHARS) throw new DayFullError(have, dayChars(body))
+  } catch (e) {
+    if (e instanceof DayFullError) throw e
     heading = `# ${day} ${WEEKDAYS[new Date(day + 'T12:00').getDay()]}\n\n`
   }
   const time = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
@@ -115,7 +134,7 @@ export async function lastEntryNote(dir, now = new Date(), today = localDay(now)
  * evening's tidy-up is the part that matters most), marked as cut.
  * @returns {Promise<{ day: string, text: string, cut: boolean } | undefined>}
  */
-export async function previousDiary(dir, today, maxChars = 6000) {
+export async function previousDiary(dir, today, maxChars = MAX_DAY_CHARS) {
   for (const day of await listDays(dir)) {
     if (day >= today) continue
     const text = ((await readDay(dir, day)) ?? '').trim()
@@ -148,7 +167,10 @@ export async function editEntry(dir, day, time, text) {
   if (i < 0) return { ok: false, times }
   const entry = parts[i + 1]
   const head = entry.split('\n', 1)[0]
+  const before = dayChars(src)
   parts[i + 1] = body ? `${head}\n\n${body}\n\n` : ''
+  const after = dayChars(parts.join(''))
+  if (after > MAX_DAY_CHARS && after > before) throw new DayFullError(before - dayChars(entry), dayChars(body))
   await writeFile(file, parts.join(''), 'utf8')
   return { ok: true, times: body ? times : times.filter((_, j) => j !== i) }
 }

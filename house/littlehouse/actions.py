@@ -24,7 +24,7 @@ from . import scene as S
 from . import sky
 from .clock import is_dark, sun
 from .tasks import Interrupted, Phase, Proc, walk
-from .world import ActionError, Obj, World, _weighted, courier_time
+from .world import ActionError, Obj, World, _weighted, courier_time, notice
 
 
 
@@ -222,7 +222,7 @@ INTERNAL["_settle"] = _settle
 STORIES: dict[str, Callable[[World], str]] = {
     "play_with_cat": _story_play,
     "play_in_water": lambda w: wade_text(w),
-    "sea": lambda w: sea_light(w),
+    "sea": lambda w: far_out(w) + sea_light(w),
     "fish": lambda w: w.rng.choice(C.FISH_STORIES),
     "look_at_sky": lambda w: sky_view(w, w.rng)[0],
 }
@@ -511,8 +511,17 @@ def _place(w: World, ref: str) -> str:
     return f"你把{name}摆在了{room}，看起来更像家了。"
 
 
-@action("stow(家具)", "把摆着的家具收回背包", 1, 1)
+@action("stow(家具/收藏品)", "把摆着的家具，或者收藏架上的一件收藏品，收回背包", 1, 1)
 def _stow(w: World, ref: str) -> str:
+    name = str(ref).strip()
+    if w.shelf.get(name, 0) > 0 and w.location == "living_room":
+        w.shelf[name] -= 1
+        if not w.shelf[name]:
+            del w.shelf[name]
+        w.add_item(name)
+        w.stand_at("shelf")
+        w.log("collect", f"把{name}从收藏架上收回了背包")
+        return f"你把{name}从收藏架上拿下来，收进了背包。"
     o = w.resolve(ref)
     if o.kind != "decor":
         raise ActionError(f"{o.name}收不起来。")
@@ -745,6 +754,9 @@ def _fish(w: World) -> Proc:
     table = list(C.FISH_TABLE[w.season()])
     if w.raining():  # fish bite better in the rain
         table = [(k, v if k is None else int(v * 1.3)) for k, v in table]
+    plenty = notice(w.now(), "fish")  # the fishermen's letter: this one is plentiful these days
+    if plenty:
+        table = [(k, int(v * C.FISH_BOOST) if k == plenty else v) for k, v in table]
     catch = _weighted(w.rng, table)
     if catch is None:
         w.log("fish", "钓了一会儿鱼，什么也没钓到")
@@ -878,7 +890,13 @@ def wade_text(w: World) -> str:
             parts.append(f"{'月光下，' if night else ''}{who}{rng.choice(moves)}。")
     elif season == "winter" and not dark and rng.random() < 0.3:
         parts.append(C.NO_FISH_WINTER)
-    return "".join(parts) + sea_light(w)
+    return "".join(parts) + far_out(w) + sea_light(w)
+
+
+def far_out(w: World) -> str:
+    """Dolphins or a whale far out at sea, when they are in sight (the picture draws them too)."""
+    what = w.sea_animal()
+    return C.SIGHTING_TEXT[what] if what else ""
 
 
 @action("play_in_water()", "在海边玩水、踩浪（沙滩上，一两分钟）", 0, 0, proc=True)
@@ -906,7 +924,7 @@ def _read_bottle(w: World, name: str) -> str:
     return f"你展开纸条：{note}"
 
 
-@action("put_on_shelf(收藏品)", "把收藏品摆到客厅的收藏架上；不写参数就全部摆上", 0, 1)
+@action("put_on_shelf(收藏品)", f"把收藏品摆到客厅的收藏架上（最多 {C.SHELF_SIZE} 件，放不下的留在背包里）；不写参数就能摆多少摆多少", 0, 1)
 def _display(w: World, ref: str = "") -> str:
     _need_room(w, "living_room")
     if ref:
@@ -915,17 +933,37 @@ def _display(w: World, ref: str = "") -> str:
         names = [n for n in w.items_with_tag("collectible") if "readable" not in C.ITEMS[n].tags]
     if not names:
         raise ActionError("背包里没有可以摆的收藏品。")
+    room = C.SHELF_SIZE - sum(w.shelf.values())
+    if room <= 0:
+        raise ActionError(f"收藏架已经摆满了（{C.SHELF_SIZE} 件）。放不下的就留在背包里；想换一换，可以先 stow(收藏品) 把架子上的收回背包。")
     w.stand_at("shelf")
     moved: dict[str, int] = {}
     for n in names:
         if "collectible" not in C.ITEMS.get(n, C.Item(n)).tags:
             raise ActionError(f"{n}不算收藏品。")
-        count = w.inventory[n]
+        count = min(w.inventory[n], room)
+        if count <= 0:
+            break
         w.take_item(n, count)
         w.shelf[n] = w.shelf.get(n, 0) + count
         moved[n] = count
+        room -= count
     w.log("collect", f"把{w.format_items(moved)}摆上了收藏架")
-    return f"你把{w.format_items(moved)}摆上了收藏架。架子上一共有 {sum(w.shelf.values())} 件收藏了。"
+    left = [n for n in names if w.inventory.get(n, 0) > 0]
+    full = f"收藏架摆满了，{w.format_items({n: w.inventory[n] for n in left})}还留在背包里。" if left else ""
+    return f"你把{w.format_items(moved)}摆上了收藏架。架子上一共有 {sum(w.shelf.values())} 件收藏了（最多 {C.SHELF_SIZE} 件）。{full}"
+
+
+@action("discard(物品, 数量)", "丢弃背包里的东西（不写数量就丢一个）。丢掉的东西会去一个能妥善安放它们的异次元，再也拿不回来", 1, 2)
+def _discard(w: World, ref: str, n: float = 1) -> str:
+    name = w.item_name(ref)
+    count = int(n)
+    if count < 1:
+        raise ActionError("数量至少是 1。")
+    w.take_item(name, count)  # the phone refuses
+    w.log("discard", f"丢弃了{name}×{count}")
+    return (f"你把{name}×{count}塞进背包最深处的那道缝隙里——它们去了一个能妥善安放它们的异次元。"
+            "这是拿不回来的。")
 
 
 # ---------------------------------------------------------------- the cat
@@ -1002,7 +1040,7 @@ def _pet(w: World, ref: str = "") -> str:
 # ---------------------------------------------------------------- what can I do here / with what
 
 
-ALWAYS = ("goto", "surroundings", "examine", "inventory", "wait", "help")
+ALWAYS = ("goto", "surroundings", "examine", "inventory", "wait", "discard", "help")
 
 
 def actions_here(w: World) -> list[str]:
@@ -1013,7 +1051,7 @@ def actions_here(w: World) -> list[str]:
         names += ["call_cat"] if w.pet["room"] != w.location else ["feed_cat", "stroke_cat", "play_with_cat"]
         if w.items_with_tag("furniture"):
             names.append("place")
-        if any(o.kind == "decor" for o in w.here()):
+        if any(o.kind == "decor" for o in w.here()) or (w.location == "living_room" and w.shelf):
             names.append("stow")
     if w.items_with_tag("food") or w.items_with_tag("dish"):
         names.append("eat")
@@ -1193,7 +1231,7 @@ SHORT = {
     "eat": "吃东西", "wait": "等一会儿", "recipes": "看菜谱", "cook": "做菜", "clean": "打扫",
     "place": "摆家具", "stow": "收家具", "water_plants": "浇水", "open": "取信 / 拆包裹 / 开漂流瓶", "catalog": "看订货目录", "order": "订货",
     "sell": "放进寄售箱", "plant": "播种", "harvest": "收获", "pick_up": "捡东西", "fish": "钓鱼",
-    "put_on_shelf": "摆上收藏架", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call_cat": "叫猫过来", "feed_cat": "喂猫", "stroke_cat": "摸猫", "play_with_cat": "陪猫玩", "tidy_mess": "收拾猫弄的乱子",
+    "put_on_shelf": "摆上收藏架", "discard": "丢弃（拿不回来）", "look_at_sky": "看夜空", "play_in_water": "玩水踩浪", "call_cat": "叫猫过来", "feed_cat": "喂猫", "stroke_cat": "摸猫", "play_with_cat": "陪猫玩", "tidy_mess": "收拾猫弄的乱子",
 }
 
 

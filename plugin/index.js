@@ -91,7 +91,7 @@ export default class LittleHouse extends Service {
       rolloverHour: Schema.natural().max(23).default(0).description('几点换成新的一天：每天一个会话（小屋生活和手机 QQ 在同一个会话里），日记和记忆也按这个换天'),
     }).default({}),
     memory: Schema.object({
-      diaryChars: Schema.natural().default(6000).description('每天第一条消息里放前一天的日记全文，最多多少字（超了只放后面的部分）'),
+      diaryChars: Schema.natural().default(3000).description('每天第一条消息里放前一天的日记全文，最多多少字（日记每天最多 3000 字，超了只放后面的部分）'),
       enabled: Schema.boolean().default(false).description('长期记忆（默认关）：每天换天后用一个单独的会话（不带人设）把前一天整理进记忆，按天淡忘，每天开头给她看。关着时她只记得前一天的日记'),
       preset: Schema.string().default('little-house-memory'),
       maxChars: Schema.natural().default(6000).description('每天开头给她看的记忆最多多少字（超了先少放几天前的日子）'),
@@ -292,7 +292,7 @@ export default class LittleHouse extends Service {
     const agent = await this.dayAgent()
     await this.send(agent, `（${hhmm(Date.now())}，该睡觉了。你躺到了床上。）\n`
       + '睡前看看今天的日记（diary_read）：想补充的用 diary_write，想改或删掉的用 diary_edit。'
-      + '明天早上醒来，你记得的主要就是今天的日记：想做的事、答应别人的事、重要的事和心情，记得写进去。整理好就睡吧，不用再做别的事。'
+      + '明天早上醒来，你记得的主要就是今天的日记：除了想记录的日常以外，想做的事、重要的事也记得写进去。整理好就睡吧，不用再做别的事。'
       + '手机会静音到明天早上。')
   }
 
@@ -488,9 +488,13 @@ export default class LittleHouse extends Service {
     const last = await previousDiary(join(this.stateDir, 'diary'), day, this.config.memory.diaryChars)
     if (!last) return []
     const yesterday = dayOf(new Date(new Date(day + 'T12:00').getTime() - 86_400_000), 0)
-    const which = last.day === yesterday ? '昨天的日记' : `你最近一次写的日记（${last.day}）`
-    return ['', `## ${which}`,
-      `（你记得的事主要就是这些。${last.cut ? '前面还有一些，' : ''}更早的日记可以用 diary_read(日期) 翻看。）`, '', last.text]
+    const more = `${last.cut ? '前面还有一些，' : ''}更早的日记可以用 diary_read(日期) 翻看。`
+    if (last.day === yesterday) {
+      return ['', '## 昨天的日记', `（你记得的事主要就是这些。${more}）`, '', last.text]
+    }
+    // the house was not running for a while (DSH not started): those days she was busy and wrote nothing
+    return ['', `## 你最近一次写的日记（${last.day}）`,
+      `（${last.day} 之后这几天你很忙，没顾上写日记。你记得的事主要就是这一天写的。${more}）`, '', last.text]
   }
 
   /** A QQ message arrived: the phone buzzes in her day session, whatever she is doing. */
@@ -594,9 +598,15 @@ export default class LittleHouse extends Service {
    * @returns {string | undefined} the slot name ("早上"), if the session has free time
    */
   markDiary(sessionId) {
+    const name = this.freeTimeName(sessionId)
+    if (name) this.windows.get(sessionId).diary = true
+    return name
+  }
+
+  /** The free time a diary entry written now belongs to (undefined outside free time). */
+  freeTimeName(sessionId) {
     const w = this.windows.get(sessionId)
     if (!w || (w.ended && (w.rested || w.diary))) return undefined // written outside free time
-    w.diary = true
     return w.name
   }
 

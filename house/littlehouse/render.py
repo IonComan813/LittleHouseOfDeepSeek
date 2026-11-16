@@ -1053,6 +1053,32 @@ def _effect(surf, pose, world, t):
                 surf.set_at((bubble.centerx + dx, bubble.centery), PAL["k"])
 
 
+def _far_out(surf, what, t):
+    """Dolphins or a whale far out at sea (the fishermen's letter): small, near the bottom edge."""
+    sea = _r(*S.SEA)
+    y0 = sea.bottom - 9
+    grey, light = (58, 78, 98), (210, 230, 240)
+    if what == "鲸鱼":
+        x = int(sea.left + sea.width * 0.68)
+        pygame.draw.ellipse(surf, grey, (x - 14, y0 - 3, 28, 7))  # the long dark back
+        pygame.draw.polygon(surf, grey, [(x + 4, y0 - 2), (x + 8, y0 - 6), (x + 9, y0 - 2)])
+        k = (t % 4.0) / 4.0
+        if k < 0.45:  # now and then it blows
+            h = int(14 * math.sin(k / 0.45 * math.pi))
+            for dx in (-3, 0, 3):
+                pygame.draw.line(surf, light, (x - 8, y0 - 3), (x - 8 + dx, y0 - 3 - h), 1)
+        return
+    for i in range(3):  # three dolphins leaping one after another
+        x = int(sea.left + sea.width * 0.62) + i * 16
+        k = ((t * 0.5 + i * 0.3) % 1.0)
+        if k < 0.5:  # in the air: an arc
+            lift = int(7 * math.sin(k * 2 * math.pi))
+            pygame.draw.arc(surf, grey, (x - 6, y0 - 4 - lift, 13, 9), 0.3, math.pi - 0.3, 3)
+        else:  # a fin cutting the water
+            pygame.draw.polygon(surf, grey, [(x - 2, y0 + 1), (x + 1, y0 - 4), (x + 3, y0 + 1)])
+        pygame.draw.line(surf, light, (x - 4, y0 + 2), (x + 4, y0 + 2))
+
+
 def _fish_school(surf, cx, cy, t):
     """A handful of small fish in the shallows, drifting in round her feet (no particular kind)."""
     rng = _rng("fish", "school")
@@ -1150,6 +1176,9 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     surf = pygame.Surface((W, H + S.HUD_H))
     surf.blit(_base(season), (0, 0))
     _sea(surf, _r(*S.SEA), t)
+    far = world.sea_animal(now)
+    if far:
+        _far_out(surf, far, t)
     _walls(surf, hour, weather)
 
     # dirt specks
@@ -1213,12 +1242,19 @@ def render(world, t: float | None = None, pose: Pose | None = None) -> pygame.Su
     if pet["room"] == world.location and abs(cx - pose.x) < 1.5 and abs(cy - pose.y) < 1:
         cx += 3
     cat_sleeps = asleep or world.pet_dozing()
-    cat_img = SP.cat("sleep" if cat_sleeps else "sit")
+    act = world.pet_activity()
+    running = not cat_sleeps and act in C.PET_ACTIVITIES and C.PET_ACTIVITIES[act][1] == "run"
+    if running:  # dashing back and forth (after a mouse, its tail, or nothing at all)
+        swing = math.sin(t * 2.2)
+        cx += 1.5 * swing
+        cat_img = SP.cat("right" if math.cos(t * 2.2) > 0 else "left", int(t * 8))
+    else:
+        cat_img = SP.cat("sleep" if cat_sleeps else "sit")
     if cat_img is not None:
-        surf.blit(cat_img, (cx * T, cy * T + T - 30))
+        surf.blit(cat_img, (int(cx * T), cy * T + T - 30))
     else:
         cat_img = big_sprite(CAT_ASLEEP if cat_sleeps else CAT)
-        surf.blit(cat_img, (cx * T + 8, cy * T + T - cat_img.get_height()))
+        surf.blit(cat_img, (int(cx * T) + 8, cy * T + T - cat_img.get_height()))
     if asleep:  # her blue hair on the pillow, the quilt pulled up
         bx, by, bw, _ = S.FIXTURES["bed"]
         hx = bx * T + bw * T // 2

@@ -22,7 +22,7 @@ from typing import Any, Callable
 
 from . import content as C
 from . import scene as S
-from .clock import SEASON_ZH, Clock, is_dark, lights_on, period_of, season_of
+from .clock import SEASON_ZH, Clock, is_dark, lights_on, period_of, season_of, sun
 
 SAVE_VERSION = 5
 MAX_CATCHUP_HOURS = 24 * 14  # beyond two weeks away, older time is skipped
@@ -83,6 +83,48 @@ def _fixtures() -> list[Obj]:
 
 def _day(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d")
+
+
+def weekly_letter(d: datetime) -> tuple[datetime, str, str]:
+    """The week's letter for the week of ``d`` (Monday to Sunday): (its day, kind, detail).
+    The same for everybody asking: rolled from the week's Monday."""
+    monday = (d - timedelta(days=d.weekday())).replace(hour=12, minute=0, second=0, microsecond=0)
+    rng = random.Random(_day(monday) + "weekly letter")
+    day = monday + timedelta(days=rng.randrange(7))
+    kind = _weighted(rng, C.WEEKLY_LETTER_KINDS)
+    detail = ""
+    if kind == "fish":
+        detail = rng.choice([f for f, _ in C.FISH_TABLE[season_of(day)] if f and "fish" in C.ITEMS[f].tags])
+    elif kind == "sighting":
+        detail = rng.choice(C.SIGHTINGS)
+    elif kind == "prank":
+        detail = str(rng.randrange(len(C.PRANK_LETTERS)))
+    return day, kind, detail
+
+
+def letter_text(kind: str, detail: str) -> str:
+    if kind == "wreck":
+        return C.WRECK_LETTER
+    if kind == "sighting":
+        return C.SIGHTING_LETTER.format(what=C.SIGHTING_WHAT[detail])
+    if kind == "fish":
+        return C.FISH_LETTER.format(fish=detail)
+    return C.PRANK_LETTERS[int(detail)]
+
+
+def notice(d: datetime, kind: str) -> str | None:
+    """If a weekly letter of ``kind`` is in effect on the day of ``d``: its detail ('' for a wreck)."""
+    for back in (0, 7):
+        day, k, detail = weekly_letter(d - timedelta(days=back))
+        if k == kind and 0 <= (d.date() - day.date()).days < C.LETTER_DAYS:
+            return detail
+    return None
+
+
+def always_actions() -> tuple[str, ...]:
+    from .actions import ALWAYS  # actions imports this module
+
+    return ALWAYS
 
 
 def courier_time(d: datetime) -> datetime:
@@ -210,6 +252,10 @@ class World:
         rate = (BEACH_FINDS_PER_RAINY_DAY if rain else BEACH_FINDS_PER_DAY) * days
         if self.rng.random() < rate and self._count_finds() < MAX_BEACH_FINDS:
             self._spawn_find(_weighted(self.rng, C.BEACH_FINDS))
+        if notice(at, "wreck") is not None:  # the wrecked boat's cargo washes up for a few days
+            wreck = [(n, w) for n, w in C.WRECK_FINDS if not self.exists(n)]
+            if wreck and self.rng.random() < C.WRECK_FINDS_PER_DAY * days and self._count_finds() < MAX_BEACH_FINDS + 3:
+                self._spawn_find(_weighted(self.rng, wreck))
 
         for room in self.dirt:
             self.dirt[room] = min(100.0, self.dirt[room] + DIRT_PER_DAY * days)
@@ -328,6 +374,10 @@ class World:
             self.parcels[item] = self.parcels.get(item, 0) + n
         if delivered:
             self.log("mail", "快递把包裹放在了门口", actor="world", at=at)
+        day, kind, detail = weekly_letter(d)
+        if day.date() == d.date():
+            self.mailbox.append(letter_text(kind, detail))
+            self.log("mail", "邮箱里多了一封信", actor="world", at=at)
         if self.sale_box:
             total = sum(C.SELL_PRICES.get(n, 0) * c for n, c in self.sale_box.items())
             sold = self.format_items(self.sale_box)
@@ -349,6 +399,17 @@ class World:
         not hungry, and whenever she is asleep."""
         p = self.pet
         return self.resident.get("asleep") is True or (p["hunger"] < 80 and p["affection"] >= 50 and self.now().hour % 3 == 0)
+
+    def pet_activity(self) -> str:
+        """What the cat is doing now (a key of content.PET_ACTIVITIES, or 'hungry' / 'doze'):
+        the same for the words (look) and the picture."""
+        if self.pet["hunger"] >= 80:
+            return "hungry"
+        if self.pet_dozing():
+            return "doze"
+        now = self.now()
+        rng = random.Random(now.strftime("%Y-%m-%d %H ") + str(now.minute // 20) + "cat")
+        return _weighted(rng, [(k, w) for k, (_, _, w) in C.PET_ACTIVITIES.items()])
 
     def pet_temper(self, dt: datetime | None = None) -> str:
         """The cat's mood for the day: rolled once per date, stable all day."""
@@ -662,6 +723,23 @@ class World:
         else:
             self.inventory[name] = have - n
 
+    def exists(self, name: str) -> bool:
+        """Whether a unique thing is somewhere already (bag, shelf, or lying on the beach).
+        Ordinary things can always turn up again: two shells can look alike."""
+        if "unique" not in C.ITEMS.get(name, C.Item(name)).tags:
+            return False
+        return (self.inventory.get(name, 0) > 0 or self.shelf.get(name, 0) > 0
+                or any(o.kind == "find" and o.state.get("item") == name for o in self.objects.values()))
+
+    def sea_animal(self, dt: datetime | None = None) -> str | None:
+        """Dolphins or a whale in sight far out (the fishermen's letter): in some daylight
+        hours of those days, not in the rain. Text and picture both ask this."""
+        dt = dt or self.now()
+        what = notice(dt, "sighting")
+        if not what or sun(dt.hour) == "night" or self.raining(dt):
+            return None
+        return what if random.Random(dt.strftime("%Y-%m-%d %H") + "sighting").random() < C.SIGHTING_CHANCE else None
+
     def items_with_tag(self, tag: str) -> list[str]:
         return [n for n, c in self.inventory.items() if c > 0 and tag in C.ITEMS.get(n, C.Item(n)).tags]
 
@@ -729,11 +807,14 @@ class World:
         objs = [self.describe_obj(o) for o in self.here()]
         if self.pet["room"] == self.location:
             p = self.pet
-            mood = ("饿得直叫" if p["hunger"] >= 80 else "在打盹" if self.pet_dozing()
-                    else "蹲在一旁看着你" if p["affection"] >= 50 else "在角落里看着你")
+            act = self.pet_activity()
+            mood = ("饿得直叫" if act == "hungry" else "在打盹" if act == "doze"
+                    else "在角落里看着你" if act == "watch" and p["affection"] < 50 else C.PET_ACTIVITIES[act][0])
             temper = {"黏人": "，今天好像特别黏人", "傲娇": "，今天有点爱答不理", "烦躁": "，今天脾气不太好"}.get(self.pet_temper(), "")
             objs.append(f"橘猫{p['name']}（{mood}{temper}）")
-        dark = ("" if room.outdoor or not is_dark(now) else "，屋里开着灯" if lights_on(now.hour) else "，屋里没开灯，黑黑的")
+        if self.location == "beach" and (far := self.sea_animal()):
+            objs.append(f"远处海面上的{C.SIGHTING_WHAT[far]}（离岸很远，只能远远地看）")
+        dark = "，屋里开着灯" if is_dark(now) and lights_on(now.hour) and not room.outdoor else ""
         lines = [
             f"时间：{now:%Y-%m-%d %H:%M}（{period_of(now)}，{SEASON_ZH[season_of(now)]}季），天气：{self.weather()}{dark}",
             f"位置：{room.name} —— {room.description}",
@@ -744,7 +825,7 @@ class World:
         if self.jobs:
             lines.append("灶台上：" + self.stove_text())
         lines += [
-            "这里能做：" + "、".join(self.actions_here()) + "；随时能做：goto、surroundings、examine、inventory、wait、help",
+            "这里能做：" + "、".join(self.actions_here()) + "；随时能做：" + "、".join(always_actions()),
             "可去：" + "、".join(C.ROOMS[e].name for e in room.exits),
             *([f"{self.pet['name']}：在{C.ROOMS[self.pet['room']].name}（goto({self.pet['name']}) 可以走过去）"]
               if self.pet["room"] != self.location else []),

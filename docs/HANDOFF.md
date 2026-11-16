@@ -35,7 +35,7 @@
 | M5 QQ | 插件直连 NapCat；手机道具；私聊（主人 + 账号的好友）；好友请求；图片、QQ 表情；语音 / 文件挡掉；睡着时挡掉；群聊暂时关（代码注释保留） |
 | M7 | 18 道家常菜、物价、猫玩具和乱子、看夜空 `look_at_sky()`（真实月相、流星雨）、在海边玩水 `play_in_water()`（水温、脚下、小鱼、海面上的光；月光不说月相，满月多写）、快递每天下午来一次（没有名字、不和她打交道）、日常活动（叫醒时才生成小结果） |
 
-测试：`house/` 109 个（`python -m unittest discover -s tests`），`plugin/` 30 个（`npm test`）。
+测试：`house/` 116 个（`python -m unittest discover -s tests`），`plugin/` 31 个（`npm test`）。
 
 她现在能用的工具（生活会话，preset `little-house`）：
 `house_do(script)`、`house_photo`（用手机给小屋拍照，自己看）、`end_free_time`、`end_errand`、
@@ -115,7 +115,7 @@
 - 手机：`content.PHONE`，一直在背包里，`take_item` 拒绝拿走它；老存档加载时补上。
 - 看夜空：`sky.py`（真实月相、月出、流星雨极大夜）+ `actions.sky_view()`（没有副作用的夜空描述）+ `look_at_sky()`；`content.SKY_EVENTS` 是随机小事。
   海边：`play_in_water()`，结果带 `actions.sea_light()`（清早朝阳、白天阳光、傍晚夕阳、晚上按真实月相的月光、雨 / 阴天）。
-- 动作名：看名字就懂，多个词用下划线连起来（用户要求的）：`call_cat`、`feed_cat`、`stroke_cat`、`play_with_cat`、`tidy_mess`、`pick_up`、`water_plants`、`put_on_shelf`、`play_in_water`、`look_at_sky`；没有 `say`；`open` 管邮箱、包裹和漂流瓶。工具：`house_photo`、`end_errand`。
+- 动作名：看名字就懂，多个词用下划线连起来（用户要求的）：`call_cat`、`feed_cat`、`stroke_cat`、`play_with_cat`、`tidy_mess`、`pick_up`、`water_plants`、`put_on_shelf`、`play_in_water`、`look_at_sky`、`discard`；没有 `say`；`open` 管邮箱、包裹和漂流瓶。工具：`house_photo`、`end_errand`。
 - **日常**（`content.IDLE_ACTIVITIES`，`world._routine`）：每小时一件，**只是个样子，不改变世界、不记录**；不安排答不上细节的事（看书）。
   有消息叫醒她时 `world.idle_story()` 才临时生成一个小结果（`actions.STORIES`：团子的反应、海边玩水 + 海面上的光、钓鱼（不会真钓到）、
   沙滩散步 / 夜里看海的海面、夜空），同一件事里不变。收拾屋子去最干净的房间（真正脏的留给她）；陪团子玩跟着猫走；钓鱼要有鱼竿、不打雷；

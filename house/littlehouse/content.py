@@ -156,6 +156,14 @@ ITEMS: dict[str, Item] = _items(
     ("旧照片", "collectible", 0, "泛黄的照片：一群人站在还没修好的码头前，笑得很开心。背面写着「潮汐湾 第一年」。"),
     ("发卡", "collectible", 0, "一枚贝壳形状的发卡。"),
     ("浮木", "collectible", 0, "被海水磨得很光滑的一截浮木，形状像一只鸟。"),
+    # washed up from the wrecked cargo boat (the lighthouse keeper's letter); "unique": only one in the world
+    ("鱼罐头", "food packaged", 25, "铁皮罐头，标签被海水泡掉了一半，里面是红烧鱼。拉开就能吃。", "1罐"),
+    ("玻璃浮球", "collectible", 0, "渔网上用的绿色玻璃浮球，里面封着一个小气泡。"),
+    ("缆绳结", "collectible", 0, "打着水手结的一截粗缆绳，摸起来硬硬的。"),
+    ("木箱板", "collectible", 0, "一块货箱的木板，上面印着半个看不清的货运编号。"),
+    ("黄铜罗盘", "collectible unique", 0, "巴掌大的黄铜罗盘，指针还会轻轻地转，背面刻着一艘小帆船。"),
+    ("船钟", "collectible unique", 0, "小小的黄铜船钟，绳子断了，摇一下声音又亮又远。"),
+    ("航海日志", "collectible unique", 0, "被海水泡得发皱的航海日志，大部分字都晕开了，只认得出几个日期和一句「今天风平浪静」。"),
     # cat toys (play_with_cat(玩具); they are not used up)
     ("逗猫棒", "toy", 0, "细竹竿上拴着一串羽毛和一个小铃铛。", "1根"),
     ("小铃铛球", "toy", 0, "镂空的塑料球，里面有个会响的小铃铛。", "1个"),
@@ -311,6 +319,7 @@ SELL_PRICES: dict[str, int] = {
     "小黄鱼": 6, "沙丁鱼": 3, "鲈鱼": 18, "比目鱼": 22, "章鱼": 25,
     "白色扇贝壳": 1, "小蛤蜊壳": 1, "带花纹的贝壳": 3, "粉色海螺": 6, "光滑的鹅卵石": 1, "绿色海玻璃": 5,
     "浮木": 5, "玻璃弹珠": 2,
+    "玻璃浮球": 8, "缆绳结": 2, "木箱板": 2, "黄铜罗盘": 30, "船钟": 35, "航海日志": 12,
 }
 
 # The bureau's order catalog: item -> price (per unit, see ITEMS[...].unit).
@@ -337,6 +346,49 @@ WELCOME_LETTER = (
     "每天下午快递来的时候会一起收走，货款直接记到你的账上。祝你在这里住得开心。"
 )
 SUPPLY_LETTER = "【开拓署】本周补给已送达门口，请查收。如有需要请随时订货。"
+
+# --------------------------------------------------------------------------- the weekly letter
+#
+# Besides Monday's supply note, one letter a week, on a random day of that week
+# (world.weekly_letter), brought by the afternoon courier. What it tells about
+# really happens for LETTER_DAYS days from that day (world.notice):
+#   wreck    — the lighthouse keeper: a cargo boat ran onto the reef; things wash up (WRECK_FINDS)
+#   sighting — fishermen saw dolphins or a whale; at times they are seen far out (text and picture)
+#   fish     — fishermen say one kind of fish is plentiful; it bites FISH_BOOST times as often
+#   prank    — the fishing village's children send a prank (nothing changes in the world)
+LETTER_DAYS = 5
+WEEKLY_LETTER_KINDS: list[tuple[str, int]] = [("wreck", 2), ("sighting", 3), ("fish", 3), ("prank", 2)]
+WRECK_LETTER = ("【灯塔岛的来信】你好，我是隔壁灯塔岛的守塔人。前天夜里起了大浪，一条运货的小船撞上了外面的礁石——"
+                "船上的人都平安，可货散了一海。这几天要是有什么东西漂到你那边的沙滩上，捡到就留着用吧。"
+                "夜里要是看见灯塔的光闪三下，那是我在跟你打招呼。")
+SIGHTING_LETTER = ("【渔民的消息】附近渔村的渔民说，这几天在潮汐湾外面看到了{what}。在海边的时候说不定能远远看见——"
+                   "它们离岸很远，看看就好，别想着游过去。")
+FISH_LETTER = "【渔民的消息】附近渔村的渔民说，这几天礁石附近的{fish}特别多，下竿很容易上钩。"
+PRANK_LETTERS = (
+    "【一封歪歪扭扭的信】信封上画着一条咧嘴笑的鱼。你一拆开，一个弹簧纸做的鬼脸「嘣」地弹到你鼻子跟前！"
+    "鬼脸的舌头上写着：「吓到了吧！——渔村的孩子们」",
+    "【一封歪歪扭扭的信】信封鼓鼓囊囊的。你往手心里一倒，一只毛茸茸的大虫子掉了出来——仔细一看，是毛线和纸做的。"
+    "里面的纸条上写着：「哈哈哈，是假的！——渔村的孩子们」",
+    "【一封歪歪扭扭的信】信纸上只有一行字：「请把信翻过来。」翻过来，还是：「请把信翻过来。」"
+    "你翻了三次才反应过来，最下面一行小字：「上当了吧！——渔村的孩子们」",
+    "【一封歪歪扭扭的信】信封一打开，一股浓浓的咸鱼味扑面而来——里面夹着一片晒干的小鱼。"
+    "纸条上画着一个吐舌头的笑脸：「送给你家的猫！——渔村的孩子们」",
+)
+FISH_BOOST = 3.0
+SIGHTINGS = ("海豚", "海豚", "鲸鱼")  # what the fishermen saw (dolphins more often)
+SIGHTING_WHAT = {"海豚": "一群海豚", "鲸鱼": "一头鲸鱼"}
+SIGHTING_TEXT = {  # when they are in sight (world.sea_animal): play_in_water, a walk on the beach, surroundings()
+    "海豚": "远处的海面上，几只海豚一拱一拱地跃出水面，又钻进了浪里。",
+    "鲸鱼": "远处的海面上露出一道黑黑的背脊，一头鲸鱼「噗」地喷起一股白白的水柱。",
+}
+SIGHTING_CHANCE = 0.5  # each daylight hour of those days, whether they are in sight
+WRECK_FINDS_PER_DAY = 3.0
+WRECK_FINDS: list[tuple[str, int]] = [
+    ("鱼罐头", 20), ("大米", 10), ("玻璃浮球", 25), ("缆绳结", 20), ("木箱板", 15),
+    ("黄铜罗盘", 4), ("船钟", 3), ("航海日志", 3),
+]
+SHELF_SIZE = 16  # the two open shelves in the living room hold this many collectibles (the picture draws them all)
+
 
 # --------------------------------------------------------------------------- surprises
 
@@ -435,6 +487,16 @@ PET_TEMPERS: list[tuple[str, int]] = [("黏人", 30), ("平常", 40), ("傲娇",
 
 START_INVENTORY = {PHONE: 1, "鱼竿": 1, "鸡蛋": 4, "大米": 3, "猫粮": 4, "土豆": 2, "萝卜种子": 2, "菠菜种子": 1}
 PET_NAME = "团子"
+# What the cat is up to when it is neither hungry nor napping: one per 20 minutes
+# (world.pet_activity). key -> (text, how the picture draws it: sit / run, weight).
+PET_ACTIVITIES: dict[str, tuple[str, str, int]] = {
+    "watch": ("蹲在一旁看着你", "sit", 3),  # "在角落里看着你" while it is not fond of her yet
+    "lick": ("在舔爪子，舔完又抹抹脸", "sit", 3),
+    "window": ("蹲着盯着窗外看，尾巴尖一甩一甩", "sit", 1),
+    "mouse": ("盯着墙角，忽然扑了过去——像是在追一只老鼠，也说不定什么都没有", "run", 2),
+    "zoom": ("在屋里跑来跑去，一阵风似的", "run", 2),
+    "tail": ("在追自己的尾巴，转了一圈又一圈", "run", 1),
+}
 INDOOR_ROOMS = ("living_room", "kitchen", "bedroom")
 
 # --------------------------------------------------------------------------- time (M3)
@@ -455,7 +517,7 @@ ACTION_SECONDS: dict[str, float | tuple[float, float]] = {
     "open": 30, "put_on_shelf": 30,
     "feed_cat": 30, "stroke_cat": 30,
     "water_plants": (15, 10), "pick_up": (10, 8), "harvest": (40, 30),
-    "plant": 60, "place": 60, "stow": 40,
+    "plant": 60, "place": 60, "stow": 40, "discard": 5,
 }
 EAT_SECONDS = {"dish": 120, "packaged": 60, "other": 45}  # a cooked meal, something ready-made, a snack
 

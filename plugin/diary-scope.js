@@ -11,7 +11,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
 
-import { MAX_ENTRY_CHARS, appendEntry, editEntry, listDays, readDay, resolveDay } from './lib/diary.js'
+import { DayFullError, MAX_ENTRY_CHARS, appendEntry, editEntry, listDays, readDay, resolveDay } from './lib/diary.js'
 
 export const name = 'little-house-diary'
 export const inject = ['tools', 'littleHouse']
@@ -31,17 +31,23 @@ export function apply(ctx, config) {
 
   ctx.tools.register(defineTool({
     name: 'diary_write',
-    description: `在今天的日记里写一段（长期保存；以后你记得的事主要来自日记）。醒着的时候随时都可以写。写你觉得重要的、想记住的：值得记住的事和新发现、心情和想法、想做的事和打算。不用记流水账。一段最多 ${MAX_ENTRY_CHARS} 字。`,
+    description: `在今天的日记里写一段（长期保存；明天早上你记得的事主要就是今天的日记）。醒着的时候随时都可以写。写你觉得重要的、想记住的：值得记住的事和新发现、心情和想法、想做的事和打算。不用记流水账。一段最多 ${MAX_ENTRY_CHARS} 字。`,
     parameters: {
       entry: { type: 'string', required: true, description: '要写进日记的内容，第一人称' },
     },
     output: textOutput,
     async execute(args, exec) {
-      const slot = ctx.littleHouse.markDiary(exec?.agent?.id)
-      const source = slot ? `${config.source} · ${slot}` : config.source
       const now = new Date()
-      const { day, time } = await appendEntry(dir(), now, source, args.entry, ctx.littleHouse.dayKey(now))
-      return `（已写进 ${day} 的日记，${time}。）`
+      const slot = ctx.littleHouse.freeTimeName?.(exec?.agent?.id)
+      const source = slot ? `${config.source} · ${slot}` : config.source
+      try {
+        const { day, time } = await appendEntry(dir(), now, source, args.entry, ctx.littleHouse.dayKey(now))
+        ctx.littleHouse.markDiary(exec?.agent?.id)
+        return `（已写进 ${day} 的日记，${time}。）`
+      } catch (e) {
+        if (e instanceof DayFullError) return e.message
+        throw e
+      }
     },
   }))
 
@@ -55,7 +61,13 @@ export function apply(ctx, config) {
     output: textOutput,
     async execute(args) {
       const day = ctx.littleHouse.dayKey(new Date())
-      const r = await editEntry(dir(), day, args.time, args.text)
+      let r
+      try {
+        r = await editEntry(dir(), day, args.time, args.text)
+      } catch (e) {
+        if (e instanceof DayFullError) return e.message.replace('请把这段写短一些，或者先用 diary_edit 精简前面的内容，再写一次。', '请把这段改得短一些再改一次。')
+        throw e
+      }
       if (!r.ok) return r.times.length ? `今天的日记里没有 ${args.time} 那一段。有的是：${r.times.join('、')}。` : '今天还没有日记。'
       return String(args.text ?? '').trim() ? `（改好了 ${args.time} 那一段。）` : `（删掉了 ${args.time} 那一段。）`
     },

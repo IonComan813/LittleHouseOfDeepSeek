@@ -719,3 +719,113 @@ class OvertimeTest(unittest.TestCase):
             self.assertEqual(w.unfinished(), [])
             w.set_free(0)
             self.assertFalse(w.resident["overtime"])
+
+
+class WeeklyLetterTest(unittest.TestCase):
+    def test_one_letter_a_week_that_comes_with_the_courier(self):
+        from datetime import datetime, timedelta
+        from littlehouse.world import weekly_letter
+        kinds = set()
+        for week in range(40):
+            d = datetime(2026, 11, 16, 12) + timedelta(days=7 * week)
+            day, kind, _ = weekly_letter(d)
+            self.assertEqual(day.isocalendar()[:2], d.isocalendar()[:2])  # in that week
+            self.assertEqual(weekly_letter(day), weekly_letter(d))  # the same whoever asks
+            kinds.add(kind)
+        self.assertEqual(kinds, {"wreck", "sighting", "fish", "prank"})
+        day, kind, detail = weekly_letter(datetime(2026, 11, 16, 12))
+        w = new_world(when=(day.year, day.month, day.day, 10))
+        w.mailbox.clear()
+        advance(w, 8)  # 18:00: the courier has been
+        self.assertEqual(len(w.mailbox), 1 + (day.weekday() == C.SUPPLY_WEEKDAY))
+
+    def find_week(self, kind):
+        from datetime import datetime, timedelta
+        from littlehouse.world import weekly_letter
+        for week in range(80):
+            day, k, detail = weekly_letter(datetime(2026, 11, 16, 12) + timedelta(days=7 * week))
+            if k == kind:
+                return day, detail
+        raise AssertionError(kind)
+
+    def test_the_plentiful_fish_bites_more(self):
+        from datetime import datetime
+        day, fish = self.find_week("fish")
+        def catches(when):
+            got = 0
+            for seed in range(120):
+                w = new_world(when=when)
+                w.rng.seed(seed)
+                got += fish in run(w, "goto(沙滩); fish()")[-1].text
+            return got
+        from littlehouse.world import notice
+        normal = (day.year - 1, day.month, day.day, 10)  # a year before: no letter about it
+        self.assertNotEqual(notice(datetime(*normal), "fish"), fish)
+        self.assertGreater(catches((day.year, day.month, day.day, 10)), 1.5 * catches(normal) + 1)
+
+    def test_the_wreck_washes_things_up_and_unique_ones_once(self):
+        day, _ = self.find_week("wreck")
+        w = new_world(when=(day.year, day.month, day.day, 0))
+        seen = []
+        for _ in range(5):
+            advance(w, 24)
+            for o in [o for o in w.objects.values() if o.kind == "find"]:
+                seen.append(o.state["item"])
+                w.add_item(o.state["item"])  # picked up
+                del w.objects[o.id]
+        wreck = {n for n, _ in C.WRECK_FINDS}
+        self.assertTrue(wreck & set(seen), seen)
+        for unique in ("黄铜罗盘", "船钟", "航海日志"):
+            self.assertLessEqual(seen.count(unique), 1)
+
+    def test_dolphins_far_out_in_words_and_picture(self):
+        from datetime import datetime, timedelta
+        day, what = self.find_week("sighting")
+        for offset in range(5 * 24):
+            t = day.replace(hour=0) + timedelta(hours=offset)
+            w = new_world(when=(t.year, t.month, t.day, t.hour))
+            if w.sea_animal():
+                break
+        else:
+            raise AssertionError("never in sight")
+        w.rng.seed(1)
+        text = run(w, "goto(沙滩); play_in_water()")[-1].text
+        self.assertIn(C.SIGHTING_TEXT[what], text)
+        self.assertIn("远处海面上的", w.look())
+        w = new_world(when=(t.year - 1, t.month, t.day, t.hour))
+        self.assertIsNone(w.sea_animal())
+
+
+class ShelfDiscardCatTest(unittest.TestCase):
+    def test_the_shelf_holds_sixteen(self):
+        w = new_world()
+        w.add_item("白色扇贝壳", 12)
+        w.add_item("粉色海螺", 6)
+        text = run(w, "put_on_shelf()")[0].text
+        self.assertEqual(sum(w.shelf.values()), C.SHELF_SIZE)
+        self.assertIn("还留在背包里", text)
+        self.assertEqual(w.inventory.get("白色扇贝壳", 0) + w.inventory.get("粉色海螺", 0), 2)
+        self.assertIn("摆满了", run(w, "put_on_shelf()")[0].text)
+        res = run(w, "stow(粉色海螺); put_on_shelf(粉色海螺)")
+        self.assertTrue(ok(res), res)
+
+    def test_discard_is_for_good(self):
+        w = new_world()
+        w.add_item("旧靴子", 2)
+        text = run(w, "discard(旧靴子)")[0].text
+        self.assertIn("异次元", text)
+        self.assertEqual(w.inventory.get("旧靴子"), 1)
+        self.assertFalse(run(w, "discard(手机)")[0].ok)
+        self.assertIn("discard", w.look())
+
+    def test_the_cat_has_things_to_do(self):
+        seen = set()
+        for minute in range(0, 24 * 60, 20):
+            w = new_world(when=(2026, 7, 20, minute // 60))
+            w.clock.advance((minute % 60) * 60)
+            w.pet.update({"hunger": 10.0, "affection": 80.0, "room": w.location})
+            act = w.pet_activity()
+            seen.add(act)
+            if act in C.PET_ACTIVITIES and act != "watch":
+                self.assertIn(C.PET_ACTIVITIES[act][0], w.look())
+        self.assertTrue({"doze", "lick", "zoom", "mouse"} <= seen, seen)

@@ -85,6 +85,7 @@ python scripts\install.py
   `house_photo`（用手机给小屋拍照）只渲染一帧给她看（约 600 token）；
   `view.bat` 让同一个小屋进程打开动画窗口，关掉就停止渲染。
 - **日记。** 醒着的时候随时能写、改、翻以前的；结束自由活动时会问她要不要写。每天一个 Markdown 文件（`~/.dsh/little-house/diary/`），每段标注时间和时段。
+- **每周来信。** 隔壁灯塔岛的守塔人、附近渔村的渔民和孩子们每周来一封信，信里说的事会真的发生：出事的货船漂来的东西冲上沙滩、远处海面上的海豚和鲸鱼（画面上也看得见）、某种鱼变多，或者只是孩子们的恶作剧。
 - **夜空。** 天黑后可以在院子或沙滩看星星：月相按真实日期算，偶尔有流星（真实的流星雨之夜会有很多），夏天有萤火虫和夜光藻。
 - **记忆。** 她记得的就是昨天的日记：每天第一条消息里放前一天的日记全文，更早的要她自己用 `diary_read` 翻。睡前会提醒她把想做的事、重要的事写进去。
   所以小屋里的日子对她一直是新鲜的。也可以打开可选的长期记忆（`memory.enabled`：换天后整理成「最近的日子 / 想做的事 / 记得的事 / 认识的人」，会淡忘）。
@@ -105,7 +106,7 @@ cd house; python -m littlehouse --repl     # 在终端里用伪代码"过日子"
 ## 开发
 
 ```bash
-cd house && python -m unittest discover -s tests   # 109 个（无 pygame 时跳过渲染测试）
+cd house && python -m unittest discover -s tests   # 116 个（无 pygame 时跳过渲染测试）
 cd plugin && npm test                               # 作息表、唤醒消息、日记、QQ 消息格式、WebSocket
 ```
 
