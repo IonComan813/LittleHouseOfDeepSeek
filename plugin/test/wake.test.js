@@ -107,3 +107,9 @@ test('recapEvents skips moves and duplicates', () => {
   const msg = buildWakeMessage({ slotName: '早上', start: at(8, 0), until: at(8, 40), recap: ['喂了团子'], news: [], look: 'L' })
   assert.match(msg, /上次自由活动的时候，你喂了团子。/)
 })
+
+test('buildWakeMessage after an errand says whose it was', () => {
+  const m = buildWakeMessage({ slotName: '傍晚', start: at(17, 45), until: at(18, 25), before: '在海边玩水、踩浪', news: [], look: 'L', errandFor: '阿青' })
+  assert.match(m, /在这之前，你在做阿青请你做的事；那件事先告一段落了。/)
+  assert.doesNotMatch(m, /平淡的日常/)
+})

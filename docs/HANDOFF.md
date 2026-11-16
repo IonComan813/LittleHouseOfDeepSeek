@@ -35,7 +35,7 @@
 | M5 QQ | 插件直连 NapCat；手机道具；私聊（主人 + 账号的好友）；好友请求；图片、QQ 表情；语音 / 文件挡掉；睡着时挡掉；群聊暂时关（代码注释保留） |
 | M7 | 18 道家常菜、物价、猫玩具和乱子、看夜空 `look_at_sky()`（真实月相、流星雨）、在海边玩水 `play_in_water()`（水温、脚下、小鱼、海面上的光；月光不说月相，满月多写）、快递每天下午来一次（没有名字、不和她打交道）、日常活动（叫醒时才生成小结果） |
 
-测试：`house/` 119 个（`python -m unittest discover -s tests`），`plugin/` 31 个（`npm test`）。
+测试：`house/` 119 个（`python -m unittest discover -s tests`），`plugin/` 32 个（`npm test`）。
 
 她现在能用的工具（生活会话，preset `little-house`）：
 `house_do(script)`、`house_photo`（用手机给小屋拍照，自己看）、`end_free_time`、`end_errand`、

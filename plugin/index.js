@@ -142,6 +142,10 @@ export default class LittleHouse extends Service {
     this.times = undefined
     /** sessionId -> { until, timer }: she took over her character outside free time */
     this.controls = new Map()
+    /** sessionId -> who sent the latest QQ message (whoever asks her to do something) */
+    this.lastCaller = new Map()
+    /** a free time that waits until she has finished an errand (her turn ends) */
+    this.pendingWake = undefined
 
     ctx.effect(() => {
       const boot = setTimeout(() => {
@@ -282,12 +286,18 @@ export default class LittleHouse extends Service {
     const state = await this.readState()
     const awakeToday = state.lifeSessionDay === this.dayKey() && state.lifeSessionId
     for (const sessionId of [...this.windows.keys()]) await this.endWindow(sessionId, 'bedtime')
+    // in the middle of something someone asked her to do: she stops and tells them
+    const errandFor = [...this.controls.values()].map((c) => c.by).find((by) => by !== undefined)
     for (const sessionId of [...this.controls.keys()]) await this.endControl(sessionId, 'bedtime')
+    this.pendingWake = undefined
     await this.house.request('POST', '/session', { free_until: 0, asleep: true })
     this.log('info', 'bedtime')
     if (!awakeToday) return
     const agent = await this.dayAgent()
-    await this.send(agent, `（${hhmm(Date.now())}，该睡觉了。你躺到了床上。）\n`
+    const who = errandFor || '对方'
+    const errand = errandFor === undefined ? ''
+      : `你正在帮${who}做的事先停下吧：用手机跟${who}说一声你要睡觉了——做好了就说做好了，没做完就说明天再做。然后，`
+    await this.send(agent, `（${hhmm(Date.now())}，该睡觉了。你躺到了床上。）\n${errand}`
       + '睡前看看今天的日记（diary_read）：想补充的用 diary_write，想改或删掉的用 diary_edit。'
       + '明天早上醒来，你记得的主要就是今天的日记：除了想记录的日常以外，想做的事、重要的事也记得写进去。整理好就睡吧，不用再做别的事。'
       + '手机会静音到明天早上。')
@@ -375,13 +385,19 @@ export default class LittleHouse extends Service {
    * @param {number} until epoch ms when the slot ends
    * @param {boolean} [resumed] the slot had already started (e.g. DSH started mid-slot)
    */
-  async wake(plan, until, resumed = false) {
+  async wake(plan, until, resumed = false, errandFor = undefined) {
     if (this.waking) return 'busy: a wake is already being delivered'
     this.waking = true
     try {
       const now = new Date()
       const state = await this.readState()
       const agent = await this.dayAgent()
+      if (this.controls.has(agent.id) && agent.status !== 'idle') {
+        // doing something someone asked: free time starts once this turn is over (onIdle)
+        this.pendingWake = { plan, until, resumed }
+        this.log('info', `free time (${plan.name}) waits until she has finished the errand`)
+        return 'deferred: she is doing an errand'
+      }
       const fresh = (await this.readState()).introducedSession !== agent.id
 
       // All times she is told come from the house's game clock (the same one the
@@ -417,6 +433,7 @@ export default class LittleHouse extends Service {
         waiting: session.waiting,
         look: look.text,
         resumed,
+        errandFor,
         wokeUp: plan.name === this.slots[0]?.name && localDay(new Date(plan.start)) === localDay(now),
       })
       const requests = (await this.qq?.pendingRequestsText().catch(() => '')) || ''
@@ -495,8 +512,9 @@ export default class LittleHouse extends Service {
   }
 
   /** A QQ message arrived: the phone buzzes in her day session, whatever she is doing. */
-  async phoneBuzz({ line, images = [], what = 'QQ 消息' }) {
+  async phoneBuzz({ line, images = [], what = 'QQ 消息', from = '' }) {
     const agent = await this.dayAgent()
+    if (from) this.lastCaller.set(agent.id, from)
     const is = what.startsWith('QQ') ? `是 ${what}` : `是${what}`
     let head = `（手机响了，${is}：）`
     if (!this.window(agent.id) && !this.controls.has(agent.id)) {
@@ -527,7 +545,7 @@ export default class LittleHouse extends Service {
     const until = Date.now() + 12 * 3600_000
     const skew = await this.clockSkew()
     await this.house.request('POST', '/session', { free_until: (until + skew) / 1000, asleep: false, errand: true })
-    this.controls.set(sessionId, { until })
+    this.controls.set(sessionId, { until, by: this.lastCaller.get(sessionId) ?? '' })
     this.budgets.set(sessionId, { actions: 0, max: this.config.wake.maxActionsPerWake })
     this.log('info', `she took over her character (session ${sessionId})`)
   }
@@ -690,7 +708,17 @@ export default class LittleHouse extends Service {
 
   /** Her turn ended. If she stopped early without end_free_time, look in on her a bit later. */
   onIdle(agent) {
-    if (agent.status === 'idle' && this.controls.has(agent.id)) void this.endControl(agent.id, 'her turn ended')
+    const errand = this.controls.get(agent.id)
+    if (agent.status === 'idle' && errand) {
+      const pending = this.pendingWake
+      this.pendingWake = undefined
+      void this.endControl(agent.id, 'her turn ended').then(() => {
+        if (pending && Date.now() < pending.until - MIN_SLOT_MINUTES * 60_000) {
+          return this.wake(pending.plan, pending.until, pending.resumed, errand.by || '别人')
+        }
+      }).catch((e) => this.log('warn', `free time after an errand failed: ${e?.stack ?? e}`))
+      return
+    }
     const w = this.window(agent.id)
     if (w?.overtime && agent.status === 'idle') {
       void this.endWindow(agent.id, 'overtime: she stopped')

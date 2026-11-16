@@ -34,8 +34,8 @@ const PHONE_TOOL = `
 function phoneRules(ownerName) {
   return `## 手机
 你的背包里一直有一部手机。${ownerName}和${ownerName}的朋友们随时可能用 QQ 给你发消息（在你睡着以后手机静音，不会收到别人的消息）。
-消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」或「……${ownerName}的朋友阿青：……」；你可以接收或发送图片，[表情:名称] 是 QQ 表情。你无法发送也无法接收文件。
-- 回消息、发消息都用 phone_message：text 就是发出去的话，to 写发给谁（不写就是${ownerName}；回朋友就写朋友的名字）。
+消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」或「……${ownerName}的朋友阿青：……」；你看得到对方发来的图片，[表情:名称] 是 QQ 表情。你能发的图片目前只有小屋的照片（photo=true）；你无法发送也无法接收文件。
+- 回消息、发消息都要调用 phone_message 工具：text 就是发出去的话，to 写发给谁（不写就是${ownerName}；回朋友就写朋友的名字）。直接输出的文字不会发到 QQ 上。
   像平时用手机聊天一样：口语、简短，不用 Markdown；想分几条发就用空行隔开；
   可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，取决于语境选择发送或只发送文字消息。photo=true 会附一张小屋现在的照片。
 - 想发几条就发几条，不想回也可以不回。
@@ -188,7 +188,7 @@ export async function apply(ctx) {
   if (house.qq) {
     ctx.tools.register(defineTool({
       name: 'phone_message',
-      description: '用手机发 QQ 消息（回复收到的消息，或者主动发）。text 就是发出去的话：口语、简短，空行隔开可以分几条，可以用 [表情:微笑] 这样的 QQ 表情。photo=true 时附一张小屋现在的照片。to 是发给谁，不写就是发给主人。你直接写的文字对方看不到，要说的话都用这个发。',
+      description: '用手机发 QQ 消息（回复收到的消息，或者主动发）。text 就是发出去的话：口语、简短，空行隔开可以分几条，可以用 [表情:微笑] 这样的 QQ 表情。photo=true 时附一张小屋现在的照片。to 是发给谁，不写就是发给主人。直接输出的文字不会发到 QQ 上，要说的话都用这个发。例：回主人 {"text": "在呢～刚浇完花 [表情:可爱]"}；回朋友阿青、分两条发 {"text": "等我一下下\\n\\n马上就好", "to": "阿青"}；附一张小屋的照片 {"text": "你看", "photo": true}。',
       parameters: {
         text: { type: 'string', required: true, description: '发出去的话' },
         photo: { type: 'boolean', description: '是否附一张小屋现在的照片' },
@@ -241,13 +241,13 @@ export async function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'end_free_time',
-    description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。这次还没写过日记的话，第一次调用时会问你要不要再改动日记，再调用一次就结束。',
+    description: '结束这次自由活动（之后你的角色会自己去做一些日常事务）。第一次调用时会问你要不要再改动或补充日记，再调用一次就结束。',
     parameters: {},
     output: textOutput,
     async execute(_args, exec) {
       const sessionId = exec.agent?.id
       if (!house.window(sessionId) && !house.windowOver(sessionId, true)) return '现在不是自由活动时间，不用结束。'
-      const ask = house.diaryWritten(sessionId) ? '' : house.askBeforeEnd(sessionId)
+      const ask = house.askBeforeEnd(sessionId)
       if (ask) return ask
       await house.endFreeTime(sessionId)
       exec.concludeTurn()

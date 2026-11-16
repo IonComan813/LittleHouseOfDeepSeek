@@ -106,7 +106,7 @@ export class QQ {
     }
     const line = formatLine({ name: isOwner ? name : `${this.config.ownerName}的朋友${name}`, text: msg.text || '[图片]' })
     const images = await this.images(msg.images.slice(0, MAX_IMAGES_PER_MESSAGE))
-    await this.house.phoneBuzz({ line, images })
+    await this.house.phoneBuzz({ line, images, from: isOwner ? this.config.ownerName : name })
   }
 
   get requestsPath() {

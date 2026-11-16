@@ -876,8 +876,8 @@ class World:
             return ""
         if self.resident.get("overtime"):
             return f"现在 {self.now():%H:%M}，自由活动时间已经到了，在做完开了头的事"
-        if self.resident.get("errand"):
-            return f"现在 {self.now():%H:%M}，不是自由活动时间，你在做别人请你做的事"
+        if self.resident.get("errand"):  # done within one turn: no clock for it
+            return ""
         until = self.resident["free_until"]
         left = max(0, round((until - self.clock.timestamp()) / 60))
         return f"现在 {self.now():%H:%M}，自由活动还剩 {left} 分钟（到 {datetime.fromtimestamp(until):%H:%M}）"
