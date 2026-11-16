@@ -17,9 +17,13 @@
 
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { OneBotClient } from './lib/onebot-client.js'
 import { chatIdOf, formatLine, readMessage, splitChatId, splitReply, toSegments } from './lib/onebot.js'
+import { listStickers, splitStickers } from './lib/stickers.js'
+
+const BUILTIN_STICKERS = fileURLToPath(new URL('./stickers/', import.meta.url))
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const MAX_IMAGES_PER_MESSAGE = 4
@@ -221,6 +225,21 @@ export class QQ {
     return bubbles.length
   }
 
+  /** Her stickers: name -> file (the plugin's own, then the owner's in <stateDir>/stickers/). */
+  async stickerMap() {
+    if (!this.stickers) {
+      const dirs = [...(this.config.builtinStickers ? [BUILTIN_STICKERS] : []), join(this.house.stateDir, 'stickers')]
+      this.stickers = await listStickers(dirs)
+    }
+    return this.stickers
+  }
+
+  /** A sticker as a OneBot image segment, shown in QQ as a sticker. */
+  async stickerSegment(name) {
+    const data = await readFile((await this.stickerMap()).get(name))
+    return { type: 'image', data: { file: 'base64://' + data.toString('base64'), sub_type: 1, summary: '[动画表情]' } }
+  }
+
   /** A picture of the house as a OneBot image segment. */
   async photoSegment() {
     const png = await this.house.house.requestBytes('/screenshot?scale=2')
@@ -272,15 +291,28 @@ export class QQ {
     const chatId = `private:${qq}`
     const bubbles = splitReply(text)
     if (!bubbles.length && !photo) throw new Error('消息是空的。')
-    for (const [i, b] of bubbles.entries()) {
-      const segs = toSegments(b)
-      if (photo && i === bubbles.length - 1) segs.push(await this.photoSegment())
-      await this.sendSegments(chatId, segs)
+    // stickers go out as messages of their own, where she wrote them; a wrong name sends nothing
+    const names = await this.stickerMap()
+    const plan = bubbles.map((b) => splitStickers(b, names))
+    const unknown = plan.flatMap((p) => p.unknown)
+    if (unknown.length) {
+      throw new Error(`没有叫「${unknown.join('」「')}」的表情包，这次什么都没发。能用的表情包：${[...names.keys()].join('、') || '（还没有）'}。`)
     }
-    if (!bubbles.length) await this.sendSegments(chatId, [await this.photoSegment()])
+    const parts = plan.flatMap((p) => p.parts)
+    let sent = 0
+    for (const [i, p] of parts.entries()) {
+      const segs = p.sticker ? [await this.stickerSegment(p.sticker)] : toSegments(p.text)
+      if (photo && i === parts.length - 1 && !p.sticker) segs.push(await this.photoSegment())
+      await this.sendSegments(chatId, segs)
+      sent++
+    }
+    if (photo && (!parts.length || parts[parts.length - 1].sticker)) {
+      await this.sendSegments(chatId, [await this.photoSegment()])
+      sent++
+    }
     const shown = bubbles.join(' / ') + (photo ? ' [小屋的照片]' : '')
     await this.record({ chat: chatId, from: 'me', name: '她', text: shown, out: true })
-    return bubbles.length + (photo && !bubbles.length ? 1 : 0)
+    return sent
   }
 
   // ------------------------------------------------------------------ transcript

@@ -21,6 +21,7 @@
     "qq.js",
     "lib",
     "persona",
+    "stickers",
     "cordis.patch.yml"
   ],
   "scripts": {

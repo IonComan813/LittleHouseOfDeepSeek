@@ -31,13 +31,13 @@ const IMAGE_SCHEMA = {
 const PHONE_TOOL = `
 - phone_message：用手机发 QQ 消息（见下面「手机」）。`
 
-function phoneRules(ownerName) {
+function phoneRules(ownerName, stickers = []) {
   return `## 手机
 你的背包里一直有一部手机。${ownerName}和${ownerName}的朋友们随时可能用 QQ 给你发消息（在你睡着以后手机静音，不会收到别人的消息）。
 消息会出现在这里，像「（手机响了，是 QQ 消息：）${ownerName}：……」或「……${ownerName}的朋友阿青：……」；你看得到对方发来的图片，[表情:名称] 是 QQ 表情。你能发的图片目前只有小屋的照片（photo=true）；你无法发送也无法接收文件。
 - 回消息、发消息都要调用 phone_message 工具：text 就是发出去的话，to 写发给谁（不写就是${ownerName}；回朋友就写朋友的名字）。直接输出的文字不会发到 QQ 上。
   像平时用手机聊天一样：口语、简短，不用 Markdown；想分几条发就用空行隔开；
-  可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，取决于语境选择发送或只发送文字消息。photo=true 会附一张小屋现在的照片。
+  可以用 QQ 表情，写成 [表情:名称]，常用的有：${COMMON_FACES.join('、')}，取决于语境选择发送或只发送文字消息。photo=true 会附一张小屋现在的照片。${stickers.length ? `\n  也可以发表情包：写 [表情包:名字]，它会单独发成一条，名字要写全。你的表情包有：${stickers.join('、')}。` : ''}
 - 想发几条就发几条，不想回也可以不回。
 - 不是自由活动时间的时候，消息开头会告诉你角色此刻在做什么（收拾屋子、陪团子玩、在海边玩水……），有时还有正在发生的事。这时你只用手机回消息，也可以用 house_do 了解情况（surroundings()、inventory()）。
   **如果${ownerName}或朋友请你在屋里做什么事**（浇浇花、做顿饭、看看星星……），你可以直接用 house_do 去做：这会接过角色的控制权。
@@ -103,6 +103,7 @@ export async function apply(ctx) {
   // Only the persona's first paragraph lives in the system prompt; the whole
   // persona and her memory open each day's session (index.js intro).
   const persona = await house.personaBrief()
+  const stickers = house.qq ? [...(await house.qq.stickerMap()).keys()] : []
 
   // The resident may only use the house_* tools. Two layers:
   //  1. hide every global tool that exists now (shell, files, web, ...) from
@@ -126,7 +127,7 @@ export async function apply(ctx) {
     interpolate: false,
     text: `${persona}\n\n${HOUSE_RULES
       .replace('{{PHONE_TOOL}}', house.qq ? PHONE_TOOL : '')
-      .replace('{{PHONE_RULES}}', house.qq ? phoneRules(house.config.qq.ownerName) : '')}`,
+      .replace('{{PHONE_RULES}}', house.qq ? phoneRules(house.config.qq.ownerName, stickers) : '')}`,
   })
 
   const textOutput = {
@@ -188,7 +189,7 @@ export async function apply(ctx) {
   if (house.qq) {
     ctx.tools.register(defineTool({
       name: 'phone_message',
-      description: '用手机发 QQ 消息（回复收到的消息，或者主动发）。text 就是发出去的话：口语、简短，空行隔开可以分几条，可以用 [表情:微笑] 这样的 QQ 表情。photo=true 时附一张小屋现在的照片。to 是发给谁，不写就是发给主人。直接输出的文字不会发到 QQ 上，要说的话都用这个发。例：回主人 {"text": "在呢～刚浇完花 [表情:可爱]"}；回朋友阿青、分两条发 {"text": "等我一下下\\n\\n马上就好", "to": "阿青"}；附一张小屋的照片 {"text": "你看", "photo": true}。',
+      description: '用手机发 QQ 消息（回复收到的消息，或者主动发）。text 就是发出去的话：口语、简短，空行隔开可以分几条，可以用 [表情:微笑] 这样的 QQ 表情。photo=true 时附一张小屋现在的照片。to 是发给谁，不写就是发给主人。直接输出的文字不会发到 QQ 上，要说的话都用这个发。一条消息里换行用单个换行；空一行就分成两条发。[表情包:名字] 会单独发一张表情包。',
       parameters: {
         text: { type: 'string', required: true, description: '发出去的话' },
         photo: { type: 'boolean', description: '是否附一张小屋现在的照片' },

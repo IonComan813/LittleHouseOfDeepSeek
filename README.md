@@ -106,7 +106,7 @@ python scripts\install.py
 | `house_photo` | 用手机给小屋拍一张照片，自己看（整个家、院子和沙滩） |
 | `end_free_time` | 结束这次自由活动（这次还没写过日记时，第一次只问一句要不要再改动日记） |
 | `end_errand` | 自由活动以外替别人做完事后，把角色交还给日常 |
-| `phone_message(text, photo?, to?)` | 用手机发 QQ 消息：`text` 是发出去的话，`to` 发给谁（不写是主人），`photo` 附一张小屋的照片 |
+| `phone_message(text, photo?, to?)` | 用手机发 QQ 消息：`text` 是发出去的话（空一行分成两条；`[表情:微笑]` 是 QQ 表情，`[表情包:点赞]` 单独发一张表情包），`to` 发给谁（不写是主人），`photo` 附一张小屋的照片 |
 | `phone_friend_request(qq, accept)` | 接受或拒绝 QQ 好友请求（先问过主人） |
 | `diary_write(entry)` / `diary_edit(time, text)` / `diary_read(day?)` | 写一段日记 / 改或删今天的某一段 / 翻某天的日记 |
 
@@ -143,4 +143,5 @@ cd plugin && npm test                               # 作息表、唤醒消息�
 
 Apache-2.0。设计参考了 [surfcore](https://github.com/Mieksido/surfcore)（MIT）和
 [dsh-onebot](https://github.com/mario841859784/dsh-onebot)（BSD-3-Clause），见 [NOTICE](NOTICE)。
+`plugin/stickers/` 里自带的表情包也不属于 Apache-2.0，见 [plugin/stickers/README.md](plugin/stickers/README.md)。
 画面用的是 OpenGameArt 上的 LPC 像素素材（家具、灶台、草地、沙滩、海、树、礁石、作物、团子；她由 LPC 角色生成器的图层拼成，蓝发、呆毛、鲸尾和围裙上的小鲸鱼由代码画上去）。这些素材是 CC-BY-SA 3.0 / GPL 3.0 等许可，不属于 Apache-2.0，署名见 [house/littlehouse/assets/lpc/CREDITS.md](house/littlehouse/assets/lpc/CREDITS.md)；墙、地板、冰箱、邮箱和菠菜 / 葱 / 南瓜 / 草莓等由代码绘制。

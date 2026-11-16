@@ -104,6 +104,7 @@ export default class LittleHouse extends Service {
       // Group chats are off for now (see qq.js):
       // groups: Schema.array(Schema.string()).default([]).description('她在哪些群里（群号）'),
       // names: Schema.array(Schema.string()).default(['小栖']).description('群里提到这些名字也算在叫她'),
+      builtinStickers: Schema.boolean().default(true).description('用插件自带的表情包（plugin/stickers/，大肥鱼的）。自己的表情包放进 ~/.dsh/little-house/stickers/，文件名就是她写的名字，同名的会盖过自带的'),
       sleepReply: Schema.string().default('（睡着了……zzZ）').description('她睡着时收到消息自动回的话（消息不会交给她；同一个聊天半小时最多一次；留空 = 不回）'),
     }).default({}),
   })
@@ -393,8 +394,9 @@ export default class LittleHouse extends Service {
       const state = await this.readState()
       const agent = await this.dayAgent()
       if (this.controls.has(agent.id) && agent.status !== 'idle') {
-        // doing something someone asked: free time starts once this turn is over (onIdle)
-        this.pendingWake = { plan, until, resumed }
+        // doing something someone asked: free time starts once this turn is over (onIdle),
+        // and only then does its clock start (the minutes left now, counted from then)
+        this.pendingWake = { plan, minutes: (until - Date.now()) / 60_000, resumed }
         this.log('info', `free time (${plan.name}) waits until she has finished the errand`)
         return 'deferred: she is doing an errand'
       }
@@ -713,9 +715,7 @@ export default class LittleHouse extends Service {
       const pending = this.pendingWake
       this.pendingWake = undefined
       void this.endControl(agent.id, 'her turn ended').then(() => {
-        if (pending && Date.now() < pending.until - MIN_SLOT_MINUTES * 60_000) {
-          return this.wake(pending.plan, pending.until, pending.resumed, errand.by || '别人')
-        }
+        if (pending) return this.wake(pending.plan, Date.now() + pending.minutes * 60_000, pending.resumed, errand.by || '别人')
       }).catch((e) => this.log('warn', `free time after an errand failed: ${e?.stack ?? e}`))
       return
     }
